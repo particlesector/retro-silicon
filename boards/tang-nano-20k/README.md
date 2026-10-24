@@ -23,6 +23,7 @@ openFPGALoader -b tangnano20k build/fpga/uart_echo/uart_echo.fs
 | Target | Design | Pins file | Notes |
 | --- | --- | --- | --- |
 | `uart_echo_bitstream` | `systems/uart-echo` | `uart_echo.cst` | 1.5 Mbaud (`CLKS_PER_BIT=18`) |
+| `shell_ram_bitstream` | `systems/shell-ram` | `uart_echo.cst` | 1.5 Mbaud; `BUILD_ID` from the RTL's SHA-256 |
 
 ## UART
 

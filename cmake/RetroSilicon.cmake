@@ -10,7 +10,9 @@ find_program(RS_YOSYS yosys)
 # Registers a component's RTL (paths relative to the calling directory) under
 # <name>, after the RTL of every component it depends on, so later calls can
 # verilate or synthesise it by name. Adds lint tests for each top module
-# (default: <name>): Verilator -Wall, and Yosys synthesis when Yosys is on PATH.
+# (default: <name>): Verilator -Wall, and, when Yosys is on PATH, Yosys's
+# synthesis up to technology mapping plus its design checks (undriven or
+# multiply driven signals, combinational loops). Board builds run the rest.
 function(rs_component name)
     cmake_parse_arguments(PARSE_ARGV 1 arg "" "" "RTL;DEPENDS;TOPS")
     set(files)
@@ -35,9 +37,28 @@ function(rs_component name)
         if(RS_YOSYS)
             list(JOIN files " " file_args)
             add_test(NAME "lint yosys ${top}"
-                     COMMAND ${RS_YOSYS} -q -p "read_verilog -sv ${file_args}; synth -top ${top}")
+                     COMMAND ${RS_YOSYS} -q -p "read_verilog -sv ${file_args}; synth -top ${top} -run :fine; check -assert")
         endif()
     endforeach()
+endfunction()
+
+# rs_build_id(<out-var> <component>)
+#
+# A 32-bit build ID for a test-shell system: the first 8 hex digits of the
+# SHA-256 of all its RTL, as a Verilog literal (32'h...) for a BUILD_ID
+# parameter. CMake reconfigures when any of those files changes, so the ID
+# always matches the RTL; the sim and the board report the same one.
+function(rs_build_id out name)
+    rs_rtl(files ${name})
+    set(all "")
+    foreach(f IN LISTS files)
+        file(READ ${f} text)
+        string(APPEND all "${text}")
+    endforeach()
+    string(SHA256 sha "${all}")
+    string(SUBSTRING ${sha} 0 8 id)
+    set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS ${files})
+    set(${out} "32'h${id}" PARENT_SCOPE)
 endfunction()
 
 # rs_rtl(<out-var> <component>): the component's RTL, dependencies first.

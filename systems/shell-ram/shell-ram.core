@@ -1,0 +1,34 @@
+CAPI=2:
+# SPDX-License-Identifier: Apache-2.0
+name: retro-silicon:system:shell-ram:0.1.0
+description: Test shell with a 4 KB scratch RAM, for testing the shell itself
+
+filesets:
+  rtl:
+    files:
+      - rtl/shell_ram.sv
+    file_type: systemVerilogSource
+    depend:
+      - retro-silicon:common:por
+      - retro-silicon:debug:test-shell
+
+targets:
+  # Parameters go on lint only, as in every component core.
+  default: &default
+    filesets: [rtl]
+    toplevel: shell_ram
+  lint:
+    <<: *default
+    parameters: [CLKS_PER_BIT]
+    default_tool: verilator
+    tools:
+      verilator:
+        mode: lint-only
+        verilator_options: [-Wall]
+
+parameters:
+  CLKS_PER_BIT:
+    datatype: int
+    default: 18
+    paramtype: vlogparam
+    description: Clock frequency divided by the baud rate

@@ -1,0 +1,4 @@
+# CRC32 of the shell test's PING and PEEK responses (rig::shell_test) for each
+# command count and seed. It doesn't depend on injected faults or the backend.
+# commands  seed  crc32
+1000        1     0x0ea7ceb6

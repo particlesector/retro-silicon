@@ -38,5 +38,7 @@ function(rs_tang_bitstream name)
     set_target_properties(${name}_bitstream PROPERTIES BITSTREAM ${dir}/${arg_TOP}.fs)
 endfunction()
 
-# The echo test at 1.5 Mbaud (27 MHz / 18), the rate SimLink models.
+# Both at 1.5 Mbaud (27 MHz / 18), the rate SimLink models, on the same pins.
 rs_tang_bitstream(uart_echo COMPONENT uart_echo CST uart_echo.cst PARAMS CLKS_PER_BIT=18)
+get_property(shell_ram_id GLOBAL PROPERTY RS_SHELL_RAM_BUILD_ID)
+rs_tang_bitstream(shell_ram COMPONENT shell_ram CST uart_echo.cst PARAMS CLKS_PER_BIT=18 BUILD_ID=${shell_ram_id})
