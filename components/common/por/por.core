@@ -1,0 +1,32 @@
+CAPI=2:
+# SPDX-License-Identifier: Apache-2.0
+name: retro-silicon:common:por:0.1.0
+description: Power-on reset from a register's configuration-time initial value
+
+filesets:
+  rtl:
+    files:
+      - rtl/por.sv
+    file_type: systemVerilogSource
+
+targets:
+  # Parameters go on lint only: a dependency's default-target parameters would
+  # be passed to whichever system uses it.
+  default: &default
+    filesets: [rtl]
+    toplevel: por
+  lint:
+    <<: *default
+    parameters: [CYCLES]
+    default_tool: verilator
+    tools:
+      verilator:
+        mode: lint-only
+        verilator_options: [-Wall]
+
+parameters:
+  CYCLES:
+    datatype: int
+    default: 16
+    paramtype: vlogparam
+    description: Clocks that rst stays high after configuration

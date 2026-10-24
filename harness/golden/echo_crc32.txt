@@ -1,0 +1,6 @@
+# CRC32 of the echo test's data (rig::echo_test) for each size and seed. A passing
+# run gives the same value from every backend, sim or board.
+# bytes  seed  crc32
+64000    1     0x3d6de561
+256000   1     0x9ca23985
+1000000  1     0x884a01ce

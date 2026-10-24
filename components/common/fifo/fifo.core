@@ -1,0 +1,37 @@
+CAPI=2:
+# SPDX-License-Identifier: Apache-2.0
+name: retro-silicon:common:fifo:0.1.0
+description: Synchronous FIFO with a registered read port, mapped to block RAM
+
+filesets:
+  rtl:
+    files:
+      - rtl/fifo.sv
+    file_type: systemVerilogSource
+
+targets:
+  # Parameters go on lint only: a dependency's default-target parameters would
+  # be passed to whichever system uses it.
+  default: &default
+    filesets: [rtl]
+    toplevel: fifo
+  lint:
+    <<: *default
+    parameters: [WIDTH, DEPTH_LOG2]
+    default_tool: verilator
+    tools:
+      verilator:
+        mode: lint-only
+        verilator_options: [-Wall]
+
+parameters:
+  WIDTH:
+    datatype: int
+    default: 8
+    paramtype: vlogparam
+    description: Bits per entry
+  DEPTH_LOG2:
+    datatype: int
+    default: 11
+    paramtype: vlogparam
+    description: log2 of the number of entries
