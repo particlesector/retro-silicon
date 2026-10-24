@@ -8,6 +8,7 @@ Every component builds with the open-source flow (Yosys, nextpnr, Verilator) and
 
 | Component | What it is | Sim tests | Board run |
 | --- | --- | --- | --- |
+| [cpu/6502](components/cpu/6502) | NMOS 6502, cycle-exact on the bus; decimal mode optional (off for the NES) | ✅ | — |
 | [common/crc32](components/common/crc32) | CRC-32 (IEEE, as zlib), one byte per clock | ✅ | — |
 | [common/uart](components/common/uart) | 8N1 receiver and transmitter | ✅ | ✅ Tang Nano 20K, in uart-echo |
 | [common/fifo](components/common/fifo) | Synchronous FIFO in block RAM | ✅ | ✅ Tang Nano 20K, in uart-echo |

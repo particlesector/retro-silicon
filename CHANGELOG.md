@@ -19,6 +19,8 @@ All notable changes to this project are listed here. The format follows [Keep a 
 - `testroms/`: manifest of NES test ROMs with SHA-256 sums and expected results, and a fetch script.
 - `tools/mesen`: MesenCE Lua runner and checker for blargg-style test ROMs.
 - `rs_build_id`: a build ID derived from a system's RTL.
+- `cpu/6502`: NMOS 6502, cycle-exact on the bus, with the stable unofficial opcodes and optional NMOS decimal mode; checked against perfect6502 in lockstep, nestest and blargg's instr_test.
+- `cmake/Perfect6502.cmake`: fetches perfect6502 at a pinned commit, with SHA-256 checks, for the CPU's lockstep test.
 
 ### Changed
 

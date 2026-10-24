@@ -12,11 +12,20 @@ endif()
 
 include(cmake/RetroSilicon.cmake)
 
+# Where testroms/fetch.py put the test ROMs; tests that need one skip without it.
+if(DEFINED ENV{RS_TESTROMS})
+    set(default_roms $ENV{RS_TESTROMS})
+else()
+    set(default_roms $ENV{HOME}/.cache/retro-silicon/testroms)
+endif()
+set(RS_TESTROMS ${default_roms} CACHE PATH "Test-ROM directory (testroms/fetch.py --dest)")
+
 # Dependencies first: rs_component needs the components it depends on.
 add_subdirectory(components/common/crc32)
 add_subdirectory(components/common/fifo)
 add_subdirectory(components/common/por)
 add_subdirectory(components/common/uart)
+add_subdirectory(components/cpu/6502)
 add_subdirectory(components/debug/test-shell)
 add_subdirectory(systems/uart-echo)
 add_subdirectory(systems/shell-ram)
@@ -33,4 +42,8 @@ if(RS_FUSESOC)
                          --build-root ${CMAKE_CURRENT_BINARY_DIR}/fusesoc --target lint
                          retro-silicon:system:${system})
     endforeach()
+    # Components no system uses yet.
+    add_test(NAME "fusesoc lint cpu-6502"
+             COMMAND ${RS_FUSESOC} --cores-root ${PROJECT_SOURCE_DIR} run
+                     --build-root ${CMAKE_CURRENT_BINARY_DIR}/fusesoc --target lint retro-silicon:cpu:6502)
 endif()

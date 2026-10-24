@@ -1,0 +1,31 @@
+CAPI=2:
+# SPDX-License-Identifier: Apache-2.0
+name: retro-silicon:cpu:6502:0.1.0
+description: NMOS 6502, cycle-exact on the bus, with optional decimal mode
+
+filesets:
+  rtl:
+    files:
+      - rtl/cpu_6502.sv
+    file_type: systemVerilogSource
+
+targets:
+  # Parameters go on lint only, as in every component core.
+  default: &default
+    filesets: [rtl]
+    toplevel: cpu_6502
+  lint:
+    <<: *default
+    parameters: [DECIMAL]
+    default_tool: verilator
+    tools:
+      verilator:
+        mode: lint-only
+        verilator_options: [-Wall]
+
+parameters:
+  DECIMAL:
+    datatype: bool
+    default: true
+    paramtype: vlogparam
+    description: NMOS decimal mode; false for the NES's 2A03
