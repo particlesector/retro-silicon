@@ -1,0 +1,4 @@
+build/
+*.fs
+*.vcd
+*.fst

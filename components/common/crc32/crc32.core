@@ -1,0 +1,22 @@
+CAPI=2:
+# SPDX-License-Identifier: Apache-2.0
+name: retro-silicon:common:crc32:0.1.0
+description: CRC-32 (IEEE 802.3, as zlib), one byte per enabled clock
+
+filesets:
+  rtl:
+    files:
+      - rtl/crc32.sv
+    file_type: systemVerilogSource
+
+targets:
+  default: &default
+    filesets: [rtl]
+    toplevel: crc32
+  lint:
+    <<: *default
+    default_tool: verilator
+    tools:
+      verilator:
+        mode: lint-only
+        verilator_options: [-Wall]

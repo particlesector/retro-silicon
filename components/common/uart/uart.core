@@ -1,0 +1,35 @@
+CAPI=2:
+# SPDX-License-Identifier: Apache-2.0
+name: retro-silicon:common:uart:0.1.0
+description: 8N1 UART receiver (uart_rx) and transmitter (uart_tx)
+
+filesets:
+  rtl:
+    files:
+      - rtl/uart_rx.sv
+      - rtl/uart_tx.sv
+    file_type: systemVerilogSource
+
+targets:
+  # Two top modules, so no default toplevel; lint each on its own.
+  default:
+    filesets: [rtl]
+  lint_rx: &lint
+    filesets: [rtl]
+    toplevel: uart_rx
+    parameters: [CLKS_PER_BIT]
+    default_tool: verilator
+    tools:
+      verilator:
+        mode: lint-only
+        verilator_options: [-Wall]
+  lint_tx:
+    <<: *lint
+    toplevel: uart_tx
+
+parameters:
+  CLKS_PER_BIT:
+    datatype: int
+    default: 9
+    paramtype: vlogparam
+    description: Clock frequency divided by the baud rate
