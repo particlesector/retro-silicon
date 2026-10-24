@@ -1,0 +1,113 @@
+# SPDX-License-Identifier: Apache-2.0
+# Test ROMs the cores are checked against. They're fetched by fetch.py into a
+# cache and checked against these SHA-256 sums; they're never committed here.
+#
+# check = "blargg": the ROM writes its result to $6000 (0x80 while running,
+# then 0 for a pass or an error code), DE B0 61 at $6001-$6003 once the result
+# is valid, and a text report from $6004. `frames` is roughly when it finishes
+# in MesenCE; allow at least twice that.
+# check = "trace": compare a CPU trace against the reference log.
+# needs: the parts of the console the ROM exercises.
+
+[sources.nes-test-roms]
+url = "https://raw.githubusercontent.com/christopherpow/nes-test-roms/95d8f621ae55cee0d09b91519a8989ae0e64753b/"
+
+[[rom]]
+id = "nestest"
+source = "nes-test-roms"
+path = "other/nestest.nes"
+sha256 = "f67d55fd6b3cf0bad1cc85f1df0d739c65b53e79cecb7fea8f77ec0eadab0004"
+needs = "cpu"
+covers = "Every official and unofficial opcode; run from $C000 for the automated mode"
+check = "trace"
+trace = { path = "other/nestest.log", sha256 = "442c4dd5539c7e88b3fd73c7b732a7eadbd22b47c2cd9e58397ef147f64f6f8f" }
+
+[[rom]]
+id = "instr_test-official"
+source = "nes-test-roms"
+path = "instr_test-v5/official_only.nes"
+sha256 = "589b8835deb5cbc69618dac193a3dbd675540f7f2794e2d2a92e97beb8abc3cb"
+needs = "cpu"
+covers = "Every official opcode's result and flags"
+check = "blargg"
+frames = 1870
+
+[[rom]]
+id = "instr_test-all"
+source = "nes-test-roms"
+path = "instr_test-v5/all_instrs.nes"
+sha256 = "353870c157242e3d428ef7387109deaee0d2e158bdb432ab9aae4e657072c785"
+needs = "cpu"
+covers = "Every opcode, including the unofficial ones"
+check = "blargg"
+frames = 2400
+
+[[rom]]
+id = "instr_timing"
+source = "nes-test-roms"
+path = "instr_timing/instr_timing.nes"
+sha256 = "3d1bca14266f1e25b75a34ddd29c9df1ce9c6d990c8663a218f72e7861660fb0"
+needs = "cpu, apu frame counter"
+covers = "Cycle count of every instruction, and branch timing"
+check = "blargg"
+frames = 1305
+
+[[rom]]
+id = "instr_misc"
+source = "nes-test-roms"
+path = "instr_misc/instr_misc.nes"
+sha256 = "b6762e20a285216304dfd2b5e1f192459354b23a5e48b2f5f9fb7cb0dac51243"
+needs = "cpu, apu"
+covers = "Address wraparound, branch edge cases, dummy reads"
+check = "blargg"
+frames = 230
+
+[[rom]]
+id = "cpu_interrupts"
+source = "nes-test-roms"
+path = "cpu_interrupts_v2/cpu_interrupts.nes"
+sha256 = "ccbac4e824eb96ecfe8b82d331a083be186eb6776aa57e25c52251eaf7df9c4f"
+needs = "cpu, ppu, apu"
+covers = "IRQ, NMI and BRK timing and how they interact"
+check = "blargg"
+frames = 730
+
+[[rom]]
+id = "ppu_vbl_nmi"
+source = "nes-test-roms"
+path = "ppu_vbl_nmi/ppu_vbl_nmi.nes"
+sha256 = "8dbab1be785585c399cf055ef02147b788ab75fd80e81cf9568a2feafc03fb7d"
+needs = "cpu, ppu"
+covers = "VBlank flag and NMI timing to the PPU clock, odd-frame skip"
+check = "blargg"
+frames = 1615
+
+[[rom]]
+id = "ppu_open_bus"
+source = "nes-test-roms"
+path = "ppu_open_bus/ppu_open_bus.nes"
+sha256 = "d4208a3ff6340532dd0fced7f9d408d5b6585853a0ddc9c1f64ee1722ef08e67"
+needs = "cpu, ppu"
+covers = "PPU data bus decay and open-bus reads"
+check = "blargg"
+frames = 255
+
+[[rom]]
+id = "oam_read"
+source = "nes-test-roms"
+path = "oam_read/oam_read.nes"
+sha256 = "f298973dabeb61ca35007445f7a615f77e87703c958c870986af83b1aabde926"
+needs = "cpu, ppu"
+covers = "Reading sprite memory through $2004"
+check = "blargg"
+frames = 30
+
+[[rom]]
+id = "apu_test"
+source = "nes-test-roms"
+path = "apu_test/apu_test.nes"
+sha256 = "00d4722bae1c82a14528dd3220462d3fb9ce4b14b8cec996619dea23e07fef0a"
+needs = "cpu, apu"
+covers = "Length counters, frame counter, IRQ flag, DMC rates"
+check = "blargg"
+frames = 306

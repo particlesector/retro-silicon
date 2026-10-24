@@ -3,24 +3,17 @@
 
 #include <algorithm>
 
-#include "Vuart_echo_sim.h"
-
 namespace rig {
 
-SimLink::SimLink() : model_(std::make_unique<Vuart_echo_sim>()) {
-    model_->uart_rx = 1;
-    for (int i = 0; i < 32; i++) tick();  // through power-on reset
+SimLink::SimLink(std::unique_ptr<SimModel> model, int clks_per_bit)
+    : model_(std::move(model)), clks_per_bit_(clks_per_bit), tx_(clks_per_bit), rx_(clks_per_bit) {
+    for (int i = 0; i < 32; i++) tick();  // through power-on reset, line idle
 }
 
 SimLink::~SimLink() = default;
 
 void SimLink::tick() {
-    model_->uart_rx = tx_.next();
-    model_->clk = 0;
-    model_->eval();
-    model_->clk = 1;
-    model_->eval();
-    rx_.sample(model_->uart_tx);
+    rx_.sample(model_->tick(tx_.next()));
     cycles_++;
 }
 

@@ -12,7 +12,9 @@ Every component builds with the open-source flow (Yosys, nextpnr, Verilator) and
 | [common/uart](components/common/uart) | 8N1 receiver and transmitter | ✅ | ✅ Tang Nano 20K, in uart-echo |
 | [common/fifo](components/common/fifo) | Synchronous FIFO in block RAM | ✅ | ✅ Tang Nano 20K, in uart-echo |
 | [common/por](components/common/por) | Power-on reset | ✅ | ✅ Tang Nano 20K, in uart-echo |
+| [debug/test-shell](components/debug/test-shell) | UART command engine: CRC-checked frames, retries, bus access, build ID | ✅ | ✅ Tang Nano 20K, in shell-ram |
 | [systems/uart-echo](systems/uart-echo) | UART link test: echoes every byte | ✅ | ✅ Tang Nano 20K: 100 MB at 1.5 Mbaud, no errors |
+| [systems/shell-ram](systems/shell-ram) | Test shell with a scratch RAM | ✅ | ✅ Tang Nano 20K: 1,000 commands with faults injected, same CRC as the sim |
 
 A board run means the same test, with the same data, passed on real hardware with the same result as the simulation.
 
@@ -24,6 +26,9 @@ Needs CMake 3.28+, Ninja, a C++20 compiler, Catch2 3, and [OSS CAD Suite](https:
 cmake --preset default
 cmake --build --preset default    # also builds Tang Nano 20K bitstreams when nextpnr is found
 ctest --preset default
+
+testroms/fetch.py                 # test ROMs into ~/.cache/retro-silicon/testroms
+tools/mesen/check.py              # check they pass in MesenCE, the reference
 ```
 
 Use a component from another FuseSoC project:
@@ -41,8 +46,10 @@ then depend on it by name, for example `retro-silicon:common:uart`.
 | `components/` | Reusable blocks, grouped by function, one folder each |
 | `systems/` | Top levels that wire components together |
 | `boards/` | Pins, clocks and the bitstream build for each board |
-| `harness/` | C++ test harness core: the link interface, UART models, tests and the Verilator backend |
+| `harness/` | C++ test harness core: the link interface, UART models, test-shell client, tests and the Verilator backend |
+| `testroms/` | Test-ROM manifest (sources, SHA-256 sums, expected results) and fetch script; the ROMs themselves aren't committed |
 | `cmake/` | Shared CMake helpers |
+| `tools/` | Host tools, such as the MesenCE test-ROM runner |
 | `docs/` | Conventions and design decisions |
 
 See [CONTRIBUTING.md](CONTRIBUTING.md) for what each component folder holds and how to add one.
