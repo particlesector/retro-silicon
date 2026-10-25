@@ -14,5 +14,8 @@ std::unique_ptr<SimLink> make_uart_echo_sim();
 std::unique_ptr<SimLink> make_shell_ram_sim();    // reports RS_SHELL_RAM_BUILD_ID
 std::unique_ptr<SimLink> make_shell_sdram_sim();  // reports RS_SHELL_SDRAM_BUILD_ID
 std::unique_ptr<SimLink> make_nes_sim();          // reports RS_NES_BUILD_ID
+// The NES as the Tang Console 138K runs it: block RAM for its memory, and a
+// 50 MHz clock (33 clocks a bit). Reports RS_NES_BRAM_BUILD_ID.
+std::unique_ptr<SimLink> make_nes_bram_sim();
 
 } // namespace rig

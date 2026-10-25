@@ -1,9 +1,13 @@
 // SPDX-License-Identifier: Apache-2.0
 // The NES, as far as it's built: the 2A03's CPU and OAM DMA, the 2C02 PPU,
-// 2 KB of RAM, 8 KB of PRG RAM at $6000, and an NROM cartridge (PRG ROM in
-// SDRAM, 8 KB of CHR ROM or RAM in block RAM, nametable mirroring by a
-// register), under the test shell. The APU and controllers come later; their
-// registers read as open bus.
+// 2 KB of RAM, 8 KB of PRG RAM at $6000, and an NROM cartridge (PRG ROM in the
+// board's memory, 8 KB of CHR ROM or RAM in block RAM, nametable mirroring by
+// a register), under the test shell, with a save-state controller. The APU and
+// controllers come later; their registers read as open bus.
+//
+// The board's memory is a byte port, as memory/sdram's: the board puts SDRAM,
+// block RAM or anything else behind it. memory/arbiter shares it between the
+// CPU's PRG reads, first, and the shell.
 //
 // Timing. The PPU runs one dot per pulse of a phase accumulator at DOT_NUM/
 // DOT_DEN of the clock: the NTSC rate exactly, on average. Each CPU cycle is
@@ -11,28 +15,30 @@
 // NMI sample after the third, as in MesenCE, and after reset the PPU runs
 // LEAD_DOTS dots before the CPU's first cycle, which lines its first opcode
 // fetch up with MesenCE's. A CPU cycle starts the clock after the last one
-// ended: its address is valid then, a PRG read goes to SDRAM at once and must
+// ended: its address is valid then, a PRG read goes to memory at once and must
 // be back by the cycle's end (the sticky `late` status bit records a miss),
 // and RAM is read on that first clock and written on the last.
 //
 // The system stops and starts only between CPU cycles, so stopping (by the
-// shell, a cycle or frame count, or the video probe's capture) leaves the
+// shell, a cycle or frame count, the video probe's capture or a save state) leaves the
 // CPU's bus and the PPU's output exactly as they would have been: the same on
 // any board and in the sim.
 //
 // Shell address map (see README.md for the registers):
-//   0x00000000-0x007FFFFF  SDRAM: PRG ROM from 0
+//   0x00000000-0x007FFFFF  the board's memory: PRG ROM from 0
 //   0x01000000-0x010000FF  control and status registers
 //   0x02000000-0x0200FFFF  the CPU's address space: RAM and PRG RAM; the rest reads 0
-//   0x03000000-0x03003FFF  the PPU's: CHR ($0000-$1FFF) and nametables ($2000-$3FFF)
-//   0x04000000-0x0400000F  CPU save state; 0x04001000-0x04001193 PPU save state
+//   0x03000000-0x03003FFF  the PPU's: CHR ($0000-$1FFF) and nametables ($2000-$3FFF);
+//                          0x03004000-0x030047FF the nametable RAM as it is, unmirrored
+//   0x04000000-0x0400000F  CPU save state; 0x04001000-0x04001193 PPU save state;
+//                          0x04002000-0x04002013 the system's own
 //   0x05000000-0x050003BF  line CRCs of the last frame; 0x05001000-0x050011FF the captured line
+//   0x06000000-0x06007FFF  the save-state buffer
 // LEDs (active low): led[0] a corrupt command frame, led[1] a stalled one,
-// led[2] SDRAM ready, led[3] running, led[4] halted or late, led[5] heartbeat.
+// led[2] memory ready, led[3] running, led[4] halted or late, led[5] heartbeat.
 module nes #(
     parameter int          CLKS_PER_BIT = 18,       // 27 MHz / 18 = 1.5 Mbaud
     parameter int          IDLE_CLKS    = 270_000,  // 10 ms at 27 MHz
-    parameter int          FREQ_MHZ     = 27,
     parameter int          DOT_NUM      = 35,       // PPU dots per DOT_DEN clocks:
     parameter int          DOT_DEN      = 176,      //   5.369318 MHz from 27 MHz
     parameter int          LEAD_DOTS    = 5,
@@ -43,32 +49,66 @@ module nes #(
     output logic        uart_tx,
     output logic [5:0]  led,
 
-    output logic        sd_cke,
-    output logic        sd_cs_n,
-    output logic        sd_ras_n,
-    output logic        sd_cas_n,
-    output logic        sd_we_n,
-    output logic [1:0]  sd_ba,
-    output logic [10:0] sd_addr,
-    output logic [3:0]  sd_dqm,
-    output logic [31:0] sd_dq_o,
-    output logic        sd_dq_oe,
-    input  logic [31:0] sd_dq_i
+    // The board's memory, as memory/sdram's user port.
+    output logic        mem_req,
+    output logic        mem_we,
+    output logic [22:0] mem_addr,
+    output logic [7:0]  mem_wdata,
+    input  logic        mem_ack,
+    input  logic [7:0]  mem_rdata,
+    input  logic        mem_ready
 );
     logic rst;
     por u_por (.clk, .rst);
 
-    // ---- Test shell ----
-    logic [31:0] s_addr;
-    logic        s_req, s_we, s_ack;
-    logic [7:0]  s_wdata, s_rdata;
+    // ---- Test shell, and the save-state controller ----
+    // Both master the system's bus (s_*); the controller takes it for a
+    // command's walk once the shell has no access in flight, and the shell's
+    // next access waits until the walk is done.
+    logic [31:0] t_addr, s_addr;
+    logic        t_req, t_we, t_ack, s_req, s_we, s_ack;
+    logic [7:0]  t_wdata, t_rdata, s_wdata, s_rdata;
     logic        crc_error, timeout;
 
     test_shell #(.CLKS_PER_BIT(CLKS_PER_BIT), .IDLE_CLKS(IDLE_CLKS), .BUILD_ID(BUILD_ID)) u_shell (
         .clk, .rst, .uart_rx, .uart_tx,
-        .bus_addr(s_addr), .bus_req(s_req), .bus_we(s_we), .bus_wdata(s_wdata),
-        .bus_ack(s_ack), .bus_rdata(s_rdata),
+        .bus_addr(t_addr), .bus_req(t_req), .bus_we(t_we), .bus_wdata(t_wdata),
+        .bus_ack(t_ack), .bus_rdata(t_rdata),
         .crc_error, .timeout);
+
+    // The regions a save state walks, in order: the CPU's, PPU's and system's
+    // state words, RAM, PRG RAM, CHR and the nametable RAM. 20,920 bytes.
+    localparam int SS_REGIONS = 7;
+    localparam logic [SS_REGIONS*32-1:0] SS_BASES = {
+        32'h03004000, 32'h03000000, 32'h02006000, 32'h02000000, 32'h04002000, 32'h04001000, 32'h04000000};
+    localparam logic [SS_REGIONS*32-1:0] SS_LENS = {
+        32'd2048, 32'd8192, 32'd8192, 32'd2048, 32'd20, 32'd404, 32'd16};
+
+    logic [7:0]  ss_cmd, ss_done, ss_hq;
+    logic        ss_busy, ss_hold_req, ss_hold_frame, ss_ready, ss_own;
+    logic        b_req, b_we, b_ack;
+    logic [31:0] b_addr;
+    logic [7:0]  b_wdata;
+    wire         sel_ssbuf;
+    wire         ss_hwe;
+
+    save_state_ctrl #(.NREG(SS_REGIONS), .BASES(SS_BASES), .LENS(SS_LENS), .AW(15)) u_ss (
+        .clk, .rst,
+        .cmd(ss_cmd), .done(ss_done), .busy(ss_busy),
+        .hold(ss_hold_req), .hold_frame(ss_hold_frame), .ready(ss_ready),
+        .b_req, .b_we, .b_addr, .b_wdata, .b_ack, .b_rdata(s_rdata),
+        .h_addr(s_addr[14:0]), .h_we(ss_hwe), .h_wdata(s_wdata), .h_rdata(ss_hq));
+
+    always_ff @(posedge clk)
+        ss_own <= !rst && ss_busy && (ss_own || !t_req);
+
+    assign s_addr  = ss_own ? b_addr : t_addr;
+    assign s_req   = ss_own ? b_req : t_req;
+    assign s_we    = ss_own ? b_we : t_we;
+    assign s_wdata = ss_own ? b_wdata : t_wdata;
+    assign b_ack   = ss_own && s_ack;
+    assign t_ack   = !ss_own && s_ack;
+    assign t_rdata = s_rdata;
 
     wire s_new     = s_req && !s_ack;
     wire sel_sdram = s_addr[31:23] == 9'h000;
@@ -77,6 +117,7 @@ module nes #(
     wire sel_vram  = s_addr[31:24] == 8'h03;
     wire sel_state = s_addr[31:24] == 8'h04;
     wire sel_probe = s_addr[31:24] == 8'h05;
+    assign sel_ssbuf = s_addr[31:24] == 8'h06;
 
     // ---- Control registers ----
     logic        ctrl_run, ctrl_reset, mirror_v, chr_ram;
@@ -91,7 +132,9 @@ module nes #(
     logic [7:0]  cap_line;
 
     // ---- Clock enables ----
-    // dot_slot: the clock before a dot, when the PPU's video memory reads.
+    // dot_slot, then v_hold: the two clocks before a dot, when the PPU has its
+    // video memory: it reads on dot_slot and the data holds through the dot,
+    // so the PPU's next-dot logic gets a clock to settle on it.
     // ppu_ce: the dot. reg_ce: the PPU register access, the clock after the
     // CPU cycle's second dot. ce (state C_END): the CPU cycle's end, the clock
     // after its third dot. C_START: the next cycle's first clock, or the
@@ -99,23 +142,28 @@ module nes #(
     typedef enum logic [1:0] {C_LEAD, C_START, C_RUN, C_END} cstate_t;
 
     cstate_t    cs;
-    logic       go, sys_rst, sd_ready, halted, cap_held;
-    logic       dot_slot, ppu_ce, reg_ce, ce, cyc_start;
+    logic       go, sys_rst, halted, cap_held, ss_hold;
+    logic       dot_slot, v_hold, ppu_ce, reg_ce, ce, cyc_start;
     logic [1:0] dn;    // dots so far in this CPU cycle
     logic [2:0] lead;
 
     // Stops are levels, so raising a limit runs on from where it stopped.
     assign stopped   = (stop_at != '0 && cycles >= stop_at) || (stop_frame != '0 && frames >= stop_frame);
     assign sys_rst   = rst || ctrl_reset;
-    assign go        = ctrl_run && !ctrl_reset && !stopped && sd_ready && !cap_held;
+    assign go        = ctrl_run && !ctrl_reset && !stopped && mem_ready && !cap_held && !ss_hold;
     assign cyc_start = cs == C_START && go;
     assign ce        = cs == C_END;
 
     clock_enable #(.NUM(DOT_NUM), .DEN(DOT_DEN)) u_dot (
         .clk, .rst(sys_rst), .en(cs == C_RUN || cs == C_END || go), .ce(dot_slot));
 
+    logic        st_we_cpu, st_we_ppu, st_we_sys;  // save-state writes, below
+    logic [2:0]  st_sys_w;
+    logic [31:0] st_wdata;
+
     always_ff @(posedge clk) begin
-        ppu_ce <= dot_slot;
+        v_hold <= dot_slot;
+        ppu_ce <= v_hold;
         reg_ce <= ppu_ce && cs == C_RUN && dn == 2'd1;
         case (cs)
             C_LEAD:
@@ -138,7 +186,12 @@ module nes #(
             default:
                 cs <= C_START;
         endcase
+        if (st_we_sys && st_sys_w == 3'd4) begin
+            cs   <= cstate_t'(st_wdata[5:4]);
+            lead <= st_wdata[8:6];
+        end
         if (sys_rst) begin
+            v_hold <= 1'b0;
             ppu_ce <= 1'b0;
             reg_ce <= 1'b0;
             cs     <= LEAD_DOTS == 0 ? C_START : C_LEAD;
@@ -157,9 +210,6 @@ module nes #(
     logic [15:0] dbg_pc;
     logic [7:0]  dbg_a, dbg_x, dbg_y, dbg_s, dbg_p;
     /* verilator lint_on UNUSEDSIGNAL */
-
-    logic        st_we_cpu, st_we_ppu;
-    logic [31:0] st_wdata;
 
     cpu_6502 #(.DECIMAL(0)) u_cpu (
         .clk, .rst(sys_rst), .ce,
@@ -232,6 +282,10 @@ module nes #(
                 dma_have <= 1'b0;
             end
         end
+        if (st_we_sys && st_sys_w == 3'd3)
+            {dma_page, dma_idx, dma_data} <= st_wdata[31:8];
+        if (st_we_sys && st_sys_w == 3'd4)
+            {dma_have, dma_on, dma_req} <= st_wdata[2:0];
         if (sys_rst) begin
             dma_req  <= 1'b0;
             dma_on   <= 1'b0;
@@ -270,7 +324,8 @@ module nes #(
         .st_addr(s_addr[8:2]), .st_rdata(ppu_st_rdata), .st_we(st_we_ppu), .st_wdata);
 
     // ---- CHR and nametables, shared with the shell ----
-    // The PPU has the port on each dot_slot clock; the shell has the others.
+    // The PPU has the port on each dot_slot and v_hold clock, reading on both
+    // so the data holds, and writing on dot_slot; the shell has the others.
     logic [7:0]  chr[8192];
     logic [7:0]  ciram[2048];
     logic [7:0]  chr_q, ciram_q, sh_v_data;
@@ -279,29 +334,34 @@ module nes #(
     logic [7:0]  va_wdata;
     logic        sh_v_issue, sh_v_wait, sh_v_ack;
 
-    assign sh_v_issue = !dot_slot && s_new && sel_vram && !sh_v_wait && !sh_v_ack;
+    assign sh_v_issue = !dot_slot && !v_hold && s_new && sel_vram && !sh_v_wait && !sh_v_ack;
+
+    logic va_raw;  // the shell's view of the nametable RAM as it is, unmirrored
 
     always_comb
-        if (dot_slot) begin
+        if (dot_slot || v_hold) begin
             va       = vaddr;
-            va_we    = vwe && (vaddr[13] || chr_ram);
+            va_raw   = 1'b0;
+            va_we    = dot_slot && vwe && (vaddr[13] || chr_ram);
             va_wdata = vwdata;
         end else begin
             va       = s_addr[13:0];
+            va_raw   = s_addr[14];
             va_we    = sh_v_issue && s_we;
             va_wdata = s_wdata;
         end
 
-    wire [10:0] ci_a = {mirror_v ? va[10] : va[11], va[9:0]};
+    wire        va_ci = va[13] || va_raw;
+    wire [10:0] ci_a  = va_raw ? va[10:0] : {mirror_v ? va[10] : va[11], va[9:0]};
 
     always_ff @(posedge clk) begin
-        if (va_we && !va[13])
+        if (va_we && !va_ci)
             chr[va[12:0]] <= va_wdata;
-        if (va_we && va[13])
+        if (va_we && va_ci)
             ciram[ci_a] <= va_wdata;
         chr_q   <= chr[va[12:0]];
         ciram_q <= ciram[ci_a];
-        va_ci_q <= va[13];
+        va_ci_q <= va_ci;
     end
 
     assign vrdata = va_ci_q ? ciram_q : chr_q;
@@ -322,49 +382,37 @@ module nes #(
         end
     end
 
-    // ---- SDRAM: the CPU's PRG reads first, then the shell ----
-    logic        sd_req, sd_we, sd_ack;
-    logic [22:0] sd_a;
-    logic [7:0]  sd_wdata, sd_rdata;
-    logic        cpu_sd_pend;   // this cycle's PRG read is waiting for SDRAM
+    // ---- The board's memory: the CPU's PRG reads first, then the shell ----
+    logic        cpu_sd_pend;   // this cycle's PRG read is waiting for memory
     logic [7:0]  cpu_sd_data;
-    logic [1:0]  grant;         // 0 none, 1 CPU, 2 shell: held until ack
-    logic        sh_sd_ack;
+    logic        sh_sd_ack;     // the shell's access is done: acknowledge it a clock later
+    logic [7:0]  sd_rdata_q;    // with its read data, held
     logic [14:0] prg_a;
+    logic [1:0]  a_ack;
+    logic [7:0]  a_rdata;
 
-    sdram_ctrl #(.FREQ_MHZ(FREQ_MHZ)) u_sdram (
+    mem_arbiter #(.N(2), .AW(23)) u_arb (
         .clk, .rst,
-        .req(sd_req), .we(sd_we), .addr(sd_a), .wdata(sd_wdata),
-        .ack(sd_ack), .rdata(sd_rdata), .ready(sd_ready),
-        .sd_cke, .sd_cs_n, .sd_ras_n, .sd_cas_n, .sd_we_n, .sd_ba, .sd_addr, .sd_dqm,
-        .sd_dq_o, .sd_dq_oe, .sd_dq_i);
-
-    assign sd_req   = grant != 2'd0;
-    assign sd_we    = grant == 2'd2 && s_we;
-    assign sd_a     = grant == 2'd1 ? {8'b0, prg_a} & prg_mask : s_addr[22:0];
-    assign sd_wdata = s_wdata;
+        .c_req({s_new && sel_sdram, cpu_sd_pend}), .c_we({s_we, 1'b0}),
+        .c_addr({s_addr[22:0], {8'b0, prg_a} & prg_mask}), .c_wdata({s_wdata, 8'h00}),
+        .c_ack(a_ack), .c_rdata(a_rdata),
+        .m_req(mem_req), .m_we(mem_we), .m_addr(mem_addr), .m_wdata(mem_wdata),
+        .m_ack(mem_ack), .m_rdata(mem_rdata));
 
     always_ff @(posedge clk) begin
-        sh_sd_ack <= 1'b0;
+        sh_sd_ack <= a_ack[1];
+        if (a_ack[1])
+            sd_rdata_q <= a_rdata;
         if (cyc_start && !bus_we && c_prg && !c_vec) begin
             cpu_sd_pend <= 1'b1;
             prg_a       <= bus_addr[14:0];
         end
-        if (grant == 2'd0 && !sd_ack) begin
-            if (cpu_sd_pend)
-                grant <= 2'd1;
-            else if (s_new && sel_sdram)
-                grant <= 2'd2;
-        end else if (sd_ack) begin
-            grant <= 2'd0;
-            if (grant == 2'd1) begin
-                cpu_sd_data <= sd_rdata;
-                cpu_sd_pend <= 1'b0;
-            end else
-                sh_sd_ack <= 1'b1;
+        if (a_ack[0]) begin
+            cpu_sd_data <= a_rdata;
+            cpu_sd_pend <= 1'b0;
         end
         if (rst) begin
-            grant       <= 2'd0;
+            sh_sd_ack   <= 1'b0;
             cpu_sd_pend <= 1'b0;
         end
     end
@@ -453,7 +501,8 @@ module nes #(
     logic [31:0] tr;
     logic [2:0]  tr_n;
 
-    crc32 u_trace (.clk, .rst(sys_rst), .en(tr_n != '0), .data(tr[7:0]), .crc(trace_crc));
+    crc32 u_trace (.clk, .rst(sys_rst), .en(tr_n != '0), .data(tr[7:0]), .crc(trace_crc),
+                   .st_we(st_we_sys && st_sys_w == 3'd2), .st_wdata);
 
     always_ff @(posedge clk) begin
         if (tr_n != '0) begin
@@ -470,6 +519,14 @@ module nes #(
         end
         if (frame_end)
             frames <= frames + 1'b1;
+        if (st_we_sys)
+            case (st_sys_w)
+                3'd0: cycles   <= st_wdata;
+                3'd1: frames   <= st_wdata;
+                3'd3: open_bus <= st_wdata[7:0];
+                3'd4: late     <= st_wdata[3];
+                default: ;
+            endcase
         if (sys_rst) begin
             tr_n     <= '0;
             cycles   <= '0;
@@ -492,27 +549,61 @@ module nes #(
         .cap_en, .cap_frame, .cap_line, .cap_held,
         .buf_raddr(s_addr[8:1]), .buf_rdata);
 
-    // ---- Save state and probe reads: registered, so two clocks ----
+    // ---- Save state, probe and save-state buffer reads: registered, so three clocks ----
+    // A state word goes through a register of its own before its byte is
+    // picked: the PPU's word is a wide mux, and this keeps it off 50 MHz's
+    // critical path.
     // A state word is written when its byte 3 is: bytes 0-2 go to a staging
     // word first. Writes count only while the system is held in reset or
-    // stopped between cycles.
+    // stopped between cycles; the system's own words only out of reset.
+    //
+    // The system's own state words (0x04002000):
+    //   0 CPU cycles, 1 frames, 2 the trace CRC,
+    //   3 {DMA page, DMA index, DMA byte, open bus},
+    //   4 {lead dots [8:6], cycle state [5:4], late, DMA byte held, DMA on, DMA requested}.
+    // Pipelines that drain within a few clocks of a stop (the trace CRC's
+    // bytes) have drained before a save state's walk starts.
     logic [23:0] st_stage;
     logic [1:0]  sp_wait;
     logic [7:0]  sp_q;
     logic        sp_ack;
-    wire         sp_issue = s_new && (sel_state || sel_probe) && sp_wait == '0 && !sp_ack;
+    logic [31:0] sys_st, st_q;
+    wire         sp_issue = s_new && (sel_state || sel_probe || sel_ssbuf) && sp_wait == '0 && !sp_ack;
     wire         paused   = ctrl_reset || ((cs == C_START || cs == C_LEAD) && !go);
-    wire         st_ppu   = s_addr[12];
+    wire  [1:0]  st_sel   = s_addr[13:12];  // CPU, PPU, the system's
     wire         st_commit = sp_issue && sel_state && s_we && paused && s_addr[1:0] == 2'd3;
 
     assign st_wdata  = {s_wdata, st_stage};
-    assign st_we_cpu = st_commit && !st_ppu && s_addr[11:4] == '0;
-    assign st_we_ppu = st_commit && st_ppu && s_addr[11:9] == '0;
+    assign st_we_cpu = st_commit && st_sel == 2'd0 && s_addr[11:4] == '0;
+    assign st_we_ppu = st_commit && st_sel == 2'd1 && s_addr[11:9] == '0;
+    assign st_we_sys = st_commit && st_sel == 2'd2 && s_addr[11:5] == '0 && s_addr[4:2] <= 3'd4;
+    assign st_sys_w  = s_addr[4:2];
+    assign ss_hwe    = sp_issue && sel_ssbuf && s_we && !ss_busy;
+
+    always_comb
+        case (s_addr[4:2])
+            3'd0:    sys_st = cycles;
+            3'd1:    sys_st = frames;
+            3'd2:    sys_st = trace_crc;
+            3'd3:    sys_st = {dma_page, dma_idx, dma_data, open_bus};
+            3'd4:    sys_st = {23'b0, lead, cs, late, dma_have, dma_on, dma_req};
+            default: sys_st = '0;
+        endcase
+
+    // A save state stops the system at its next frame boundary, or where it
+    // stands if it's already stopped; a load stops it at once.
+    always_ff @(posedge clk)
+        if (rst || !ss_hold_req)
+            ss_hold <= 1'b0;
+        else if (!ss_hold_frame || frame_end || paused)
+            ss_hold <= 1'b1;
+
+    assign ss_ready = ss_hold && paused && !ctrl_reset && tr_n == '0;
 
     always_ff @(posedge clk) begin
         sp_ack <= sp_wait == 2'd1 && !rst;
         if (sp_issue)
-            sp_wait <= 2'd2;
+            sp_wait <= 2'd3;
         else if (sp_wait != '0)
             sp_wait <= sp_wait - 2'd1;
         if (sp_issue && sel_state && s_we)
@@ -522,10 +613,18 @@ module nes #(
                 2'd2: st_stage[23:16] <= s_wdata;
                 default: ;
             endcase
+        if (sp_wait == 2'd2)
+            case (st_sel)
+                2'd0:    st_q <= s_addr[11:4] == '0 ? cpu_st_rdata : '0;
+                2'd1:    st_q <= s_addr[11:9] == '0 ? ppu_st_rdata : '0;
+                2'd2:    st_q <= s_addr[11:5] == '0 ? sys_st : '0;
+                default: st_q <= '0;
+            endcase
         if (sp_wait == 2'd1) begin
-            if (sel_state)
-                sp_q <= st_ppu ? (s_addr[11:9] == '0 ? ppu_st_rdata[8*s_addr[1:0] +: 8] : '0)
-                               : (s_addr[11:4] == '0 ? cpu_st_rdata[8*s_addr[1:0] +: 8] : '0);
+            if (sel_ssbuf)
+                sp_q <= s_addr[23:15] == '0 ? ss_hq : '0;
+            else if (sel_state)
+                sp_q <= st_q[8*s_addr[1:0] +: 8];
             else if (!s_addr[12])
                 sp_q <= s_addr[11:10] == '0 ? line_rdata[8*s_addr[1:0] +: 8] : '0;
             else
@@ -569,6 +668,7 @@ module nes #(
                 8'h33: cap_frame[31:24]  <= s_wdata;
                 8'h34: cap_line          <= s_wdata;
                 8'h35: cap_en            <= s_wdata[0];
+                8'h38: ss_cmd            <= s_wdata;
                 default: ;
             endcase
         case (r)
@@ -615,6 +715,8 @@ module nes #(
             8'h33:   reg_q <= cap_frame[31:24];
             8'h34:   reg_q <= cap_line;
             8'h35:   reg_q <= {7'b0, cap_en};
+            8'h38:   reg_q <= ss_cmd;
+            8'h39:   reg_q <= ss_done;
             default: reg_q <= '0;
         endcase
         if (rst) begin
@@ -628,19 +730,16 @@ module nes #(
             mirror_v   <= 1'b0;
             chr_ram    <= 1'b0;
             cap_en     <= 1'b0;
+            ss_cmd     <= '0;
         end
     end
 
     // Accesses outside the map are acknowledged at once: writes vanish, reads give 0.
     logic       none_ack;
-    logic [7:0] sd_rdata_q;  // the SDRAM's read data, held for the shell's acknowledge a clock later
 
     always_ff @(posedge clk)
-        if (sd_ack)
-            sd_rdata_q <= sd_rdata;
-
-    always_ff @(posedge clk)
-        none_ack <= s_new && !(sel_sdram || sel_reg || sel_mem || sel_vram || sel_state || sel_probe) && !none_ack && !rst;
+        none_ack <= s_new && !(sel_sdram || sel_reg || sel_mem || sel_vram || sel_state || sel_probe || sel_ssbuf)
+                    && !none_ack && !rst;
 
     assign s_ack = sh_sd_ack || sh_m_ack || sh_v_ack || sp_ack || reg_ack || none_ack;
     always_comb
@@ -674,5 +773,5 @@ module nes #(
             beat <= beat + 1'b1;
         end
 
-    assign led = ~{beat[24], halted || late, running, sd_ready, saw_timeout, saw_crc_error};
+    assign led = ~{beat[24], halted || late, running, mem_ready, saw_timeout, saw_crc_error};
 endmodule

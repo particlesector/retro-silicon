@@ -14,6 +14,7 @@
 #include "golden.hpp"
 #include "rig/ines.hpp"
 #include "rig/nes.hpp"
+#include "rig/shell.hpp"
 #include "rig/sim_systems.hpp"
 
 namespace {
@@ -72,9 +73,9 @@ TEST_CASE("iNES parsing rejects files that aren't ROMs or are cut short") {
 
 namespace {
 
-// Runs a ROM from harness/golden/nes_frames_crc32.txt in the sim to its golden
-// frame: it must pass its own check and show MesenCE's frame.
-void matches_mesen(const std::string& id) {
+// A ROM from harness/golden/nes_frames_crc32.txt, or a skip if the test
+// ROMs haven't been fetched.
+std::pair<rig::nes::GoldenRom, rig::NesRom> golden_rom(const std::string& id) {
     auto golden = rig::nes::load_golden_roms(RS_NES_FRAMES_GOLDEN);
     auto g = std::find_if(golden.begin(), golden.end(), [&](auto& x) { return x.check.id == id; });
     REQUIRE(g != golden.end());
@@ -82,17 +83,92 @@ void matches_mesen(const std::string& id) {
     if (!std::filesystem::exists(path)) SKIP(path << " not found: run testroms/fetch.py");
     auto rom = rig::load_ines(path);
     REQUIRE(std::holds_alternative<rig::NesRom>(rom));
-    auto link = rig::make_nes_sim();
-    auto r = rig::nes::rom_test(*link, g->check, std::get<rig::NesRom>(rom), g->frames, RS_NES_BUILD_ID);
+    return {*g, std::get<rig::NesRom>(rom)};
+}
+
+// Runs a ROM in the sim to its golden frame: it must pass its own check and
+// show MesenCE's frame. `bram` runs it as the Tang Console 138K does.
+void matches_mesen(const std::string& id, bool bram = false) {
+    auto [g, rom] = golden_rom(id);
+    auto link = bram ? rig::make_nes_bram_sim() : rig::make_nes_sim();
+    auto r = rig::nes::rom_test(*link, g.check, rom, g.frames, bram ? RS_NES_BRAM_BUILD_ID : RS_NES_BUILD_ID);
     INFO(r.detail << " / " << r.notes);
     CHECK(r.passed);
-    CHECK(r.crc32 == g->crc);
+    CHECK(r.crc32 == g.crc);
 }
 
 } // namespace
 
 #define MATCHES_MESEN(id) \
     TEST_CASE(id " passes in the sim and its frame matches MesenCE's") { matches_mesen(id); }
+
+// The same on block RAM at a 50 MHz clock's rates, as the Tang Console 138K
+// runs it: a few ROMs whose timing is the most sensitive.
+#define MATCHES_MESEN_BRAM(id) \
+    TEST_CASE(id " matches MesenCE's frame on block RAM at 50 MHz") { matches_mesen(id, true); }
+
+MATCHES_MESEN_BRAM("oam_read")
+MATCHES_MESEN_BRAM("ppu_vbl_nmi-10")
+MATCHES_MESEN_BRAM("sprite_hit-09")
+MATCHES_MESEN_BRAM("nmi_sync")
+
+TEST_CASE("a save-state round trip gives the uninterrupted run's frames, trace and cycles") {
+    for (const char* id : {"nmi_sync", "sprite_overflow-3"}) {
+        auto [g, rom] = golden_rom(id);
+        auto link = rig::make_nes_sim();
+        auto r = rig::nes::state_test(*link, rom, g.frames / 3, g.frames, RS_NES_BUILD_ID);
+        INFO(id << ": " << r.detail << " / " << r.notes);
+        CHECK(r.passed);
+        CHECK(r.crc32 == g.crc);
+    }
+}
+
+TEST_CASE("a state saved on SDRAM at 27 MHz finishes the same on block RAM at 50 MHz") {
+    auto [g, rom] = golden_rom("sprite_hit-09");
+    auto a = rig::make_nes_sim();
+    rig::shell::Client ca(*a);
+    rig::nes::Console na(ca);
+    na.hold_reset();
+    REQUIRE_FALSE(na.load(rom));
+    na.set_vector(std::nullopt);
+    na.stop_frame(g.frames / 2);
+    na.run();
+    na.wait_stopped();
+    auto state = na.save_state();
+    uint32_t trace_a = na.trace_crc();
+
+    auto b = rig::make_nes_bram_sim();
+    rig::shell::Client cb(*b);
+    rig::nes::Console nb(cb);
+    nb.hold_reset();
+    REQUIRE_FALSE(nb.load(rom));  // PRG, CHR and the cartridge registers aren't part of a state
+    nb.load_state(state);
+    CHECK(nb.frames() == g.frames / 2);
+    CHECK(nb.trace_crc() == trace_a);
+    nb.stop_frame(g.frames);
+    nb.run();
+    uint8_t st = nb.wait_stopped();
+    CHECK((st & (rig::nes::kHalted | rig::nes::kLate)) == 0);
+    auto crc = nb.frame_crc();
+    REQUIRE(crc);
+    CHECK(crc->first == g.crc);
+    CHECK(crc->second == g.frames - 1);
+}
+
+TEST_CASE("nestest on block RAM at 50 MHz has the CPU bench's trace CRC") {
+    std::string path = std::string(RS_TESTROMS) + "/nes-test-roms/other/nestest.nes";
+    if (!std::filesystem::exists(path)) SKIP(path << " not found: run testroms/fetch.py");
+    auto golden = golden_crcs(RS_NES_TRACE_GOLDEN);
+    auto it = golden.find({rig::nes::kNestestCycles, 0});
+    REQUIRE(it != golden.end());
+    auto rom = rig::load_ines(path);
+    REQUIRE(std::holds_alternative<rig::NesRom>(rom));
+    auto link = rig::make_nes_bram_sim();
+    auto r = rig::nes::nestest(*link, std::get<rig::NesRom>(rom), rig::nes::kNestestCycles, RS_NES_BRAM_BUILD_ID);
+    INFO(r.detail << " / " << r.notes);
+    REQUIRE(r.passed);
+    REQUIRE(r.crc32 == it->second);
+}
 
 MATCHES_MESEN("ppu_open_bus")
 MATCHES_MESEN("oam_read")
@@ -151,4 +227,18 @@ TEST_CASE("nestest passes on the sim backend with the CPU bench's trace CRC") {
     INFO(r.detail << " / " << r.notes);
     REQUIRE(r.passed);
     REQUIRE(r.crc32 == it->second);
+}
+
+TEST_CASE("a test after nestest on the same system isn't held by the limits nestest left") {
+    std::string path = std::string(RS_TESTROMS) + "/nes-test-roms/other/nestest.nes";
+    if (!std::filesystem::exists(path)) SKIP(path << " not found: run testroms/fetch.py");
+    auto nestest_rom = rig::load_ines(path);
+    REQUIRE(std::holds_alternative<rig::NesRom>(nestest_rom));
+    auto [g, rom] = golden_rom("oam_read");
+    auto link = rig::make_nes_sim();  // one system for both, as on a board
+    REQUIRE(rig::nes::nestest(*link, std::get<rig::NesRom>(nestest_rom), rig::nes::kNestestCycles, RS_NES_BUILD_ID).passed);
+    auto r = rig::nes::rom_test(*link, g.check, rom, g.frames, RS_NES_BUILD_ID);
+    INFO(r.detail << " / " << r.notes);
+    CHECK(r.passed);
+    CHECK(r.crc32 == g.crc);
 }

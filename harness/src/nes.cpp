@@ -50,6 +50,12 @@ std::optional<std::string> Console::load(const NesRom& rom) {
     if (!rom.chr.empty() && rom.chr.size() != 8192)
         return "NROM needs 8 KB of CHR, not " + std::to_string(rom.chr.size());
     if (rom.mirroring == NesRom::Mirroring::kFourScreen) return "four-screen mirroring isn't supported";
+    // Whatever ran before may have left limits, the vector override or a
+    // capture set: start from none.
+    stop_at(0);
+    stop_frame(0);
+    set_vector(std::nullopt);
+    put32(kCapEn, 0, 1);
     c_.write(kSdram, rom.prg);
     Crc32 want;
     want.update(rom.prg);
@@ -116,6 +122,44 @@ Frame Console::capture(uint32_t index) {
     }
     put32(kCapEn, 0, 1);
     return f;
+}
+
+uint8_t Console::wait_stopped() {
+    uint32_t last = 0;
+    int still = 0;
+    for (;;) {
+        uint8_t st = status();
+        if (st & (kStopped | kHalted)) return st;
+        uint32_t now = cycles();
+        still = now == last ? still + 1 : 0;
+        last = now;
+        if (still > 50) throw RigError("the CPU stopped counting cycles at " + std::to_string(now));
+    }
+}
+
+void Console::save_cmd(uint8_t op) {
+    // The next sequence number: the shell may resend the write, which repeats
+    // the same command, which the controller ignores.
+    uint8_t prev = c_.peek(kRegs + kSaveCmd, 1)[0];
+    uint8_t cmd = static_cast<uint8_t>(op << 6 | ((prev + 1) & 0x3F));
+    put32(kSaveCmd, cmd, 1);
+    for (int n = 0; c_.peek(kRegs + kSaveDone, 1)[0] != cmd; n++)
+        if (n > 1000) throw RigError("the save-state controller never finished");
+}
+
+std::vector<uint8_t> Console::save_state() {
+    if (c_.peek(kRegs + kCtrl, 1)[0] & 2) throw RigError("save_state with the system held in reset");
+    save_cmd(1);
+    return c_.read(kSaveBuffer, kSaveStateBytes);
+}
+
+void Console::load_state(const std::vector<uint8_t>& state) {
+    if (state.size() != kSaveStateBytes)
+        throw RigError("a save state is " + std::to_string(kSaveStateBytes) + " bytes, not " +
+                       std::to_string(state.size()));
+    put32(kCtrl, 0, 1);  // out of reset, and stopped where the state leaves it
+    c_.write(kSaveBuffer, state);
+    save_cmd(2);
 }
 
 TestResult nestest(Link& link, const NesRom& rom, uint32_t cycles, std::optional<uint32_t> build_id) {
@@ -221,18 +265,7 @@ TestResult rom_test(Link& link, const RomCheck& check, const NesRom& rom, uint32
         nes.set_vector(std::nullopt);
         nes.stop_frame(frames);
         nes.run();
-
-        uint8_t st = 0;
-        uint32_t last = 0;
-        int still = 0;
-        for (;;) {
-            st = nes.status();
-            if (st & (kStopped | kHalted)) break;
-            uint32_t now = nes.cycles();
-            still = now == last ? still + 1 : 0;
-            last = now;
-            if (still > 50) return finish("the CPU stopped counting cycles at " + std::to_string(now));
-        }
+        uint8_t st = nes.wait_stopped();
         auto crc = nes.frame_crc();
         if (crc) r.crc32 = crc->first;
         r.notes = std::to_string(nes.frames()) + " frames, " + std::to_string(nes.cycles()) + " CPU cycles";
@@ -262,6 +295,90 @@ TestResult rom_test(Link& link, const RomCheck& check, const NesRom& rom, uint32
         if (!crc || crc->second != frames - 1)
             return finish("no CRC for frame " + std::to_string(frames - 1));
         return finish(fail.value_or(""));
+    } catch (const shell::StatusError& e) {
+        return finish(e.what());
+    }
+}
+
+TestResult state_test(Link& link, const NesRom& rom, uint32_t save_after, uint32_t frames,
+                      std::optional<uint32_t> build_id) {
+    TestResult r;
+    r.name = "savestate";
+    auto t0 = std::chrono::steady_clock::now();
+    shell::Client client(link);
+    Console nes(client);
+
+    auto finish = [&](std::string detail) {
+        r.passed = detail.empty();
+        r.detail = std::move(detail);
+        r.seconds = std::chrono::duration<double>(std::chrono::steady_clock::now() - t0).count();
+        if (!r.notes.empty()) r.notes += "; ";
+        r.notes += std::to_string(client.stats.commands) + " commands in " + std::to_string(client.stats.attempts) +
+                   " attempts";
+        return r;
+    };
+
+    struct End {
+        uint32_t crc, trace, cycles;
+        std::vector<uint32_t> lines;
+    };
+    auto end = [&]() -> std::optional<End> {
+        uint8_t st = nes.wait_stopped();
+        auto crc = nes.frame_crc();
+        if ((st & (kHalted | kLate)) || !crc || crc->second != frames - 1) return std::nullopt;
+        return End{crc->first, nes.trace_crc(), nes.cycles(), nes.line_crcs()};
+    };
+
+    try {
+        auto info = client.info();
+        if (info.version != shell::kVersion)
+            return finish("shell protocol version " + std::to_string(info.version) + ", expected " +
+                          std::to_string(shell::kVersion));
+        if (build_id && info.build_id != *build_id)
+            return finish("build ID " + hex(info.build_id, 8) + ", expected " + hex(*build_id, 8) +
+                          ": the wrong bitstream is loaded");
+
+        // Uninterrupted.
+        nes.hold_reset();
+        if (auto e = nes.load(rom)) return finish(*e);
+        nes.set_vector(std::nullopt);
+        nes.stop_frame(frames);
+        nes.run();
+        auto a = end();
+        if (!a) return finish("the uninterrupted run didn't reach frame " + std::to_string(frames - 1) + " cleanly");
+
+        // Saved while running, run on, power-cycled, restored.
+        nes.hold_reset();
+        if (auto e = nes.load(rom)) return finish(*e);
+        nes.stop_frame(0);
+        nes.run();
+        for (int n = 0; nes.frames() < save_after; n++)
+            if (n > 100'000) return finish("never reached frame " + std::to_string(save_after));
+        auto state = nes.save_state();
+        uint32_t at = state[16 + 404 + 4] | state[16 + 404 + 5] << 8 | state[16 + 404 + 6] << 16 |
+                      static_cast<uint32_t>(state[16 + 404 + 7]) << 24;  // the system's word 1: frames
+        if (at >= frames) return finish("saved at frame " + std::to_string(at) + ", past the end");
+        for (int n = 0; nes.frames() < at + 3; n++)  // run on past it
+            if (n > 100'000) return finish("stopped running after the save");
+        nes.hold_reset();
+        if (auto e = nes.load(rom)) return finish(*e);
+        nes.load_state(state);
+        if (nes.frames() != at) return finish("restored to frame " + std::to_string(nes.frames()) + ", not " + std::to_string(at));
+        nes.stop_frame(frames);
+        nes.run();
+        auto b = end();
+        if (!b) return finish("the restored run didn't reach frame " + std::to_string(frames - 1) + " cleanly");
+
+        r.crc32 = b->crc;
+        r.bytes = state.size();
+        r.notes = "saved at frame " + std::to_string(at) + " of " + std::to_string(frames) + ", " +
+                  std::to_string(b->cycles) + " CPU cycles; trace " + hex(b->trace, 8);
+        if (b->crc != a->crc) return finish("last frame CRC " + hex(b->crc, 8) + ", uninterrupted " + hex(a->crc, 8));
+        if (b->lines != a->lines) return finish("line CRCs differ from the uninterrupted run's");
+        if (b->trace != a->trace) return finish("trace CRC " + hex(b->trace, 8) + ", uninterrupted " + hex(a->trace, 8));
+        if (b->cycles != a->cycles)
+            return finish(std::to_string(b->cycles) + " cycles, uninterrupted " + std::to_string(a->cycles));
+        return finish("");
     } catch (const shell::StatusError& e) {
         return finish(e.what());
     }
