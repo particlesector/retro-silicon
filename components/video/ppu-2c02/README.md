@@ -7,8 +7,9 @@ Module `ppu_2c02` (the folder name can't start a module name).
 ## Timing
 
 - **Dots:** one per clock with `ce` high. After reset the PPU sits at line 261, dot 340, so its first dot is line 0, dot 0. Lines 0-239 are visible, 240 is post-render, 241-260 vertical blank, 261 pre-render. With rendering on, odd frames skip the pre-render line's last dot.
-- **CPU registers:** one access per `reg_ce` strobe, between dots (never on a `ce` clock). A read's data is on `reg_rdata` from the clock after the strobe. In a CPU cycle of three dots, MesenCE puts the access after the second dot; `systems/nes` does the same.
-- **Video memory:** `vaddr`, `vwe` and `vwdata` change only on `ce` clocks and hold until the next. The PPU latches `vrdata` on each `ce` clock, so the memory must answer the address presented since the last dot, and perform a write once, before the next dot. The PPU presents each fetch's address a dot early, so every read of a dot lands.
+- **The next dot, registered:** the PPU computes everything the next dot changes on every clock and registers it, and `ce` commits that copy. So the dot logic gets the clocks between dots, not one: `ce` must come at least 2 clocks apart, with the PPU's inputs settled on the clock before each `ce` (no `reg_ce` or `st_we` on it or on the `ce` clock, and `vrdata` already as it will be).
+- **CPU registers:** one access per `reg_ce` strobe, between dots (never on a `ce` clock or the clock before). A read's data is on `reg_rdata` from the clock after the strobe. In a CPU cycle of three dots, MesenCE puts the access after the second dot; `systems/nes` does the same.
+- **Video memory:** `vaddr`, `vwe` and `vwdata` change only on `ce` clocks and hold until the next. The memory must answer the address presented since the last dot on `vrdata` from the clock before the next `ce` through that `ce`, and perform a write once, before then. The PPU presents each fetch's address a dot early, so every read of a dot lands.
 - **Pixels:** pixel x of a line comes out two dots after it's drawn, on a one-clock `pix_valid` pulse. That's when grayscale and emphasis apply, so a $2001 write changes the two pixels before it, as on the 2C02. `pix` is {emphasis blue, green, red, colour}: the index into a 512-entry palette.
 - **Register effects, as on the 2C02:** $2006's second write reaches the address 3 dots later; a $2007 read fills the read buffer, and a $2007 write lands, 5 dots after the access, and the address increments a dot after that. A $2007 read within 6 dots of the last one is ignored. Rendering turns on and off 1 dot after a $2001 write for fetching, and 2 dots after for the scroll counters. Reading $2002 one dot before VBL sets suppresses that frame's VBL flag and NMI.
 
@@ -60,7 +61,9 @@ Planted bugs the ROMs catch: sprite 0 hit allowed at X = 255, VBL set a dot late
 
 Not modelled yet: OAM decay and the row-corruption glitches MesenCE has off by default; the 2C02E's OAM corruption at the pre-render line when OAMADDR isn't 0; sprites on line 0 after an odd frame's skipped dot (MesenCE shifts them a pixel); and sprite units that pause when rendering is turned off mid-line (here they're compared by X). PAL and the arcade PPUs aren't parameters yet.
 
-About 5,800 LUTs, 450 ALU cells and 1,170 flip-flops on a GW2A-18C by Yosys's count, OAM in 66 LUT RAMs; `systems/nes` grew from 4,700 to 11,800 LUTs with it and the video probe. Not optimised yet.
+About 5,800 LUTs, 450 ALU cells and 1,170 flip-flops on a GW2A-18C by Yosys's count, plus 337 flip-flops for the registered next dot; OAM in 66 LUT RAMs. Registering the next dot took the Tang Console 138K's NES build from 49 MHz to 65-72 MHz, and the Tang Nano 20K's from 45 to 70 MHz. Not optimised yet.
+
+In `systems/nes` on a Tang Console 138K at 50 MHz, too, the same 42 test ROMs pass with MesenCE's frames. Planted bug the ROMs catch: `ce` a clock after the memory read instead of two, so the next dot settles on the byte before.
 
 ## References
 
