@@ -38,7 +38,7 @@ source = "nes-test-roms"
 path = "instr_test-v5/all_instrs.nes"
 sha256 = "353870c157242e3d428ef7387109deaee0d2e158bdb432ab9aae4e657072c785"
 needs = "cpu"
-covers = "Every opcode, including the unofficial ones"
+covers = "Every opcode, including the unofficial ones (cpu/6502 stops at the unstable ones for now)"
 check = "blargg"
 frames = 2400
 
