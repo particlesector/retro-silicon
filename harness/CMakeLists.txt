@@ -36,4 +36,5 @@ target_compile_definitions(harness_test PRIVATE
     RS_SHELL_GOLDEN="${CMAKE_CURRENT_SOURCE_DIR}/golden/shell_crc32.txt"
     RS_SDRAM_GOLDEN="${CMAKE_CURRENT_SOURCE_DIR}/golden/sdram_crc32.txt"
     RS_NES_TRACE_GOLDEN="${CMAKE_CURRENT_SOURCE_DIR}/golden/nes_trace_crc32.txt"
+    RS_NES_FRAMES_GOLDEN="${CMAKE_CURRENT_SOURCE_DIR}/golden/nes_frames_crc32.txt"
     RS_TESTROMS="${RS_TESTROMS}")

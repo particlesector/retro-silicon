@@ -3,7 +3,10 @@
 
 #include <algorithm>
 #include <filesystem>
+#include <fstream>
 #include <iterator>
+#include <map>
+#include <sstream>
 #include <string>
 #include <variant>
 #include <vector>
@@ -66,6 +69,73 @@ TEST_CASE("iNES parsing rejects files that aren't ROMs or are cut short") {
     f.resize(f.size() - 1);
     CHECK(std::holds_alternative<std::string>(rig::parse_ines(f)));
 }
+
+namespace {
+
+// Runs a ROM from harness/golden/nes_frames_crc32.txt in the sim to its golden
+// frame: it must pass its own check and show MesenCE's frame.
+void matches_mesen(const std::string& id) {
+    auto golden = rig::nes::load_golden_roms(RS_NES_FRAMES_GOLDEN);
+    auto g = std::find_if(golden.begin(), golden.end(), [&](auto& x) { return x.check.id == id; });
+    REQUIRE(g != golden.end());
+    std::string path = std::string(RS_TESTROMS) + "/nes-test-roms/" + g->path;
+    if (!std::filesystem::exists(path)) SKIP(path << " not found: run testroms/fetch.py");
+    auto rom = rig::load_ines(path);
+    REQUIRE(std::holds_alternative<rig::NesRom>(rom));
+    auto link = rig::make_nes_sim();
+    auto r = rig::nes::rom_test(*link, g->check, std::get<rig::NesRom>(rom), g->frames, RS_NES_BUILD_ID);
+    INFO(r.detail << " / " << r.notes);
+    CHECK(r.passed);
+    CHECK(r.crc32 == g->crc);
+}
+
+} // namespace
+
+#define MATCHES_MESEN(id) \
+    TEST_CASE(id " passes in the sim and its frame matches MesenCE's") { matches_mesen(id); }
+
+MATCHES_MESEN("ppu_open_bus")
+MATCHES_MESEN("oam_read")
+MATCHES_MESEN("ppu_vbl_nmi-01")
+MATCHES_MESEN("ppu_vbl_nmi-02")
+MATCHES_MESEN("ppu_vbl_nmi-03")
+MATCHES_MESEN("ppu_vbl_nmi-04")
+MATCHES_MESEN("ppu_vbl_nmi-05")
+MATCHES_MESEN("ppu_vbl_nmi-06")
+MATCHES_MESEN("ppu_vbl_nmi-07")
+MATCHES_MESEN("ppu_vbl_nmi-08")
+MATCHES_MESEN("ppu_vbl_nmi-09")
+MATCHES_MESEN("ppu_vbl_nmi-10")
+MATCHES_MESEN("sprite_hit-01")
+MATCHES_MESEN("sprite_hit-02")
+MATCHES_MESEN("sprite_hit-03")
+MATCHES_MESEN("sprite_hit-04")
+MATCHES_MESEN("sprite_hit-05")
+MATCHES_MESEN("sprite_hit-06")
+MATCHES_MESEN("sprite_hit-07")
+MATCHES_MESEN("sprite_hit-08")
+MATCHES_MESEN("sprite_hit-09")
+MATCHES_MESEN("sprite_hit-10")
+MATCHES_MESEN("sprite_hit-11")
+MATCHES_MESEN("sprite_overflow-1")
+MATCHES_MESEN("sprite_overflow-2")
+MATCHES_MESEN("sprite_overflow-3")
+MATCHES_MESEN("sprite_overflow-4")
+MATCHES_MESEN("sprite_overflow-5")
+MATCHES_MESEN("vbl_nmi_timing-1")
+MATCHES_MESEN("vbl_nmi_timing-2")
+MATCHES_MESEN("vbl_nmi_timing-3")
+MATCHES_MESEN("vbl_nmi_timing-4")
+MATCHES_MESEN("vbl_nmi_timing-5")
+MATCHES_MESEN("vbl_nmi_timing-6")
+MATCHES_MESEN("vbl_nmi_timing-7")
+MATCHES_MESEN("blargg_ppu-palette_ram")
+MATCHES_MESEN("blargg_ppu-power_up_palette")
+MATCHES_MESEN("blargg_ppu-sprite_ram")
+MATCHES_MESEN("blargg_ppu-vbl_clear_time")
+MATCHES_MESEN("blargg_ppu-vram_access")
+MATCHES_MESEN("nmi_sync")
+MATCHES_MESEN("full_palette")
 
 TEST_CASE("nestest passes on the sim backend with the CPU bench's trace CRC") {
     std::string path = std::string(RS_TESTROMS) + "/nes-test-roms/other/nestest.nes";

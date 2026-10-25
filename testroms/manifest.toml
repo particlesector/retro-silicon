@@ -6,6 +6,10 @@
 # then 0 for a pass or an error code), DE B0 61 at $6001-$6003 once the result
 # is valid, and a text report from $6004. `frames` is roughly when it finishes
 # in MesenCE; allow at least twice that.
+# check = "zeropage": blargg's older ROMs, which leave their result at `result`
+# in zero page: 1 for a pass, 2 and up an error code.
+# check = "frame": no result of its own; the core's frame `frames` must match
+# MesenCE's (tools/mesen/frames.py).
 # check = "trace": compare a CPU trace against the reference log.
 # needs: the parts of the console the ROM exercises.
 
@@ -37,7 +41,7 @@ id = "instr_test-all"
 source = "nes-test-roms"
 path = "instr_test-v5/all_instrs.nes"
 sha256 = "353870c157242e3d428ef7387109deaee0d2e158bdb432ab9aae4e657072c785"
-needs = "cpu"
+needs = "cpu, unstable opcodes"
 covers = "Every opcode, including the unofficial ones (cpu/6502 stops at the unstable ones for now)"
 check = "blargg"
 frames = 2400
@@ -77,8 +81,8 @@ id = "ppu_vbl_nmi"
 source = "nes-test-roms"
 path = "ppu_vbl_nmi/ppu_vbl_nmi.nes"
 sha256 = "8dbab1be785585c399cf055ef02147b788ab75fd80e81cf9568a2feafc03fb7d"
-needs = "cpu, ppu"
-covers = "VBlank flag and NMI timing to the PPU clock, odd-frame skip"
+needs = "cpu, ppu, mmc1"
+covers = "VBlank flag and NMI timing to the PPU clock, odd-frame skip: the ten ppu_vbl_nmi ROMs below in one"
 check = "blargg"
 frames = 1615
 
@@ -101,6 +105,435 @@ needs = "cpu, ppu"
 covers = "Reading sprite memory through $2004"
 check = "blargg"
 frames = 30
+
+[[rom]]
+id = "ppu_vbl_nmi-01"
+source = "nes-test-roms"
+path = "ppu_vbl_nmi/rom_singles/01-vbl_basics.nes"
+sha256 = "06aea5af4edab4e3141c939cd5ac9936f8758203b25dcaf84ae1a09db49e024a"
+needs = "cpu, ppu"
+covers = "VBL flag basics: set, cleared by reading $2002, period"
+check = "blargg"
+frames = 145
+
+[[rom]]
+id = "ppu_vbl_nmi-02"
+source = "nes-test-roms"
+path = "ppu_vbl_nmi/rom_singles/02-vbl_set_time.nes"
+sha256 = "dd98856130078844e3aa4bd95a9be8ab501ea84c089f1d8ad49a1b20af4b3a80"
+needs = "cpu, ppu"
+covers = "VBL flag set time, to the PPU clock"
+check = "blargg"
+frames = 177
+
+[[rom]]
+id = "ppu_vbl_nmi-03"
+source = "nes-test-roms"
+path = "ppu_vbl_nmi/rom_singles/03-vbl_clear_time.nes"
+sha256 = "787fdaa4dd6c5b6df5f4308fb6d55b57e2c2f69bd5ecdf8ad5c69735db4fcc72"
+needs = "cpu, ppu"
+covers = "VBL flag clear time, to the PPU clock"
+check = "blargg"
+frames = 165
+
+[[rom]]
+id = "ppu_vbl_nmi-04"
+source = "nes-test-roms"
+path = "ppu_vbl_nmi/rom_singles/04-nmi_control.nes"
+sha256 = "84722c75b896c47c8642f83220230fe14f0a31e55e26ecb83c400e6a26d91b32"
+needs = "cpu, ppu"
+covers = "NMI enable and disable through $2000, including during VBL"
+check = "blargg"
+frames = 34
+
+[[rom]]
+id = "ppu_vbl_nmi-05"
+source = "nes-test-roms"
+path = "ppu_vbl_nmi/rom_singles/05-nmi_timing.nes"
+sha256 = "72e515d689d7404ae5779b8c9c4c7b3563a755a94bd44864516f1b03df044482"
+needs = "cpu, ppu"
+covers = "NMI timing, to the PPU clock"
+check = "blargg"
+frames = 215
+
+[[rom]]
+id = "ppu_vbl_nmi-06"
+source = "nes-test-roms"
+path = "ppu_vbl_nmi/rom_singles/06-suppression.nes"
+sha256 = "811dd5997bbf48c2e5687ab06845f17ea76b2be472786596c334137582cc72aa"
+needs = "cpu, ppu"
+covers = "Reading $2002 near VBL set suppresses the flag and the NMI"
+check = "blargg"
+frames = 218
+
+[[rom]]
+id = "ppu_vbl_nmi-07"
+source = "nes-test-roms"
+path = "ppu_vbl_nmi/rom_singles/07-nmi_on_timing.nes"
+sha256 = "1ed154363660b5775b112ae63ce9bb4e400ebde2afef4d0ac12fc433efda3702"
+needs = "cpu, ppu"
+covers = "Enabling NMI around VBL set"
+check = "blargg"
+frames = 193
+
+[[rom]]
+id = "ppu_vbl_nmi-08"
+source = "nes-test-roms"
+path = "ppu_vbl_nmi/rom_singles/08-nmi_off_timing.nes"
+sha256 = "1d2a4093091c8e58a7f99d6a3531bbc6346b52cfc59bcb17ca04c1f2376cf2fc"
+needs = "cpu, ppu"
+covers = "Disabling NMI around VBL set"
+check = "blargg"
+frames = 217
+
+[[rom]]
+id = "ppu_vbl_nmi-09"
+source = "nes-test-roms"
+path = "ppu_vbl_nmi/rom_singles/09-even_odd_frames.nes"
+sha256 = "1ac04283021ddd9294cc74ee709c55e20a350dc4815c15a8a93b3654837e858d"
+needs = "cpu, ppu"
+covers = "The odd frame's skipped dot, with rendering on"
+check = "blargg"
+frames = 74
+
+[[rom]]
+id = "ppu_vbl_nmi-10"
+source = "nes-test-roms"
+path = "ppu_vbl_nmi/rom_singles/10-even_odd_timing.nes"
+sha256 = "7217d2d172ce11ad45c4da40c2f22201cf0eb758bc2cd8dd39d2cf0a7d4ca83e"
+needs = "cpu, ppu"
+covers = "When the skipped dot's rendering check happens"
+check = "blargg"
+frames = 138
+
+[[rom]]
+id = "sprite_hit-01"
+source = "nes-test-roms"
+path = "sprite_hit_tests_2005.10.05/01.basics.nes"
+sha256 = "51819e8e502bd88fe3b7244198a074dbeef2e848f66c587be04b04f1f0d4bb52"
+needs = "cpu, ppu"
+covers = "Sprite 0 hit basics: opaque pixels, priority, enables"
+check = "zeropage"
+result = 0xF8
+frames = 32
+
+[[rom]]
+id = "sprite_hit-02"
+source = "nes-test-roms"
+path = "sprite_hit_tests_2005.10.05/02.alignment.nes"
+sha256 = "125bbb3ce1e67370f1f4559c2ad3221e52a3e98880b9789400292b5f3a8b39e6"
+needs = "cpu, ppu"
+covers = "Sprite 0 hit at each X and Y alignment"
+check = "zeropage"
+result = 0xF8
+frames = 30
+
+[[rom]]
+id = "sprite_hit-03"
+source = "nes-test-roms"
+path = "sprite_hit_tests_2005.10.05/03.corners.nes"
+sha256 = "9dd57776bc6267fe6183c5521d67cbe3fccc6662ae545eb2c419949bf39644d3"
+needs = "cpu, ppu"
+covers = "Hit at each corner of the sprite"
+check = "zeropage"
+result = 0xF8
+frames = 20
+
+[[rom]]
+id = "sprite_hit-04"
+source = "nes-test-roms"
+path = "sprite_hit_tests_2005.10.05/04.flip.nes"
+sha256 = "5f7142bddb51b7577f93fa22f9f668efebbeea00346d7255089e1863acb9d46a"
+needs = "cpu, ppu"
+covers = "Hit with horizontal and vertical flip"
+check = "zeropage"
+result = 0xF8
+frames = 18
+
+[[rom]]
+id = "sprite_hit-05"
+source = "nes-test-roms"
+path = "sprite_hit_tests_2005.10.05/05.left_clip.nes"
+sha256 = "69b329658c17b953f149c2f0de77eb272089df22c815bd2fd3d6f43206791c13"
+needs = "cpu, ppu"
+covers = "Hit with the left 8 pixels clipped"
+check = "zeropage"
+result = 0xF8
+frames = 28
+
+[[rom]]
+id = "sprite_hit-06"
+source = "nes-test-roms"
+path = "sprite_hit_tests_2005.10.05/06.right_edge.nes"
+sha256 = "8e6653fcb869e06873e29e5e4423122ea72ba0bf38f3ba9e39f471420db759a4"
+needs = "cpu, ppu"
+covers = "No hit at X = 255"
+check = "zeropage"
+result = 0xF8
+frames = 23
+
+[[rom]]
+id = "sprite_hit-07"
+source = "nes-test-roms"
+path = "sprite_hit_tests_2005.10.05/07.screen_bottom.nes"
+sha256 = "05849956f80267838c5b6556310266b794078a4300841cbb36339fd141905a0b"
+needs = "cpu, ppu"
+covers = "Hit at the bottom of the screen"
+check = "zeropage"
+result = 0xF8
+frames = 24
+
+[[rom]]
+id = "sprite_hit-08"
+source = "nes-test-roms"
+path = "sprite_hit_tests_2005.10.05/08.double_height.nes"
+sha256 = "127fd966b6b32d6d88a53c5f59d7e938827783c9ad056091f119be1c4ab21c71"
+needs = "cpu, ppu"
+covers = "Hit with 8x16 sprites"
+check = "zeropage"
+result = 0xF8
+frames = 20
+
+[[rom]]
+id = "sprite_hit-09"
+source = "nes-test-roms"
+path = "sprite_hit_tests_2005.10.05/09.timing_basics.nes"
+sha256 = "311698c717e50150edd0b5fd0016c41de686463205c20efb5630d6adb90859fd"
+needs = "cpu, ppu"
+covers = "Hit timing, to the CPU cycle"
+check = "zeropage"
+result = 0xF8
+frames = 63
+
+[[rom]]
+id = "sprite_hit-10"
+source = "nes-test-roms"
+path = "sprite_hit_tests_2005.10.05/10.timing_order.nes"
+sha256 = "0f36bc07bfe51c416e3cc1a5231053572aa6b15aa60e6d2fd0568be49b6dc2e9"
+needs = "cpu, ppu"
+covers = "Hit timing for pixels in raster order"
+check = "zeropage"
+result = 0xF8
+frames = 59
+
+[[rom]]
+id = "sprite_hit-11"
+source = "nes-test-roms"
+path = "sprite_hit_tests_2005.10.05/11.edge_timing.nes"
+sha256 = "5a7c121f6e76617be88a0a7035c0e402293be5c685c95b97190a8d70835736ab"
+needs = "cpu, ppu"
+covers = "Hit timing at the screen's edges"
+check = "zeropage"
+result = 0xF8
+frames = 67
+
+[[rom]]
+id = "sprite_overflow-1"
+source = "nes-test-roms"
+path = "sprite_overflow_tests/1.Basics.nes"
+sha256 = "1a6782f63ccb3a3dd1aa6a24272036c9c3aa232c2d1ff0b21e872741a3ee4fe2"
+needs = "cpu, ppu"
+covers = "Sprite overflow flag basics"
+check = "zeropage"
+result = 0xF8
+frames = 15
+
+[[rom]]
+id = "sprite_overflow-2"
+source = "nes-test-roms"
+path = "sprite_overflow_tests/2.Details.nes"
+sha256 = "6405a7ff1042fe7a50d9bfe521e43460a3251799425bd3e1863b29b67e7cd587"
+needs = "cpu, ppu"
+covers = "Overflow with 8 sprites and fewer, Y range and timing of the clear"
+check = "zeropage"
+result = 0xF8
+frames = 23
+
+[[rom]]
+id = "sprite_overflow-3"
+source = "nes-test-roms"
+path = "sprite_overflow_tests/3.Timing.nes"
+sha256 = "2252ec8fc35932b408f409ef9b6863edf084aa871fc10ad180b0ac4c2468ef8c"
+needs = "cpu, ppu"
+covers = "Overflow flag set time"
+check = "zeropage"
+result = 0xF8
+frames = 106
+
+[[rom]]
+id = "sprite_overflow-4"
+source = "nes-test-roms"
+path = "sprite_overflow_tests/4.Obscure.nes"
+sha256 = "aebf2199344321465ae0d8dcd81f6c528c7f661f31f1814711365b4e573a8263"
+needs = "cpu, ppu"
+covers = "The overflow bug: the diagonal OAM read after 8 sprites"
+check = "zeropage"
+result = 0xF8
+frames = 22
+
+[[rom]]
+id = "sprite_overflow-5"
+source = "nes-test-roms"
+path = "sprite_overflow_tests/5.Emulator.nes"
+sha256 = "cf994454219696de82794f0b84f2bd63458444d12a1171c85bba8697ab94acb4"
+needs = "cpu, ppu"
+covers = "Overflow cases emulators commonly get wrong"
+check = "zeropage"
+result = 0xF8
+frames = 14
+
+[[rom]]
+id = "vbl_nmi_timing-1"
+source = "nes-test-roms"
+path = "vbl_nmi_timing/1.frame_basics.nes"
+sha256 = "719bf4b4ea9022aad4216b159f59846ea57f98c8bddc5069b70286f5b810e998"
+needs = "cpu, ppu"
+covers = "Frame length, with and without rendering"
+check = "zeropage"
+result = 0xF8
+frames = 176
+
+[[rom]]
+id = "vbl_nmi_timing-2"
+source = "nes-test-roms"
+path = "vbl_nmi_timing/2.vbl_timing.nes"
+sha256 = "39231f002784b62e5d0ab67735855198b6b62c6c6ef06b0549333cd818879fb2"
+needs = "cpu, ppu"
+covers = "VBL flag timing"
+check = "zeropage"
+result = 0xF8
+frames = 149
+
+[[rom]]
+id = "vbl_nmi_timing-3"
+source = "nes-test-roms"
+path = "vbl_nmi_timing/3.even_odd_frames.nes"
+sha256 = "268d5e305ab73a29ff524906f92db7da1944763ea3de464e14a44c5b4199049e"
+needs = "cpu, ppu"
+covers = "The odd frame's skipped dot"
+check = "zeropage"
+result = 0xF8
+frames = 94
+
+[[rom]]
+id = "vbl_nmi_timing-4"
+source = "nes-test-roms"
+path = "vbl_nmi_timing/4.vbl_clear_timing.nes"
+sha256 = "8552a65de49b677cdf7fd419f5ac51f96766786e1e1442f6f9d62c87f4c15c2c"
+needs = "cpu, ppu"
+covers = "VBL flag clear time"
+check = "zeropage"
+result = 0xF8
+frames = 112
+
+[[rom]]
+id = "vbl_nmi_timing-5"
+source = "nes-test-roms"
+path = "vbl_nmi_timing/5.nmi_suppression.nes"
+sha256 = "059c8df6a9b41a95e827608f1c0edb496b763e0c2b861f22614f5f228f1e10aa"
+needs = "cpu, ppu"
+covers = "Reading $2002 near VBL suppresses NMI"
+check = "zeropage"
+result = 0xF8
+frames = 161
+
+[[rom]]
+id = "vbl_nmi_timing-6"
+source = "nes-test-roms"
+path = "vbl_nmi_timing/6.nmi_disable.nes"
+sha256 = "4573dcff3c57351b0e6ce76d86334586ba3d1cd6d4f9ec014887e94912f543cf"
+needs = "cpu, ppu"
+covers = "Disabling NMI near VBL"
+check = "zeropage"
+result = 0xF8
+frames = 104
+
+[[rom]]
+id = "vbl_nmi_timing-7"
+source = "nes-test-roms"
+path = "vbl_nmi_timing/7.nmi_timing.nes"
+sha256 = "26a2475828ef9ebd6178129f530a8aaa6f9f1ddd493616f1524d8323d6e56a4c"
+needs = "cpu, ppu"
+covers = "NMI timing"
+check = "zeropage"
+result = 0xF8
+frames = 104
+
+[[rom]]
+id = "blargg_ppu-palette_ram"
+source = "nes-test-roms"
+path = "blargg_ppu_tests_2005.09.15b/palette_ram.nes"
+sha256 = "11c1de16c67795b247169819a34b9d4dd46165478d6de19d7cd6e7311e906a80"
+needs = "cpu, ppu"
+covers = "Palette RAM access and mirroring"
+check = "zeropage"
+result = 0xF0
+frames = 18
+
+[[rom]]
+id = "blargg_ppu-power_up_palette"
+source = "nes-test-roms"
+path = "blargg_ppu_tests_2005.09.15b/power_up_palette.nes"
+sha256 = "4a02958db36d1e1affb6e6b80d556e4a6840847cc42027d2c875fbe917db9f49"
+needs = "cpu, ppu"
+covers = "Palette contents at power-up (MesenCE's values)"
+check = "zeropage"
+result = 0xF0
+frames = 19
+
+[[rom]]
+id = "blargg_ppu-sprite_ram"
+source = "nes-test-roms"
+path = "blargg_ppu_tests_2005.09.15b/sprite_ram.nes"
+sha256 = "81275795ea64dfe22f05e35ef3316e6cf84eba40fc9538fc637a08bf263a3110"
+needs = "cpu, ppu"
+covers = "OAM access through $2003 and $2004"
+check = "zeropage"
+result = 0xF0
+frames = 18
+
+[[rom]]
+id = "blargg_ppu-vbl_clear_time"
+source = "nes-test-roms"
+path = "blargg_ppu_tests_2005.09.15b/vbl_clear_time.nes"
+sha256 = "1a1d3ae8062ce0d4f1f3eafa35bf3c3e5df94fe198e7630a09678a60b03b73a0"
+needs = "cpu, ppu"
+covers = "VBL flag clear time"
+check = "zeropage"
+result = 0xF0
+frames = 23
+
+[[rom]]
+id = "blargg_ppu-vram_access"
+source = "nes-test-roms"
+path = "blargg_ppu_tests_2005.09.15b/vram_access.nes"
+sha256 = "a0cde2a3c98d9f62afcba62d4e8f4f4228574ff96ce96fbfdc777e1393c16ee6"
+needs = "cpu, ppu"
+covers = "Video memory access through $2006 and $2007, and the read buffer"
+check = "zeropage"
+result = 0xF0
+frames = 19
+
+[[rom]]
+id = "nmi_sync"
+source = "nes-test-roms"
+path = "nmi_sync/demo_ntsc.nes"
+sha256 = "6f630cf1b37fea5c34d62800855a5384e8bacd578aba3131752f1fb777b4638a"
+needs = "cpu, ppu"
+covers = "A raster pattern drawn by code synced to NMI: shifts if CPU and PPU timing differ"
+check = "frame"
+frames = 120
+
+[[rom]]
+id = "full_palette"
+source = "nes-test-roms"
+path = "full_palette/full_palette.nes"
+sha256 = "7924ba0a808fb1b7029fab5b3fcfe08c8a318a9bdae2948258ffdcbb8d99b657"
+needs = "cpu, ppu"
+covers = "Every colour and emphasis setting, changed mid-frame"
+check = "frame"
+frames = 120
+
 
 [[rom]]
 id = "apu_test"

@@ -1,7 +1,7 @@
 CAPI=2:
 # SPDX-License-Identifier: Apache-2.0
 name: retro-silicon:system:nes:0.1.0
-description: The NES so far - CPU, RAM, PRG RAM and NROM PRG from SDRAM - under the test shell
+description: The NES so far - CPU, PPU, OAM DMA, RAM, PRG RAM and an NROM cartridge - under the test shell
 
 filesets:
   rtl:
@@ -10,10 +10,13 @@ filesets:
     file_type: systemVerilogSource
     depend:
       - retro-silicon:common:por
+      - retro-silicon:common:clock-enable
       - retro-silicon:common:crc32
       - retro-silicon:debug:test-shell
+      - retro-silicon:debug:video-probe
       - retro-silicon:memory:sdram
       - retro-silicon:cpu:6502
+      - retro-silicon:video:ppu-2c02
 
 targets:
   # Parameters go on lint only, as in every component core.
