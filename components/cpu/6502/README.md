@@ -46,7 +46,7 @@ Sim tests:
 - **blargg:** `instr_test-v5/official_only` passes.
 - **Unit tests:** hand-written checks of the documented bus patterns (indexed addressing, read-modify-write, JMP's page-wrap bug, branches, JSR and RTS, BRK and RTI, reset), interrupt timing, RDY and JAM.
 
-Not on a board yet: that comes with the NES's memory and ROM loading.
+On a Tang Nano 20K, in `systems/nes`: nestest's 26,554 cycles give the same bus-trace CRC as the sim bench (`harness/golden/nes_trace_crc32.txt`).
 
 Gaps:
 - **RDY:** stalls are modelled as repeating the stalled read, which is right for straightforward cases but not every pipeline stage. It's left out of the lockstep for now and will be matched exactly when the NES's DMA needs it.

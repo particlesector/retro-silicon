@@ -9,6 +9,7 @@
 #include <fstream>
 #include <string>
 
+#include "golden.hpp"
 #include "nes_bench.hpp"
 
 namespace {
@@ -77,6 +78,34 @@ TEST_CASE("6502 matches nestest.log instruction by instruction, cycle counts inc
     // nestest leaves its error codes at $02 (official opcodes) and $03 (unofficial).
     REQUIRE(b.peek(0x02) == 0);
     REQUIRE(b.peek(0x03) == 0);
+}
+
+TEST_CASE("6502's bus trace through nestest matches the golden trace CRC that systems/nes must give") {
+    auto nes = rom("other/nestest.nes");
+    require_rom(nes);
+    auto golden = golden_crcs(RS_NES_TRACE_GOLDEN);
+    auto it = golden.find({26554, 0});
+    REQUIRE(it != golden.end());
+    NesBench b;
+    REQUIRE_FALSE(b.load(nes).has_value());
+    auto read = b.read;
+    b.read = [read](uint16_t a) -> uint8_t {
+        if (a == 0xFFFC) return 0x00;
+        if (a == 0xFFFD) return 0xC0;
+        return read(a);
+    };
+    uint32_t c = 0xFFFFFFFFu;
+    for (int i = 0; i < 26554; i++) {
+        auto cyc = b.cycle();
+        uint8_t bytes[] = {static_cast<uint8_t>(cyc.addr), static_cast<uint8_t>(cyc.addr >> 8), cyc.data,
+                           static_cast<uint8_t>(cyc.write | cyc.sync << 1)};
+        for (uint8_t x : bytes) {
+            c ^= x;
+            for (int k = 0; k < 8; k++) c = (c & 1) ? (c >> 1) ^ 0xEDB88320u : c >> 1;
+        }
+    }
+    INFO("trace CRC 0x" << std::hex << ~c);
+    REQUIRE(~c == it->second);
 }
 
 TEST_CASE("6502 passes blargg's instr_test official_only") {

@@ -5,8 +5,9 @@
 
 namespace rig {
 
-SimLink::SimLink(std::unique_ptr<SimModel> model, int clks_per_bit)
-    : model_(std::move(model)), clks_per_bit_(clks_per_bit), tx_(clks_per_bit), rx_(clks_per_bit) {
+SimLink::SimLink(std::unique_ptr<SimModel> model, int clks_per_bit, int jitter_clks)
+    : model_(std::move(model)), clks_per_bit_(clks_per_bit), tx_(clks_per_bit), rx_(clks_per_bit),
+      jitter_clks_(jitter_clks) {
     for (int i = 0; i < 32; i++) tick();  // through power-on reset, line idle
 }
 
@@ -18,6 +19,10 @@ void SimLink::tick() {
 }
 
 void SimLink::write(std::span<const uint8_t> data) {
+    if (jitter_clks_ > 0 && tx_.idle()) {
+        jitter_state_ = jitter_state_ * 6364136223846793005ull + 1442695040888963407ull;
+        for (auto n = (jitter_state_ >> 33) % static_cast<uint64_t>(jitter_clks_); n > 0; n--) tick();
+    }
     for (uint8_t b : data) tx_.push(b);
 }
 

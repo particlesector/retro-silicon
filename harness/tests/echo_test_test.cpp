@@ -74,7 +74,7 @@ TEST_CASE("echo reports an extra byte") {
 }
 
 TEST_CASE("echo CRCs match the golden values") {
-    auto golden = golden_crcs();
+    auto golden = golden_crcs(RS_ECHO_GOLDEN);
     REQUIRE_FALSE(golden.empty());
     for (auto [key, crc] : golden) {
         auto [bytes, seed] = key;

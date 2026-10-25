@@ -30,6 +30,8 @@ add_subdirectory(components/debug/test-shell)
 add_subdirectory(components/memory/sdram)
 add_subdirectory(systems/uart-echo)
 add_subdirectory(systems/shell-ram)
+add_subdirectory(systems/shell-sdram)
+add_subdirectory(systems/nes)
 add_subdirectory(boards/tang-nano-20k)
 add_subdirectory(harness)
 
@@ -37,7 +39,7 @@ find_program(RS_FUSESOC fusesoc)
 if(RS_FUSESOC)
     # Checks every .core parses and its dependencies resolve, then lints the
     # system through FuseSoC the way a library user would.
-    foreach(system uart-echo shell-ram)
+    foreach(system uart-echo shell-ram shell-sdram nes)
         add_test(NAME "fusesoc lint ${system}"
                  COMMAND ${RS_FUSESOC} --cores-root ${PROJECT_SOURCE_DIR} run
                          --build-root ${CMAKE_CURRENT_BINARY_DIR}/fusesoc --target lint

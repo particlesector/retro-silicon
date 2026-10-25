@@ -9,7 +9,7 @@
 #include <string>
 #include <utility>
 
-inline std::map<std::pair<uint64_t, unsigned>, uint32_t> golden_crcs(const char* path = RS_ECHO_GOLDEN) {
+inline std::map<std::pair<uint64_t, unsigned>, uint32_t> golden_crcs(const char* path) {
     std::map<std::pair<uint64_t, unsigned>, uint32_t> out;
     std::ifstream f(path);
     std::string line;

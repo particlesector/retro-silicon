@@ -1,0 +1,7 @@
+# CRC32 of the CPU's bus trace (4 bytes a cycle: address low, address high,
+# data, flags with bit 0 write and bit 1 opcode fetch) for a test ROM run for a
+# number of CPU cycles from reset. The CPU bench computes it as well as
+# systems/nes, on the sim backend or a board.
+# cycles  -  crc32
+# nestest, automated mode from $C000
+26554     0  0xebba51ce

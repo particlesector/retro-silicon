@@ -6,7 +6,7 @@ Module `sdram_ctrl`.
 
 ## Timing
 
-- **Port:** hold `req` with `addr`, `we` and `wdata` until `ack`, a one-cycle pulse that also marks `rdata` valid on a read. `req` must stay low until `ready`.
+- **Port:** hold `req` with `addr`, `we` and `wdata` until `ack`, a one-cycle pulse that also marks `rdata` valid on a read. `req` may still be high the clock after `ack` (a registered requester can't drop it sooner) without starting a second access. `req` must stay low until `ready`.
 - **SDRAM clock:** the board drives the chip's clock with the inverse of `clk`, so the chip samples each command half a cycle after it's registered, and read data is captured on the `clk` edge `CAS_LATENCY + 1` cycles after the READ. That half cycle is the I/O timing margin, which is plenty at 27 MHz.
 - **Latency at 27 MHz:** from idle, 5 clocks from `req` to `ack` for a read and 2 for a write. The tail of the access before and a refresh can add up to 5 more, so budget 10 (the random test's worst was 9). At 100 MHz: 8 and 4 from idle, 18 at worst.
 - **Refresh:** one auto-refresh every `REFRESH_NS`, ahead of any waiting request.
@@ -43,8 +43,9 @@ Sim tests, at 27 and 100 MHz, against `sim/sdram_model.hpp`, a model of the chip
 - the power-up sequence;
 - single bytes in every lane and bank;
 - 40,000 random reads and writes against a byte array, with idle gaps so refreshes land everywhere;
+- each request taken once when `req` drops a clock after `ack`;
 - refreshes on time while a request is held continuously.
 
 Planted bugs (capture one cycle late, no refresh, wrong byte lane, tRCD of 0, no wait after a refresh) are each caught.
 
-Not on a board yet.
+On a Tang Nano 20K at 27 MHz, through `systems/shell-sdram`: 8 MB of random data written, checked by the shell's CRC command and sampled back, with the same CRC32 as the sim (`0x0e8da31c`).

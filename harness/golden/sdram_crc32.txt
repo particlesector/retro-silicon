@@ -1,0 +1,4 @@
+# CRC32 of the SDRAM test's region CRCs and read-back samples (rig::sdram_test)
+# for each size in bytes and seed. It doesn't depend on the backend.
+# bytes  seed  crc32
+65536    1     0xa06577e4

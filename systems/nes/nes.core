@@ -1,0 +1,37 @@
+CAPI=2:
+# SPDX-License-Identifier: Apache-2.0
+name: retro-silicon:system:nes:0.1.0
+description: The NES so far - CPU, RAM, PRG RAM and NROM PRG from SDRAM - under the test shell
+
+filesets:
+  rtl:
+    files:
+      - rtl/nes.sv
+    file_type: systemVerilogSource
+    depend:
+      - retro-silicon:common:por
+      - retro-silicon:common:crc32
+      - retro-silicon:debug:test-shell
+      - retro-silicon:memory:sdram
+      - retro-silicon:cpu:6502
+
+targets:
+  # Parameters go on lint only, as in every component core.
+  default: &default
+    filesets: [rtl]
+    toplevel: nes
+  lint:
+    <<: *default
+    parameters: [CLKS_PER_BIT]
+    default_tool: verilator
+    tools:
+      verilator:
+        mode: lint-only
+        verilator_options: [-Wall]
+
+parameters:
+  CLKS_PER_BIT:
+    datatype: int
+    default: 18
+    paramtype: vlogparam
+    description: Clock frequency divided by the baud rate

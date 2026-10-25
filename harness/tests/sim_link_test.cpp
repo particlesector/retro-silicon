@@ -6,7 +6,7 @@
 #include "rig/sim_systems.hpp"
 
 TEST_CASE("the echo test passes on the sim backend with the golden CRC") {
-    auto golden = golden_crcs();
+    auto golden = golden_crcs(RS_ECHO_GOLDEN);
     auto it = golden.find({64'000, 1});
     REQUIRE(it != golden.end());
 

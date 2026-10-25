@@ -2,7 +2,7 @@
 // Controller for a 2M x 32 SDR SDRAM (4 banks, 2048 rows, 256 columns), such as
 // the 64 Mbit chip inside the Tang Nano 20K's GW2AR-18. The user side is a byte
 // port: hold req (with addr, we, wdata) until ack, which also marks rdata valid
-// on a read. Each access opens a row and closes it again with auto-precharge, so
+// on a read; req may still be high the clock after ack. Each access opens a row and closes it again with auto-precharge, so
 // every access takes the same time unless a refresh is under way.
 //
 // The SDRAM's clock must be the inverse of clk (the board inverts it), so the
@@ -147,7 +147,7 @@ module sdram_ctrl #(
                         cmd     <= C_REFRESH;
                         wait_n  <= CW'(T_RC - 1);
                         ref_due <= 1'b0;
-                    end else if (req) begin
+                    end else if (req && !ack) begin  // a requester drops req the clock after ack
                         cmd      <= C_ACTIVE;
                         sd_ba    <= addr[22:21];
                         sd_addr  <= addr[20:10];

@@ -24,8 +24,12 @@ public:
     static constexpr unsigned kClockHz = 27'000'000;
     static constexpr int kClksPerBit = 18;  // 1.5 Mbaud, the board link's rate
 
-    // clks_per_bit must match the design's CLKS_PER_BIT.
-    explicit SimLink(std::unique_ptr<SimModel> model, int clks_per_bit = kClksPerBit);
+    // clks_per_bit must match the design's CLKS_PER_BIT. With jitter_clks > 0,
+    // each write starts after a seeded random 0 to jitter_clks - 1 idle clocks,
+    // as a board's host is never in step with the FPGA clock; without it, every
+    // command arrives at the same phase of anything the design divides its
+    // clock by, which hides phase-dependent bugs.
+    explicit SimLink(std::unique_ptr<SimModel> model, int clks_per_bit = kClksPerBit, int jitter_clks = 0);
     ~SimLink() override;
 
     void write(std::span<const uint8_t> data) override;
@@ -44,6 +48,8 @@ private:
     UartDecoder rx_;  // design -> host
     size_t taken_ = 0;             // decoded bytes already handed out
     uint64_t cycles_ = 0;
+    int jitter_clks_;
+    uint64_t jitter_state_ = 0x9E3779B97F4A7C15ull;
 };
 
 } // namespace rig

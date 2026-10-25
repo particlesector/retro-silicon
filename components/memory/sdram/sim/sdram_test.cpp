@@ -20,7 +20,8 @@ constexpr int kMhz = RS_SDRAM_MHZ;  // the FREQ_MHZ the controller was built wit
 struct Dut {
     Vsdram_ctrl m;
     SdramModel sdram{kMhz};
-    uint64_t clocks = 0;
+    uint64_t clocks = 0, acks = 0;
+    bool registered = false;  // drop req a clock after ack, as a registered requester does
 
     Dut() {
         m.rst = 1;
@@ -37,6 +38,7 @@ struct Dut {
         m.sd_dq_i = sdram.step({m.sd_cs_n != 0, m.sd_ras_n != 0, m.sd_cas_n != 0, m.sd_we_n != 0,
                                 m.sd_ba, m.sd_addr, m.sd_dqm, m.sd_dq_o, m.sd_dq_oe != 0});
         clocks++;
+        acks += m.ack;
     }
 
     void wait_ready() {
@@ -58,8 +60,10 @@ struct Dut {
             n++;
             REQUIRE(n < 100);
         } while (!m.ack);
+        uint8_t data = m.rdata;
+        if (registered) tick();
         m.req = 0;
-        return {m.rdata, n};
+        return {data, n};
     }
 };
 
@@ -120,6 +124,25 @@ TEST_CASE(NAME("matches a byte array over random accesses, refreshes included"))
     // At 27 MHz a read takes 5 clocks from idle; the tail of the access before
     // and a refresh can add 5 more. Systems budget this bound.
     if (kMhz == 27) CHECK(worst <= 10);
+    require_clean(d);
+}
+
+TEST_CASE(NAME("takes each request once when req drops a clock after ack")) {
+    Dut d;
+    d.wait_ready();
+    d.registered = true;
+    std::mt19937 rng(3);
+    uint64_t accesses = 0;
+    for (int i = 0; i < 2'000; i++, accesses++) {
+        uint32_t a = rng() & 0xFFF;
+        uint8_t v = static_cast<uint8_t>(rng());
+        d.access(true, a, v);
+        accesses++;
+        CAPTURE(i);
+        REQUIRE(d.access(false, a).first == v);
+    }
+    for (int i = 0; i < 20; i++) d.tick();
+    CHECK(d.acks == accesses);
     require_clean(d);
 }
 
