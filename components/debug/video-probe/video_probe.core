@@ -1,0 +1,24 @@
+CAPI=2:
+# SPDX-License-Identifier: Apache-2.0
+name: retro-silicon:debug:video-probe:0.1.0
+description: Frame and line CRCs of a video stream, and line-by-line capture for the test shell
+
+filesets:
+  rtl:
+    files:
+      - rtl/video_probe.sv
+    file_type: systemVerilogSource
+    depend:
+      - retro-silicon:common:crc32
+
+targets:
+  default: &default
+    filesets: [rtl]
+    toplevel: video_probe
+  lint:
+    <<: *default
+    default_tool: verilator
+    tools:
+      verilator:
+        mode: lint-only
+        verilator_options: [-Wall]
