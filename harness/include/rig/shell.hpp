@@ -20,7 +20,8 @@ namespace rig::shell {
 constexpr uint8_t kCommandSync = 0xA5;
 constexpr uint8_t kResponseSync = 0x5A;
 
-enum Cmd : uint8_t { kPing = 0x01, kInfo = 0x02, kPeek = 0x10, kPoke = 0x11 };
+enum Cmd : uint8_t { kPing = 0x01, kInfo = 0x02, kPeek = 0x10, kPoke = 0x11, kCrc = 0x12 };
+constexpr uint16_t kVersion = 2;  // the protocol version this client speaks
 enum Status : uint8_t { kOk = 0x00, kUnknownCmd = 0x01, kBadLength = 0x02 };
 
 struct Frame {
@@ -66,6 +67,7 @@ public:
         int max_attempts = 20;
         int shell_idle_ms = 10;  // the shell's IDLE_CLKS: a stalled frame is dropped after this
         int slack_ms = 5;        // extra wait for USB and OS latency on a real link
+        int bus_byte_ns = 2000;  // longest a bus access may take: CRC waits this per byte
     };
 
     explicit Client(Link& link) : Client(link, Options{}) {}
@@ -75,10 +77,17 @@ public:
     Info info();
     std::vector<uint8_t> peek(uint32_t addr, uint16_t count);
     void poke(uint32_t addr, std::span<const uint8_t> data);
+    // CRC-32 (as zlib) of `count` bytes from the bus, computed by the shell.
+    uint32_t crc(uint32_t addr, uint32_t count);
+
+    // Any length, split into commands that fit the shell's payload buffer.
+    void write(uint32_t addr, std::span<const uint8_t> data);
+    std::vector<uint8_t> read(uint32_t addr, size_t count);
 
     // Sends a command until a response with its sequence number arrives; throws
     // RigError when every attempt fails, StatusError on an error status.
-    Frame transact(uint8_t cmd, std::span<const uint8_t> payload, size_t response_len);
+    // `busy_ms` is how long the shell may work before it starts answering.
+    Frame transact(uint8_t cmd, std::span<const uint8_t> payload, size_t response_len, int busy_ms = 0);
 
     struct Stats {
         uint64_t commands = 0;

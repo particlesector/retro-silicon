@@ -25,7 +25,7 @@ module ts_rx #(
     output logic [7:0]                  cmd,
     output logic [7:0]                  seq,
     output logic [15:0]                 len,
-    output logic [47:0]                 args,         // first 6 payload bytes, byte 0 in [7:0]
+    output logic [63:0]                 args,         // first 8 payload bytes, byte 0 in [7:0]
 
     output logic                        crc_error,    // one-cycle pulse: a frame failed its CRC or length check
     output logic                        timeout       // one-cycle pulse: a frame stalled and was dropped
@@ -87,7 +87,7 @@ module ts_rx #(
                 end
             S_DATA:
                 if (in_valid) begin
-                    if (idx < 16'd6)
+                    if (idx < 16'd8)
                         args[idx[2:0]*8 +: 8] <= in_data;
                     idx <= idx + 1'b1;
                     if (idx + 1'b1 == len)

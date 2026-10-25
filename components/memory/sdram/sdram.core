@@ -1,0 +1,29 @@
+CAPI=2:
+# SPDX-License-Identifier: Apache-2.0
+name: retro-silicon:memory:sdram:0.1.0
+description: Byte-port controller for a 2M x 32 SDR SDRAM, such as the Tang Nano 20K's
+
+filesets:
+  rtl:
+    files:
+      - rtl/sdram_ctrl.sv
+    file_type: systemVerilogSource
+
+targets:
+  default: &default
+    filesets: [rtl]
+    toplevel: sdram_ctrl
+  lint:
+    <<: *default
+    default_tool: verilator
+    tools:
+      verilator:
+        mode: lint-only
+        verilator_options: [-Wall]
+    parameters: [FREQ_MHZ]
+
+parameters:
+  FREQ_MHZ:
+    datatype: int
+    paramtype: vlogparam
+    default: 27

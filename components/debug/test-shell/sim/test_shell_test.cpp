@@ -7,6 +7,7 @@
 #include <vector>
 
 #include "Vtest_shell.h"
+#include "rig/crc32.hpp"
 #include "rig/faulty_link.hpp"
 #include "rig/shell.hpp"
 #include "rig/sim_link.hpp"
@@ -107,7 +108,7 @@ TEST_CASE("test_shell INFO reports the magic, version, build ID and payload limi
     Fixture f;
     auto c = f.client();
     auto i = c.info();
-    REQUIRE(i.version == 1);
+    REQUIRE(i.version == rig::shell::kVersion);
     REQUIRE(i.build_id == 0x12345678u);
     REQUIRE(i.max_payload == 2048);
     REQUIRE(i.crc_errors == 0);
@@ -146,6 +147,28 @@ TEST_CASE("test_shell POKE and PEEK reach the whole 32-bit bus") {
     REQUIRE(f.bench->writes == writes);
 }
 
+TEST_CASE("test_shell CRC matches the bytes on the bus") {
+    Fixture f;
+    auto c = f.client();
+    std::mt19937 rng(3);
+    auto data = random_bytes(rng, 5000);
+    c.write(0x00100000u, data);  // three POKEs
+    REQUIRE(c.read(0x00100000u, data.size()) == data);
+    for (size_t n : {size_t{0}, size_t{1}, size_t{9}, data.size()}) {
+        rig::Crc32 want;
+        want.update(std::span(data).first(n));
+        CAPTURE(n);
+        REQUIRE(c.crc(0x00100000u, static_cast<uint32_t>(n)) == want.value());
+    }
+    REQUIRE(c.crc(0, 0) == 0u);
+    // A count that runs past the top of the address space wraps to 0.
+    c.poke(0xFFFFFFFFu, std::vector<uint8_t>{0x31});
+    c.poke(0, std::vector<uint8_t>{0x32});
+    rig::Crc32 want;
+    want.update(std::vector<uint8_t>{0x31, 0x32});
+    REQUIRE(c.crc(0xFFFFFFFFu, 2) == want.value());
+}
+
 TEST_CASE("test_shell answers unknown commands and bad lengths with an error status") {
     Fixture f;
     auto c = f.client();
@@ -153,8 +176,9 @@ TEST_CASE("test_shell answers unknown commands and bad lengths with an error sta
     REQUIRE(status_of(c, rig::shell::kInfo, {0}) == rig::shell::kBadLength);
     REQUIRE(status_of(c, rig::shell::kPeek, {0, 0, 0, 0, 1}) == rig::shell::kBadLength);
     REQUIRE(status_of(c, rig::shell::kPoke, {0, 0, 0}) == rig::shell::kBadLength);
+    REQUIRE(status_of(c, rig::shell::kCrc, {0, 0, 0, 0, 1, 0, 0}) == rig::shell::kBadLength);
     REQUIRE(f.bench->reads + f.bench->writes == 0);
-    REQUIRE(c.info().version == 1);  // still answering
+    REQUIRE(c.info().version == rig::shell::kVersion);  // still answering
 }
 
 TEST_CASE("test_shell drops a corrupt frame without answering, and counts it") {
