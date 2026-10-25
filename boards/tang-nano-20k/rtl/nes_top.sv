@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-// systems/nes on the Tang Nano 20K. The GW2AR-18's SDRAM is inside the
+// systems/nes on the Tang Nano 20K, with its memory in the SDRAM (nes_sdram). The GW2AR-18's SDRAM is inside the
 // package, on ports the toolchain recognises by name, so they need no
 // constraints. Its clock is the inverse of clk: the chip samples each command
 // half a cycle after the controller registers it (see memory/sdram).
@@ -26,7 +26,7 @@ module nes_top #(
     logic [31:0] dq_o;
     logic        dq_oe;
 
-    nes #(.CLKS_PER_BIT(CLKS_PER_BIT), .FREQ_MHZ(27), .BUILD_ID(BUILD_ID)) u_sys (
+    nes_sdram #(.CLKS_PER_BIT(CLKS_PER_BIT), .FREQ_MHZ(27), .BUILD_ID(BUILD_ID)) u_sys (
         .clk, .uart_rx, .uart_tx, .led,
         .sd_cke(O_sdram_cke), .sd_cs_n(O_sdram_cs_n), .sd_ras_n(O_sdram_ras_n),
         .sd_cas_n(O_sdram_cas_n), .sd_we_n(O_sdram_wen_n), .sd_ba(O_sdram_ba),

@@ -34,7 +34,17 @@ All notable changes to this project are listed here. The format follows [Keep a 
 - `harness`: `nes::rom_test` and the golden frame CRCs from MesenCE (`golden/nes_frames_crc32.txt`) for 42 PPU test ROMs; CHR upload, frame CRCs and frame capture in `nes::Console`.
 - `testroms/`: 40 more PPU test ROMs, and the `zeropage` and `frame` checks.
 - `tools/mesen/frames.py`: golden frame CRCs and frame dumps from MesenCE; `tools/frame.py`: frame to PNG and frame diff.
+- `memory/arbiter`: fixed-priority sharing of one byte-port memory among N clients.
+- `memory/bram`: block RAM behind `memory/sdram`'s byte port.
+- `common/save-state`: saves and loads a system's state by walking byte regions of its bus into a buffer.
+- `common/crc32`: a save-state write, so a restored CRC carries on.
+- `systems/nes`: save states (save at the next frame boundary, load, and the buffer through the shell), the system's own state words, and an unmirrored view of the nametable RAM; `nes_sdram` and `nes_bram` put memory behind it.
+- `boards/tang-console-138k`: the Tang Console 138K, at 50 MHz, with uart-echo, shell-ram and the NES on block RAM.
+- `harness`: `nes::Console::save_state` and `load_state`, `nes::state_test`, and the NES model on block RAM at 50 MHz (`make_nes_bram_sim`); `SimLink` takes the model's clock rate.
 
 ### Changed
 
 - The Yosys lint stops before technology mapping and adds Yosys's design checks, so it runs in under a second.
+- `systems/nes` takes its memory as a byte port, through `memory/arbiter`, instead of driving the SDRAM itself; its `FREQ_MHZ` moved to `nes_sdram`.
+- `video/ppu-2c02` registers its next dot every clock and commits it on `ce`, so its dot logic has the clocks between dots: `ce` must now come at least 2 clocks apart, with `vrdata` and the register and state writes settled the clock before. `systems/nes` gives the PPU its video memory for the two clocks before each dot. The Tang Console 138K's NES build goes from 49 MHz to 72 MHz.
+- `boards/gowin/build.sh` holds the Gowin open-flow build; each board's `build.sh` calls it with its part. `rs_board_bitstream` replaces `rs_tang_bitstream`.
