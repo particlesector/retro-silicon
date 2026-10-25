@@ -1,0 +1,22 @@
+CAPI=2:
+# SPDX-License-Identifier: Apache-2.0
+name: retro-silicon:video:ppu-2c02:0.1.0
+description: The NES's 2C02 PPU (NTSC), dot-exact, with a save-state port
+
+filesets:
+  rtl:
+    files:
+      - rtl/ppu_2c02.sv
+    file_type: systemVerilogSource
+
+targets:
+  default: &default
+    filesets: [rtl]
+    toplevel: ppu_2c02
+  lint:
+    <<: *default
+    default_tool: verilator
+    tools:
+      verilator:
+        mode: lint-only
+        verilator_options: [-Wall]
