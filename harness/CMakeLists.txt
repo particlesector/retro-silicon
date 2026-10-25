@@ -15,18 +15,25 @@ get_property(shell_sdram_id GLOBAL PROPERTY RS_SHELL_SDRAM_BUILD_ID)
 string(REPLACE "32'h" "0x" shell_sdram_id_c ${shell_sdram_id})
 get_property(nes_id GLOBAL PROPERTY RS_NES_BUILD_ID)
 string(REPLACE "32'h" "0x" nes_id_c ${nes_id})
+get_property(nes_bram_id GLOBAL PROPERTY RS_NES_BRAM_BUILD_ID)
+string(REPLACE "32'h" "0x" nes_bram_id_c ${nes_bram_id})
 add_library(rs_sim_link STATIC src/sim_systems.cpp)
 set_source_files_properties(src/sim_systems.cpp PROPERTIES COMPILE_OPTIONS "-Wall;-Wextra")
 target_link_libraries(rs_sim_link PUBLIC rs_harness)
 rs_verilate(rs_sim_link COMPONENT uart_echo PREFIX Vuart_echo_sim PARAMS CLKS_PER_BIT=18)
 rs_verilate(rs_sim_link COMPONENT shell_ram PREFIX Vshell_ram_sim PARAMS CLKS_PER_BIT=18 BUILD_ID=${shell_ram_id})
 rs_verilate(rs_sim_link COMPONENT shell_sdram PREFIX Vshell_sdram_sim PARAMS CLKS_PER_BIT=18 BUILD_ID=${shell_sdram_id})
-rs_verilate(rs_sim_link COMPONENT nes PREFIX Vnes_sim PARAMS CLKS_PER_BIT=18 BUILD_ID=${nes_id})
+rs_verilate(rs_sim_link COMPONENT nes_sdram PREFIX Vnes_sim PARAMS CLKS_PER_BIT=18 BUILD_ID=${nes_id})
+# The NES as the Tang Console 138K runs it: block RAM, and a 50 MHz clock's
+# rates (1.515 Mbaud, and the dot rate at 189/1760 of the clock).
+rs_verilate(rs_sim_link COMPONENT nes_bram PREFIX Vnes_bram_sim
+            PARAMS CLKS_PER_BIT=33 IDLE_CLKS=500000 DOT_NUM=189 DOT_DEN=1760 BUILD_ID=${nes_bram_id})
 target_include_directories(rs_sim_link PRIVATE ${PROJECT_SOURCE_DIR}/components/memory/sdram/sim)
 # The build IDs the models and bitstreams report, for runners to check.
 target_compile_definitions(rs_sim_link PUBLIC RS_SHELL_RAM_BUILD_ID=${shell_ram_id_c}
                                               RS_SHELL_SDRAM_BUILD_ID=${shell_sdram_id_c}
-                                              RS_NES_BUILD_ID=${nes_id_c})
+                                              RS_NES_BUILD_ID=${nes_id_c}
+                                              RS_NES_BRAM_BUILD_ID=${nes_bram_id_c})
 
 rs_sim_test(harness_test SOURCES tests/echo_test_test.cpp tests/sim_link_test.cpp tests/shell_test.cpp
                                tests/sdram_test.cpp tests/nes_test.cpp)

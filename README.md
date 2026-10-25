@@ -13,7 +13,10 @@ Every component builds with the open-source flow (Yosys, nextpnr, Verilator) and
 | [common/clock-enable](components/common/clock-enable) | Clock enable at NUM/DEN of the clock rate, exact on average | ✅ | ✅ Tang Nano 20K, in nes |
 | [debug/video-probe](components/debug/video-probe) | Frame and line CRCs of a video stream, and line-by-line frame capture | ✅ | ✅ Tang Nano 20K, in nes |
 | [common/crc32](components/common/crc32) | CRC-32 (IEEE, as zlib), one byte per clock | ✅ | ✅ Tang Nano 20K, in shell-sdram and nes |
-| [memory/sdram](components/memory/sdram) | Byte-port controller for a 2M × 32 SDR SDRAM, such as the Tang Nano 20K's | ✅ | ✅ Tang Nano 20K, in shell-sdram |
+| [memory/sdram](components/memory/sdram) | Byte-port controller for a 2M × 32 SDR SDRAM, such as the Tang Nano 20K's | ✅ | ✅ Tang Nano 20K, in shell-sdram and nes |
+| [memory/arbiter](components/memory/arbiter) | Fixed-priority sharing of one byte-port memory | ✅ | ✅ both boards, in nes |
+| [memory/bram](components/memory/bram) | Block RAM behind the same byte port | ✅ | ✅ Tang Console 138K, in nes |
+| [common/save-state](components/common/save-state) | Saves and loads a system's whole state through its bus | ✅ | ✅ both boards, in nes |
 | [common/uart](components/common/uart) | 8N1 receiver and transmitter | ✅ | ✅ Tang Nano 20K, in uart-echo |
 | [common/fifo](components/common/fifo) | Synchronous FIFO in block RAM | ✅ | ✅ Tang Nano 20K, in uart-echo |
 | [common/por](components/common/por) | Power-on reset | ✅ | ✅ Tang Nano 20K, in uart-echo |
@@ -21,7 +24,7 @@ Every component builds with the open-source flow (Yosys, nextpnr, Verilator) and
 | [systems/uart-echo](systems/uart-echo) | UART link test: echoes every byte | ✅ | ✅ Tang Nano 20K: 100 MB at 1.5 Mbaud, no errors |
 | [systems/shell-ram](systems/shell-ram) | Test shell with a scratch RAM | ✅ | ✅ Tang Nano 20K: 1,000 commands with faults injected, same CRC as the sim |
 | [systems/shell-sdram](systems/shell-sdram) | Test shell with the SDRAM | ✅ | ✅ Tang Nano 20K: 8 MB written and checked, same CRC as the sim |
-| [systems/nes](systems/nes) | The NES so far: CPU, PPU, OAM DMA, RAM, PRG RAM, an NROM cartridge | ✅ | ✅ Tang Nano 20K: nestest's bus-trace CRC, and 42 PPU test ROMs pass with MesenCE's frame CRCs |
+| [systems/nes](systems/nes) | The NES so far: CPU, PPU, OAM DMA, RAM, PRG RAM, an NROM cartridge; save states | ✅ | ✅ Tang Nano 20K and Tang Console 138K: nestest's bus-trace CRC, and 42 PPU test ROMs pass with MesenCE's frame CRCs; save states round-trip, and move between the boards |
 
 A board run means the same test, with the same data, passed on real hardware with the same result as the simulation.
 
@@ -31,7 +34,7 @@ Needs CMake 3.28+, Ninja, a C++20 compiler, Catch2 3, and [OSS CAD Suite](https:
 
 ```sh
 cmake --preset default
-cmake --build --preset default    # also builds Tang Nano 20K bitstreams when nextpnr is found
+cmake --build --preset default    # also builds the boards' bitstreams when nextpnr is found
 ctest --preset default
 
 testroms/fetch.py                 # test ROMs into ~/.cache/retro-silicon/testroms

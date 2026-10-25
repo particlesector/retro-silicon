@@ -1,11 +1,15 @@
 // SPDX-License-Identifier: Apache-2.0
 // CRC-32 (IEEE 802.3, reflected, as used by zlib), one byte per enabled clock.
+// Its save state is one word, the CRC itself: read it from `crc`, and write
+// it back with st_we to carry on from there.
 module crc32 (
     input  logic        clk,
-    input  logic        rst,   // synchronous; restarts the CRC
-    input  logic        en,    // consume `data` this cycle
+    input  logic        rst,      // synchronous; restarts the CRC
+    input  logic        en,       // consume `data` this cycle
     input  logic [7:0]  data,
-    output logic [31:0] crc    // CRC of every byte since reset, final XOR applied
+    output logic [31:0] crc,      // CRC of every byte since reset, final XOR applied
+    input  logic        st_we,    // set the CRC to st_wdata, as if those bytes had gone in
+    input  logic [31:0] st_wdata
 );
     localparam logic [31:0] POLY = 32'hEDB88320;
 
@@ -22,6 +26,8 @@ module crc32 (
     always_ff @(posedge clk)
         if (rst)
             state <= '1;
+        else if (st_we)
+            state <= ~st_wdata;
         else if (en)
             state <= next_state(state, data);
 

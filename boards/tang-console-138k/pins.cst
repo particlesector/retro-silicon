@@ -1,0 +1,12 @@
+// SPDX-License-Identifier: Apache-2.0
+// The Tang Console 138K: its 50 MHz oscillator, and the UART on PMOD0 to an
+// external 3.3 V USB-serial adapter, because the onboard BL616's UART can't
+// carry sustained streams (see README.md). PMOD0 is the socket furthest from
+// the HDMI port: FPGA TX on its IO1 (V19) to the adapter's RX, the adapter's
+// TX to IO3 (G22), and the adapter's ground to the row's GND pin.
+IO_LOC "clk" V22;
+IO_PORT "clk" IO_TYPE=LVCMOS33 PULL_MODE=NONE;
+IO_LOC "uart_tx" V19;
+IO_PORT "uart_tx" IO_TYPE=LVCMOS33;
+IO_LOC "uart_rx" G22;
+IO_PORT "uart_rx" IO_TYPE=LVCMOS33 PULL_MODE=UP;

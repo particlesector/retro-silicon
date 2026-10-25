@@ -5,6 +5,42 @@ include(Catch)
 
 find_program(RS_YOSYS yosys)
 
+# Board bitstreams build when nextpnr is on PATH, unless this is turned off.
+find_program(RS_NEXTPNR_HIMBAECHEL nextpnr-himbaechel)
+set(rs_have_pnr OFF)
+if(RS_NEXTPNR_HIMBAECHEL)
+    set(rs_have_pnr ON)
+endif()
+option(RS_BITSTREAMS "Build the boards' bitstreams" ${rs_have_pnr})
+
+# rs_board_bitstream(<name> BUILD <board build.sh> COMPONENT <c> CST <file> [TOP <module>]
+#                    [PARAMS <NAME=VALUE>...])
+#
+# Builds ${CMAKE_BINARY_DIR}/fpga/<name>/<top>.fs with a board's build script
+# (CST relative to the calling directory) from target <name>_bitstream, whose
+# BITSTREAM property holds that path. A missed timing constraint fails the build.
+function(rs_board_bitstream name)
+    cmake_parse_arguments(PARSE_ARGV 1 arg "" "BUILD;COMPONENT;CST;TOP" "PARAMS")
+    rs_rtl(files ${arg_COMPONENT})
+    if(NOT arg_TOP)
+        set(arg_TOP ${arg_COMPONENT})
+    endif()
+    set(cst ${CMAKE_CURRENT_SOURCE_DIR}/${arg_CST})
+    set(dir ${CMAKE_BINARY_DIR}/fpga/${name})
+    set(params)
+    foreach(p IN LISTS arg_PARAMS)
+        list(APPEND params -g ${p})
+    endforeach()
+    add_custom_command(
+        OUTPUT ${dir}/${arg_TOP}.fs
+        COMMAND ${arg_BUILD} ${params} -t ${arg_TOP} -c ${cst} -o ${dir} ${files}
+        DEPENDS ${files} ${cst} ${arg_BUILD} ${PROJECT_SOURCE_DIR}/boards/gowin/build.sh
+        COMMENT "Building the ${name} bitstream"
+        VERBATIM)
+    add_custom_target(${name}_bitstream ALL DEPENDS ${dir}/${arg_TOP}.fs)
+    set_target_properties(${name}_bitstream PROPERTIES BITSTREAM ${dir}/${arg_TOP}.fs)
+endfunction()
+
 # rs_component(<name> RTL <files...> [DEPENDS <components...>] [TOPS <modules...>])
 #
 # Registers a component's RTL (paths relative to the calling directory) under

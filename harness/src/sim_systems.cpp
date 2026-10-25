@@ -2,6 +2,7 @@
 #include "rig/sim_systems.hpp"
 
 #include "Vshell_ram_sim.h"
+#include "Vnes_bram_sim.h"
 #include "Vnes_sim.h"
 #include "Vshell_sdram_sim.h"
 #include "sdram_model.hpp"
@@ -63,5 +64,9 @@ std::unique_ptr<SimLink> make_shell_sdram_sim() {
 }
 
 std::unique_ptr<SimLink> make_nes_sim() { return std::make_unique<SimLink>(std::make_unique<WithSdram<Vnes_sim>>(), SimLink::kClksPerBit, 64); }
+
+std::unique_ptr<SimLink> make_nes_bram_sim() {
+    return std::make_unique<SimLink>(std::make_unique<Verilated<Vnes_bram_sim>>(), 33, 64, 50'000'000);
+}
 
 } // namespace rig

@@ -31,9 +31,11 @@ public:
         m.eval();
     }
 
-    // One dot: the memory answers the address the PPU presented, then ce.
+    // One dot: the memory answers the address the PPU presented, a clock
+    // passes for the PPU's next-dot logic to settle, then ce.
     void dot() {
         mem_slot();
+        clock();
         m.ce = 1;
         clock();
         m.ce = 0;

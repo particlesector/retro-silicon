@@ -28,13 +28,15 @@ public:
     // each write starts after a seeded random 0 to jitter_clks - 1 idle clocks,
     // as a board's host is never in step with the FPGA clock; without it, every
     // command arrives at the same phase of anything the design divides its
-    // clock by, which hides phase-dependent bugs.
-    explicit SimLink(std::unique_ptr<SimModel> model, int clks_per_bit = kClksPerBit, int jitter_clks = 0);
+    // clock by, which hides phase-dependent bugs. clock_hz is the design's
+    // clock, for the timeouts and the baud rate.
+    explicit SimLink(std::unique_ptr<SimModel> model, int clks_per_bit = kClksPerBit, int jitter_clks = 0,
+                     unsigned clock_hz = kClockHz);
     ~SimLink() override;
 
     void write(std::span<const uint8_t> data) override;
     size_t read(std::span<uint8_t> buf, int timeout_ms) override;
-    unsigned baud() const override { return kClockHz / static_cast<unsigned>(clks_per_bit_); }
+    unsigned baud() const override { return clock_hz_ / static_cast<unsigned>(clks_per_bit_); }
 
     uint64_t cycles() const { return cycles_; }
     int frame_errors() const { return rx_.frame_errors; }
@@ -44,6 +46,7 @@ private:
 
     std::unique_ptr<SimModel> model_;
     int clks_per_bit_;
+    unsigned clock_hz_;
     UartEncoder tx_;  // host -> design
     UartDecoder rx_;  // design -> host
     size_t taken_ = 0;             // decoded bytes already handed out

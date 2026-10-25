@@ -122,7 +122,7 @@ module test_shell #(
     logic        crc_rst, crc_en;
     logic [31:0] crc_val;
 
-    crc32 u_crc (.clk, .rst(crc_rst), .en(crc_en), .data(bus_rdata), .crc(crc_val));
+    crc32 u_crc (.clk, .rst(crc_rst), .en(crc_en), .data(bus_rdata), .crc(crc_val), .st_we(1'b0), .st_wdata('0));
 
     assign crc_rst = dstate == D_IDLE;
     assign crc_en  = dstate == D_CRC && bus_req && bus_ack;

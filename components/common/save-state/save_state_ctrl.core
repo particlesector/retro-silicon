@@ -1,0 +1,30 @@
+CAPI=2:
+# SPDX-License-Identifier: Apache-2.0
+name: retro-silicon:common:save-state:0.1.0
+description: Saves and loads a system's state by walking byte regions of its bus into a buffer
+
+filesets:
+  rtl:
+    files:
+      - rtl/save_state_ctrl.sv
+    file_type: systemVerilogSource
+
+targets:
+  default: &default
+    filesets: [rtl]
+    toplevel: save_state_ctrl
+  lint:
+    <<: *default
+    default_tool: verilator
+    tools:
+      verilator:
+        mode: lint-only
+        verilator_options: [-Wall]
+    parameters: [AW]
+
+parameters:
+  AW:
+    datatype: int
+    paramtype: vlogparam
+    default: 15
+    description: Buffer address bits

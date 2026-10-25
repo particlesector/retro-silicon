@@ -1,0 +1,35 @@
+CAPI=2:
+# SPDX-License-Identifier: Apache-2.0
+name: retro-silicon:memory:arbiter:0.1.0
+description: Fixed-priority sharing of one byte-port memory among N clients
+
+filesets:
+  rtl:
+    files:
+      - rtl/mem_arbiter.sv
+    file_type: systemVerilogSource
+
+targets:
+  default: &default
+    filesets: [rtl]
+    toplevel: mem_arbiter
+  lint:
+    <<: *default
+    default_tool: verilator
+    tools:
+      verilator:
+        mode: lint-only
+        verilator_options: [-Wall]
+    parameters: [N, AW]
+
+parameters:
+  N:
+    datatype: int
+    paramtype: vlogparam
+    default: 2
+    description: Clients
+  AW:
+    datatype: int
+    paramtype: vlogparam
+    default: 23
+    description: Address bits

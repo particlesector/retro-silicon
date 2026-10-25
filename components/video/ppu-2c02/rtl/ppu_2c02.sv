@@ -8,14 +8,19 @@
 // pre-render; dots 0-340. After reset the PPU sits at line 261, dot 340, so its
 // first dot is line 0, dot 0.
 //
-// CPU port: one register access per strobe of `reg_ce`, between dots (never on
-// a clock with `ce`). A read's data is on `reg_rdata` from the clock after the
-// strobe until the next one.
+// The next dot is computed every clock and registered, and `ce` commits it, so
+// `ce` must come at least 2 clocks apart, and the PPU's inputs must be
+// settled the clock before each `ce`: no `reg_ce` or `st_we` then or on it,
+// and `vrdata` as it will be on the `ce` clock.
+//
+// CPU port: one register access per strobe of `reg_ce`, between dots. A
+// read's data is on `reg_rdata` from the clock after the strobe until the
+// next one.
 //
 // Video memory port: `vaddr`, `vwe` and `vwdata` change only on `ce` clocks
-// and hold until the next. The PPU latches `vrdata` on each `ce` clock, so
-// memory must answer the address within the dot; a write must happen once,
-// before the next `ce`.
+// and hold until the next. Memory must answer the address on `vrdata` from
+// the clock before the next `ce` through it, and perform a write once,
+// before that.
 //
 // Pixels: pixel x of a line comes out two dots after it's drawn, which is
 // when grayscale and emphasis apply (as on the 2C02, a $2001 write changes
@@ -638,6 +643,63 @@ module ppu_2c02 #(
     end
 
 
+    // ---- The next dot, registered ----
+    // Everything a dot changes is computed every clock and registered here,
+    // and a ce commits the registered copy: the dot logic gets the clocks
+    // between dots instead of one. So its inputs (the state, the memories,
+    // vrdata) must be settled the clock before each ce.
+    typedef struct packed {
+        logic        vbl, s0hit, ovf;
+        logic [7:0]  oamaddr;
+        logic [14:0] v, t;
+        logic [7:0]  rdbuf, io;
+        logic [23:0] io_age;
+        logic        odd;
+        logic [8:0]  dot, line;
+        logic [15:0] sh_lo, sh_hi;
+        logic [1:0]  pal_prev, pal_cur, tile_pal;
+        logic [7:0]  tile_lo, tile_hi;
+        logic [12:0] tile_addr;
+        logic [7:0]  oam_buf, sec_addr;
+        logic        in_range, copy_done, s0_added, s0_vis;
+        logic [1:0]  ovf_cnt;
+        logic [12:0] sp_addr;
+        logic [7:0]  sp_attr, sp_x, sp_lo;
+        logic        sp_in;
+        logic        ren_cur, ren_prev, prevent;
+        logic [2:0]  rd_sm, wr_sm, ign;
+        logic        need_inc;
+        logic [1:0]  upd_delay;
+        logic [13:0] bus_addr;
+        logic        fill;
+        logic [5:0]  p1_c;
+        logic        p1_v;
+        logic [7:0]  p1_x, p1_y;
+        logic [13:0] vaddr;
+        logic        vwe;
+        logic [7:0]  vwdata;
+        logic        frame;
+        logic        sec_we;
+        logic [4:0]  sec_wa;
+        logic [7:0]  sec_wd;
+        logic        pal_we;
+        logic [4:0]  pal_wa;
+        logic [7:0]  pal_wd;
+        logic        sl_we, sl_clear;
+        logic [2:0]  sl_wa;
+    } next_t;
+
+    next_t nq;
+
+    always_ff @(posedge clk)
+        nq <= {n_vbl, n_s0hit, n_ovf, n_oamaddr, n_v, n_t, n_rdbuf, n_io, n_io_age, n_odd, n_dot, n_line,
+                n_sh_lo, n_sh_hi, n_pal_prev, n_pal_cur, n_tile_pal, n_tile_lo, n_tile_hi, n_tile_addr,
+                n_oam_buf, n_sec_addr, n_in_range, n_copy_done, n_s0_added, n_s0_vis, n_ovf_cnt,
+                n_sp_addr, n_sp_attr, n_sp_x, n_sp_lo, n_sp_in, n_ren_cur, n_ren_prev, n_prevent,
+                n_rd_sm, n_wr_sm, n_ign, n_need_inc, n_upd_delay, n_bus_addr, n_fill,
+                n_p1_c, n_p1_v, n_p1_x, n_p1_y, n_vaddr, n_vwe, n_vwdata, n_frame,
+                sec_we, sec_wa, sec_wd, pal_we, pal_wa, pal_wd, sl_we, sl_clear, sl_wa};
+
     // ---- Register access: the next state if `reg_ce` ----
     logic [7:0]  r_ctrl, r_mask, r_oamaddr, r_io, r_rdata, r_oam_buf, r_wr_latch;
     logic        r_vbl, r_prevent, r_w;
@@ -833,26 +895,26 @@ module ppu_2c02 #(
                 {sl_lo[st_addr[2:0]], sl_hi[st_addr[2:0]], sl_x[st_addr[2:0]],
                  sl_valid[st_addr[2:0]], sl_pri[st_addr[2:0]], sl_pal[st_addr[2:0]]} <= st_wdata[31:4];
         end else if (ce) begin
-            vbl <= n_vbl; s0hit <= n_s0hit; ovf <= n_ovf;
-            oamaddr <= n_oamaddr;
-            v <= n_v; t <= n_t;
-            rdbuf <= n_rdbuf; io <= n_io; io_age <= n_io_age;
-            odd <= n_odd;
-            dot <= n_dot; line <= n_line;
-            sh_lo <= n_sh_lo; sh_hi <= n_sh_hi;
-            pal_prev <= n_pal_prev; pal_cur <= n_pal_cur; tile_pal <= n_tile_pal;
-            tile_lo <= n_tile_lo; tile_hi <= n_tile_hi; tile_addr <= n_tile_addr;
-            oam_buf <= n_oam_buf; sec_addr <= n_sec_addr;
-            in_range <= n_in_range; copy_done <= n_copy_done; s0_added <= n_s0_added; s0_vis <= n_s0_vis;
-            ovf_cnt <= n_ovf_cnt;
-            sp_addr <= n_sp_addr; sp_attr <= n_sp_attr; sp_x <= n_sp_x; sp_in <= n_sp_in;
-            ren_cur <= n_ren_cur; ren_prev <= n_ren_prev; prevent <= n_prevent;
-            rd_sm <= n_rd_sm; wr_sm <= n_wr_sm; ign <= n_ign; need_inc <= n_need_inc;
-            upd_delay <= n_upd_delay;
-            bus_addr <= n_bus_addr; fill <= n_fill;
-            vaddr <= n_vaddr; vwe <= n_vwe; vwdata <= n_vwdata;
-            frame_end <= n_frame;
-            sp_lo <= n_sp_lo;
+            vbl <= nq.vbl; s0hit <= nq.s0hit; ovf <= nq.ovf;
+            oamaddr <= nq.oamaddr;
+            v <= nq.v; t <= nq.t;
+            rdbuf <= nq.rdbuf; io <= nq.io; io_age <= nq.io_age;
+            odd <= nq.odd;
+            dot <= nq.dot; line <= nq.line;
+            sh_lo <= nq.sh_lo; sh_hi <= nq.sh_hi;
+            pal_prev <= nq.pal_prev; pal_cur <= nq.pal_cur; tile_pal <= nq.tile_pal;
+            tile_lo <= nq.tile_lo; tile_hi <= nq.tile_hi; tile_addr <= nq.tile_addr;
+            oam_buf <= nq.oam_buf; sec_addr <= nq.sec_addr;
+            in_range <= nq.in_range; copy_done <= nq.copy_done; s0_added <= nq.s0_added; s0_vis <= nq.s0_vis;
+            ovf_cnt <= nq.ovf_cnt;
+            sp_addr <= nq.sp_addr; sp_attr <= nq.sp_attr; sp_x <= nq.sp_x; sp_in <= nq.sp_in;
+            ren_cur <= nq.ren_cur; ren_prev <= nq.ren_prev; prevent <= nq.prevent;
+            rd_sm <= nq.rd_sm; wr_sm <= nq.wr_sm; ign <= nq.ign; need_inc <= nq.need_inc;
+            upd_delay <= nq.upd_delay;
+            bus_addr <= nq.bus_addr; fill <= nq.fill;
+            vaddr <= nq.vaddr; vwe <= nq.vwe; vwdata <= nq.vwdata;
+            frame_end <= nq.frame;
+            sp_lo <= nq.sp_lo;
 
             // The pixel pipeline: grayscale and emphasis apply two dots after drawing.
             pix_valid <= p2_v;
@@ -860,17 +922,17 @@ module ppu_2c02 #(
             pix_x     <= p2_x;
             pix_y     <= p2_y;
             p2_c <= p1_c; p2_v <= p1_v; p2_x <= p1_x; p2_y <= p1_y;
-            p1_c <= n_p1_c; p1_v <= n_p1_v; p1_x <= n_p1_x; p1_y <= n_p1_y;
+            p1_c <= nq.p1_c; p1_v <= nq.p1_v; p1_x <= nq.p1_x; p1_y <= nq.p1_y;
 
-            if (sl_clear)
+            if (nq.sl_clear)
                 sl_valid <= '0;
-            if (sl_we) begin
-                sl_lo[sl_wa]    <= sp_in ? (sp_attr[6] ? rev8(sp_lo) : sp_lo) : 8'h00;
-                sl_hi[sl_wa]    <= sp_in ? (sp_attr[6] ? rev8(vrdata) : vrdata) : 8'h00;
-                sl_x[sl_wa]     <= sp_x;
-                sl_pri[sl_wa]   <= sp_attr[5];
-                sl_pal[sl_wa]   <= sp_attr[1:0];
-                sl_valid[sl_wa] <= sp_in;
+            if (nq.sl_we) begin
+                sl_lo[nq.sl_wa]    <= sp_in ? (sp_attr[6] ? rev8(sp_lo) : sp_lo) : 8'h00;
+                sl_hi[nq.sl_wa]    <= sp_in ? (sp_attr[6] ? rev8(vrdata) : vrdata) : 8'h00;
+                sl_x[nq.sl_wa]     <= sp_x;
+                sl_pri[nq.sl_wa]   <= sp_attr[5];
+                sl_pal[nq.sl_wa]   <= sp_attr[1:0];
+                sl_valid[nq.sl_wa] <= sp_in;
             end
         end else if (reg_ce) begin
             ctrl <= r_ctrl; mask <= r_mask; oamaddr <= r_oamaddr;
@@ -919,16 +981,16 @@ module ppu_2c02 #(
             for (int i = 0; i < 4; i++)
                 sec[{st_addr[2:0], 2'(i)}] <= st_wdata[8*i +: 8];
         end else if (ce) begin
-            if (pal_we) begin
+            if (nq.pal_we) begin
                 // $3F00/$3F10 and the like are one entry, written in both places.
-                if (pal_wa[1:0] == 2'b00) begin
-                    pal[{1'b0, pal_wa[3:0]}] <= pal_wd;
-                    pal[{1'b1, pal_wa[3:0]}] <= pal_wd;
+                if (nq.pal_wa[1:0] == 2'b00) begin
+                    pal[{1'b0, nq.pal_wa[3:0]}] <= nq.pal_wd;
+                    pal[{1'b1, nq.pal_wa[3:0]}] <= nq.pal_wd;
                 end else
-                    pal[pal_wa] <= pal_wd;
+                    pal[nq.pal_wa] <= nq.pal_wd;
             end
-            if (sec_we)
-                sec[sec_wa] <= sec_wd;
+            if (nq.sec_we)
+                sec[nq.sec_wa] <= nq.sec_wd;
         end
     end
 

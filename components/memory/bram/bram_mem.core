@@ -1,0 +1,30 @@
+CAPI=2:
+# SPDX-License-Identifier: Apache-2.0
+name: retro-silicon:memory:bram:0.1.0
+description: Block RAM behind memory/sdram's byte port
+
+filesets:
+  rtl:
+    files:
+      - rtl/bram_mem.sv
+    file_type: systemVerilogSource
+
+targets:
+  default: &default
+    filesets: [rtl]
+    toplevel: bram_mem
+  lint:
+    <<: *default
+    default_tool: verilator
+    tools:
+      verilator:
+        mode: lint-only
+        verilator_options: [-Wall]
+    parameters: [AW]
+
+parameters:
+  AW:
+    datatype: int
+    paramtype: vlogparam
+    default: 18
+    description: Address bits that select a byte; 2^AW bytes

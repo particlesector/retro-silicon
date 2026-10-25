@@ -50,8 +50,8 @@ module video_probe #(
     logic [31:0] f_crc, l_crc;
     logic [7:0]  data;
 
-    crc32 u_frame (.clk, .rst(rst || (pix_valid && pix_x == '0 && pix_y == '0)), .en(n != '0), .data, .crc(f_crc));
-    crc32 u_line  (.clk, .rst(rst || (pix_valid && pix_x == '0)), .en(n != '0), .data, .crc(l_crc));
+    crc32 u_frame (.clk, .rst(rst || (pix_valid && pix_x == '0 && pix_y == '0)), .en(n != '0), .data, .crc(f_crc), .st_we(1'b0), .st_wdata('0));
+    crc32 u_line  (.clk, .rst(rst || (pix_valid && pix_x == '0)), .en(n != '0), .data, .crc(l_crc), .st_we(1'b0), .st_wdata('0));
 
     logic [31:0] line_crc[H];
     logic [15:0] cap_buf[W];

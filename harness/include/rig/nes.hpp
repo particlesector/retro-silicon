@@ -15,14 +15,17 @@
 
 namespace rig::nes {
 
-constexpr uint32_t kSdram = 0x00000000;  // PRG ROM from here
+constexpr uint32_t kSdram = 0x00000000;  // the board's memory: PRG ROM from here
 constexpr uint32_t kRegs = 0x01000000;
 constexpr uint32_t kCpu = 0x02000000;    // the CPU's address space: RAM and PRG RAM
 constexpr uint32_t kPpu = 0x03000000;    // the PPU's: CHR and nametables
 constexpr uint32_t kCpuState = 0x04000000;
 constexpr uint32_t kPpuState = 0x04001000;
+constexpr uint32_t kSysState = 0x04002000;  // the system's own state words
 constexpr uint32_t kLineCrcs = 0x05000000;
 constexpr uint32_t kCapture = 0x05001000;
+constexpr uint32_t kSaveBuffer = 0x06000000;
+constexpr size_t kSaveStateBytes = 20920;   // what the save-state controller walks
 
 constexpr int kWidth = 256, kHeight = 240;
 constexpr int kPpuStateWords = 101;
@@ -44,6 +47,8 @@ enum Reg : uint32_t {
     kCapFrame = 0x30,   // 4 bytes: the frame to capture
     kCapLine = 0x34,    // the line to capture
     kCapEn = 0x35,      // bit 0: capture
+    kSaveCmd = 0x38,    // {op (1 save, 2 load), sequence}: runs when it changes
+    kSaveDone = 0x39,   // read-only: the last command finished
 };
 
 enum Status : uint8_t { kHalted = 1, kStopped = 2, kLate = 4, kRunning = 8, kCapHeld = 16, kCrcValid = 32 };
@@ -62,9 +67,11 @@ public:
 
     // Holds the system in reset, which clears its counts, CRCs and status.
     void hold_reset();
-    // With the system held in reset: uploads the ROM (PRG to SDRAM, checked
-    // with the shell's CRC; CHR, or clears CHR RAM), sets the mirroring, and
-    // clears RAM, PRG RAM, nametables and OAM, as MesenCE powers up. Returns
+    // With the system held in reset: clears the stop limits, the vector
+    // override and the capture; uploads the ROM (PRG to the board's memory,
+    // checked with the shell's CRC; CHR, or clears CHR RAM), sets the
+    // mirroring, and clears RAM, PRG RAM, nametables and OAM, as MesenCE
+    // powers up. Returns
     // an error message, or nothing. Mapper 0 only, for now.
     std::optional<std::string> load(const NesRom& rom);
     void set_vector(std::optional<uint16_t> pc);
@@ -83,8 +90,20 @@ public:
     // With the system stopped at the end of frame `index - 1`: runs through
     // frame `index`, capturing it line by line, and stops again after it.
     Frame capture(uint32_t index);
+    // Polls until the system stops at a limit or halts; returns the status.
+    // Throws RigError if its cycle count stops moving first.
+    uint8_t wait_stopped();
+
+    // Saves the system's whole state and returns it: if it's running, at its
+    // next frame boundary, after which it runs on. Not while held in reset.
+    std::vector<uint8_t> save_state();
+    // Loads a state from save_state(), from this board or any other running
+    // the same system, and leaves the system stopped there; run() continues.
+    // Releases reset first, if it's held.
+    void load_state(const std::vector<uint8_t>& state);
 
 private:
+    void save_cmd(uint8_t op);
     void put32(uint32_t reg, uint32_t v, int bytes = 4);
     uint32_t get32(uint32_t reg);
     shell::Client& c_;
@@ -115,6 +134,15 @@ struct RomCheck {
 // same frame; its notes carry the ROM's text report, if it has one.
 TestResult rom_test(Link& link, const RomCheck& check, const NesRom& rom, uint32_t frames,
                     std::optional<uint32_t> build_id = std::nullopt);
+
+// A save-state round trip. The ROM runs uninterrupted from power-up to frame
+// `frames`; then again, saved at the first frame boundary after
+// `save_after` frames while it runs, run on, reset and reloaded, restored from
+// the saved state and run to frame `frames`. Passes when both runs end with
+// the same frame CRC, line CRCs, trace CRC and cycle count. The result's
+// CRC32 is the last frame's.
+TestResult state_test(Link& link, const NesRom& rom, uint32_t save_after, uint32_t frames,
+                      std::optional<uint32_t> build_id = std::nullopt);
 
 // A line of harness/golden/nes_frames_crc32.txt (tools/mesen/frames.py): a
 // ROM, how it reports, and MesenCE's CRC of frame `frames - 1`.

@@ -4,7 +4,7 @@ Sipeed Tang Nano 20K: Gowin GW2AR-LV18QN88C8/I7 (family GW2A-18C), 27 MHz oscill
 
 ## Building
 
-`build.sh` runs Yosys, nextpnr-himbaechel and gowin_pack with OSS CAD Suite on PATH. A missed timing constraint fails the build.
+`build.sh` runs `../gowin/build.sh` (Yosys, nextpnr-himbaechel and gowin_pack, with OSS CAD Suite on PATH) for this part at 27 MHz. A missed timing constraint fails the build.
 
 ```sh
 boards/tang-nano-20k/build.sh -t <top> -c <pins.cst> -o <outdir> [-f <MHz>] [-g NAME=VALUE]... <sources...>
@@ -25,7 +25,7 @@ openFPGALoader -b tangnano20k build/fpga/uart_echo/uart_echo.fs
 | `uart_echo_bitstream` | `systems/uart-echo` | `uart_echo.cst` | 1.5 Mbaud (`CLKS_PER_BIT=18`) |
 | `shell_ram_bitstream` | `systems/shell-ram` | `uart_echo.cst` | 1.5 Mbaud; `BUILD_ID` from the RTL's SHA-256 |
 | `shell_sdram_bitstream` | `systems/shell-sdram`, through `rtl/shell_sdram_top.sv` | `uart_echo.cst` | As shell-ram, with the SDRAM |
-| `nes_bitstream` | `systems/nes`, through `rtl/nes_top.sv` | `uart_echo.cst` | As shell-ram, with the SDRAM; about 4,700 LUTs (22%) and 6 of 46 block RAMs |
+| `nes_bitstream` | `systems/nes` on the SDRAM (`nes_sdram`), through `rtl/nes_top.sv` | `uart_echo.cst` | As shell-ram |
 
 ## SDRAM
 
