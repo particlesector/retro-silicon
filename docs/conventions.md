@@ -19,6 +19,22 @@
 - Streams use valid/ready: a transfer happens on a clock edge where both are high.
 - One-cycle event outputs (such as `valid` on `uart_rx`) are pulses; sticky flags belong to the system that uses them.
 
+## Save states
+
+Every component with state has a save-state port, so a system can save and restore itself (save states, rewind, and tests that start from a saved point instead of a cold boot):
+
+| Port | Dir | Width | Meaning |
+| --- | --- | --- | --- |
+| `st_addr` | in | as needed | Word index |
+| `st_rdata` | out | 32 | Word `st_addr`, registered: valid the clock after the address |
+| `st_we` | in | 1 | Write `st_wdata` to word `st_addr` this clock |
+| `st_wdata` | in | 32 | The word to write |
+
+- The port is used only while the component's clock enables are low. Reading every word, then writing them back after any reset or run, leaves the component in a state from which it continues exactly as it would have.
+- A component's state covers every register and internal memory that affects its behaviour, mid-operation included (the CPU saves mid-instruction). Memories outside it, such as a console's RAM, belong to the system that owns them.
+- Unused bits read 0. Each component's README lists its words.
+- Registered reads keep the port on block RAM, so a memory can be part of the state.
+
 ## Parameters
 
 - Rates and sizes are parameters (`CLKS_PER_BIT`, `DEPTH_LOG2`), so the same RTL serves every board and test.
@@ -26,5 +42,5 @@
 
 ## Portability
 
-- Components have no pins, PLLs or vendor primitives. Those go in `boards/` and `platform/`.
+- Components have no pins, PLLs or vendor primitives. Those go in `boards/`.
 - Write memories as plain arrays with a registered read, so synthesis infers block RAM.

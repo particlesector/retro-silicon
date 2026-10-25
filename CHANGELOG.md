@@ -26,6 +26,14 @@ All notable changes to this project are listed here. The format follows [Keep a 
 - `systems/nes`: the CPU with RAM, PRG RAM and NROM PRG from SDRAM, run control, a reset-vector override, a stop-at-cycle register and a CRC of the CPU's bus; a Tang Nano 20K build; nestest passes on it with the CPU bench's trace CRC.
 - `harness`: iNES parsing, the NES console client and nestest runner, and optional host timing jitter in `SimLink`.
 - `debug/test-shell`: CRC command (protocol version 2), so the host can check an upload without reading it back; `Client::crc`, and `write` and `read` for any length.
+- `video/ppu-2c02`: the NES's 2C02 PPU (NTSC), dot-exact, with MesenCE's timing, and a save-state port.
+- `common/clock-enable`: a clock enable at NUM/DEN of the clock rate, exact on average.
+- `debug/video-probe`: frame and line CRCs of a video stream, and line-by-line capture that holds the system.
+- `cpu/6502`: a save-state port; `docs/conventions.md` describes the port every component with state gets.
+- `systems/nes`: the PPU, OAM DMA, CHR ROM or RAM and nametable mirroring; the NTSC dot rate from 27 MHz with MesenCE's CPU/PPU alignment; stop at a frame count; frame and line CRCs; frame capture; CPU and PPU save-state access.
+- `harness`: `nes::rom_test` and the golden frame CRCs from MesenCE (`golden/nes_frames_crc32.txt`) for 42 PPU test ROMs; CHR upload, frame CRCs and frame capture in `nes::Console`.
+- `testroms/`: 40 more PPU test ROMs, and the `zeropage` and `frame` checks.
+- `tools/mesen/frames.py`: golden frame CRCs and frame dumps from MesenCE; `tools/frame.py`: frame to PNG and frame diff.
 
 ### Changed
 

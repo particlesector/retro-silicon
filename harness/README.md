@@ -10,7 +10,7 @@ The C++ core of the test harness. Tests talk to a design through `rig::Link`, a 
 | `rig/shell.hpp` | The test-shell protocol: frame encoder, a parser that survives noise, and `Client` (PING, INFO, PEEK, POKE, CRC, with retries; `write` and `read` for any length) |
 | `rig/sdram_test.hpp` | `sdram_test`: seeded data written to all four quarters of the SDRAM through `systems/shell-sdram`, checked with the shell's CRC and sampled back |
 | `rig/ines.hpp` | `parse_ines` and `load_ines`: iNES and NES 2.0 headers (mapper, mirroring, battery, trainer) and the PRG and CHR data |
-| `rig/nes.hpp` | `nes::Console` for `systems/nes` (reset, PRG upload checked by CRC, reset-vector override, stop-at-cycle, status, trace CRC, CPU-space peeks) and `nes::nestest` |
+| `rig/nes.hpp` | `nes::Console` for `systems/nes` (reset, ROM upload checked by CRC, power-up memory, reset-vector override, cycle and frame limits, status, trace and frame CRCs, line CRCs, frame capture, CPU-space peeks), `nes::nestest`, `nes::rom_test` and `nes::load_golden_roms` |
 | `rig/shell_test.hpp` | `shell_test`: random commands against `systems/shell-ram`, checked against a model of its RAM, optionally over a `FaultyLink` |
 | `rig/faulty_link.hpp` | `FaultyLink`: wraps a `Link` and drops, corrupts or adds bytes at a seeded rate, to prove a protocol recovers |
 | `rig/echo_test.hpp` | `echo_test`: streams seeded random data through an echo design and checks every byte, returning a `TestResult` with the CRC32 of what came back |
@@ -20,4 +20,4 @@ The C++ core of the test harness. Tests talk to a design through `rig::Link`, a 
 
 CMake targets: `rs_harness` (everything but this repo's Verilated systems) and `rs_sim_link` (adds them). A board backend implements `Link` over a serial port; it isn't in this repo because it depends on the machine it runs on.
 
-`golden/echo_crc32.txt`, `golden/shell_crc32.txt` and `golden/sdram_crc32.txt` hold the tests' CRC32 for given sizes and seeds, and `golden/nes_trace_crc32.txt` the CPU's bus-trace CRC for nestest, which the CPU's own bench must also give. Every backend that passes must give these values; the shell test's CRC doesn't depend on injected faults.
+`golden/echo_crc32.txt`, `golden/shell_crc32.txt` and `golden/sdram_crc32.txt` hold the tests' CRC32 for given sizes and seeds, `golden/nes_trace_crc32.txt` the CPU's bus-trace CRC for nestest, which the CPU's own bench must also give, and `golden/nes_frames_crc32.txt` MesenCE's CRC of a frame of each test ROM, from `tools/mesen/frames.py`. Every backend that passes must give these values; the shell test's CRC doesn't depend on injected faults.

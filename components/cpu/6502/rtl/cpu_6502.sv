@@ -14,6 +14,14 @@
 // ISC, SLO, RLA, SRE, RRA, ANC, ALR, ARR, AXS, SBC $EB, the NOPs). JAM opcodes
 // and the unstable ones (XAA, LAX #imm, AHX, SHX, SHY, TAS, LAS) stop the CPU
 // with `halted` set until reset.
+//
+// Save state (docs/conventions.md): four words, readable and writable while
+// ce is low, mid-instruction included.
+//   0: A, X, Y, S (A in bits 31-24)
+//   1: PC, then the internal address register
+//   2: opcode, data latch, base address low, then N V D I Z C, page-cross, RMW carry
+//   3: bits 1-0 phase, 4-2 cycle, 6-5 interrupt source, then interrupt go and
+//      snapshot, IRQ and NMI samples, NMI pending, NMI vector
 module cpu_6502 #(
     parameter bit DECIMAL = 1'b1  // 0 for the NES's 2A03
 ) (
@@ -39,7 +47,13 @@ module cpu_6502 #(
     output logic [7:0]  dbg_x,
     output logic [7:0]  dbg_y,
     output logic [7:0]  dbg_s,
-    output logic [7:0]  dbg_p
+    output logic [7:0]  dbg_p,
+
+    // Save-state port.
+    input  logic [1:0]  st_addr,
+    output logic [31:0] st_rdata,  // word st_addr, the clock after
+    input  logic        st_we,
+    input  logic [31:0] st_wdata
 );
     // ---- Decoding ----
     typedef enum logic [4:0] {
@@ -773,6 +787,19 @@ module cpu_6502 #(
             end
         end
 
+        if (st_we)
+            case (st_addr)
+                2'd0: {a, x, y, s} <= st_wdata;
+                2'd1: {pc, ad} <= st_wdata;
+                2'd2: {ir, dl, bal, fn, fv, fd, fi, fz, fc, page_x, rc} <= st_wdata;
+                default: begin
+                    phase    <= phase_t'(st_wdata[1:0]);
+                    t        <= st_wdata[4:2];
+                    int_src  <= int_t'(st_wdata[6:5]);
+                    {nmi_vec, nmi_pend, nmi_r, irq_r, int_snap, int_go} <= st_wdata[12:7];
+                end
+            endcase
+
         if (rst) begin
             phase    <= P_FETCH;
             t        <= '0;
@@ -791,4 +818,12 @@ module cpu_6502 #(
             nmi_vec  <= 1'b0;
         end
     end
+
+    always_ff @(posedge clk)
+        case (st_addr)
+            2'd0:    st_rdata <= {a, x, y, s};
+            2'd1:    st_rdata <= {pc, ad};
+            2'd2:    st_rdata <= {ir, dl, bal, fn, fv, fd, fi, fz, fc, page_x, rc};
+            default: st_rdata <= {19'b0, nmi_vec, nmi_pend, nmi_r, irq_r, int_snap, int_go, int_src, t, phase};
+        endcase
 endmodule

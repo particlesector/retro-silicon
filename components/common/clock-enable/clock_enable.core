@@ -1,0 +1,35 @@
+CAPI=2:
+# SPDX-License-Identifier: Apache-2.0
+name: retro-silicon:common:clock-enable:0.1.0
+description: Clock enable at NUM/DEN of the clock rate, exact on average
+
+filesets:
+  rtl:
+    files:
+      - rtl/clock_enable.sv
+    file_type: systemVerilogSource
+
+targets:
+  default: &default
+    filesets: [rtl]
+    toplevel: clock_enable
+  lint:
+    <<: *default
+    default_tool: verilator
+    parameters: [NUM, DEN]
+    tools:
+      verilator:
+        mode: lint-only
+        verilator_options: [-Wall]
+
+parameters:
+  NUM:
+    datatype: int
+    default: 35
+    paramtype: vlogparam
+    description: Pulses per DEN clocks
+  DEN:
+    datatype: int
+    default: 176
+    paramtype: vlogparam
+    description: Clocks per NUM pulses

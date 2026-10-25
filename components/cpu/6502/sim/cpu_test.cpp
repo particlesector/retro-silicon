@@ -5,6 +5,7 @@
 #include <catch2/catch_test_macros.hpp>
 
 #include <cstdint>
+#include <random>
 #include <initializer_list>
 #include <vector>
 
@@ -257,4 +258,46 @@ TEST_CASE("6502 stops on a JAM opcode until reset") {
     p.instruction();
     for (int i = 0; i < 10; i++) p.cycle();
     REQUIRE(p.halted());
+}
+
+TEST_CASE("6502 save state restores mid-instruction, interrupts included") {
+    // Memory is all opcodes that keep running, so any byte the CPU fetches as
+    // an opcode is one; IRQ and NMI toggle at random.
+    std::vector<uint8_t> safe;
+    for (int op = 0; op < 256; op++) {
+        bool jam = (op & 0x0F) == 0x02 && op != 0x82 && op != 0xA2 && op != 0xC2 && op != 0xE2;
+        bool unstable = op == 0x8B || op == 0xAB || op == 0x93 || op == 0x9F || op == 0x9E || op == 0x9C ||
+                        op == 0x9B || op == 0xBB;
+        if (!jam && !unstable) safe.push_back(static_cast<uint8_t>(op));
+    }
+    for (unsigned seed = 1; seed <= 40; seed++) {
+        std::mt19937 rng(seed);
+        CpuBench a, b;
+        for (auto& v : a.ram) v = safe[rng() % safe.size()];
+        auto inputs = [](CpuBench& c, std::mt19937& r) {
+            uint32_t x = r();
+            c.irq_n = (x & 7) != 0;
+            c.nmi_n = (x & 0x30) != 0;
+        };
+        for (int i = 0, n = 100 + static_cast<int>(rng() % 400); i < n; i++) {
+            inputs(a, rng);
+            a.cycle();
+        }
+        uint32_t st[4];
+        for (int i = 0; i < 4; i++) st[i] = a.state_read(i);
+        b.ram = a.ram;
+        for (int i = 0; i < 50; i++) b.cycle();  // somewhere else entirely
+        b.ram = a.ram;
+        for (int i = 0; i < 4; i++) b.state_write(i, st[i]);
+        b.irq_n = a.irq_n;
+        b.nmi_n = a.nmi_n;
+        std::mt19937 ra(seed * 77), rb(seed * 77);
+        for (int i = 0; i < 400; i++) {
+            inputs(a, ra);
+            inputs(b, rb);
+            CAPTURE(seed, i);
+            REQUIRE(a.cycle() == b.cycle());
+        }
+        for (int i = 0; i < 4; i++) REQUIRE(a.state_read(i) == b.state_read(i));
+    }
 }
