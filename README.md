@@ -8,14 +8,17 @@ Every component builds with the open-source flow (Yosys, nextpnr, Verilator) and
 
 | Component | What it is | Sim tests | Board run |
 | --- | --- | --- | --- |
-| [cpu/6502](components/cpu/6502) | NMOS 6502, cycle-exact on the bus; decimal mode optional (off for the NES) | ✅ | — |
-| [common/crc32](components/common/crc32) | CRC-32 (IEEE, as zlib), one byte per clock | ✅ | — |
+| [cpu/6502](components/cpu/6502) | NMOS 6502, cycle-exact on the bus; decimal mode optional (off for the NES) | ✅ | ✅ Tang Nano 20K, in nes |
+| [common/crc32](components/common/crc32) | CRC-32 (IEEE, as zlib), one byte per clock | ✅ | ✅ Tang Nano 20K, in shell-sdram and nes |
+| [memory/sdram](components/memory/sdram) | Byte-port controller for a 2M × 32 SDR SDRAM, such as the Tang Nano 20K's | ✅ | ✅ Tang Nano 20K, in shell-sdram |
 | [common/uart](components/common/uart) | 8N1 receiver and transmitter | ✅ | ✅ Tang Nano 20K, in uart-echo |
 | [common/fifo](components/common/fifo) | Synchronous FIFO in block RAM | ✅ | ✅ Tang Nano 20K, in uart-echo |
 | [common/por](components/common/por) | Power-on reset | ✅ | ✅ Tang Nano 20K, in uart-echo |
 | [debug/test-shell](components/debug/test-shell) | UART command engine: CRC-checked frames, retries, bus access, build ID | ✅ | ✅ Tang Nano 20K, in shell-ram |
 | [systems/uart-echo](systems/uart-echo) | UART link test: echoes every byte | ✅ | ✅ Tang Nano 20K: 100 MB at 1.5 Mbaud, no errors |
 | [systems/shell-ram](systems/shell-ram) | Test shell with a scratch RAM | ✅ | ✅ Tang Nano 20K: 1,000 commands with faults injected, same CRC as the sim |
+| [systems/shell-sdram](systems/shell-sdram) | Test shell with the SDRAM | ✅ | ✅ Tang Nano 20K: 8 MB written and checked, same CRC as the sim |
+| [systems/nes](systems/nes) | The NES so far: CPU, RAM, PRG RAM, NROM PRG from SDRAM | ✅ | ✅ Tang Nano 20K: nestest, same bus-trace CRC as the sim |
 
 A board run means the same test, with the same data, passed on real hardware with the same result as the simulation.
 

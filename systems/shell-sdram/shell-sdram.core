@@ -1,0 +1,35 @@
+CAPI=2:
+# SPDX-License-Identifier: Apache-2.0
+name: retro-silicon:system:shell-sdram:0.1.0
+description: Test shell with the 8 MB SDRAM on its bus, for testing the SDRAM and uploads
+
+filesets:
+  rtl:
+    files:
+      - rtl/shell_sdram.sv
+    file_type: systemVerilogSource
+    depend:
+      - retro-silicon:common:por
+      - retro-silicon:debug:test-shell
+      - retro-silicon:memory:sdram
+
+targets:
+  # Parameters go on lint only, as in every component core.
+  default: &default
+    filesets: [rtl]
+    toplevel: shell_sdram
+  lint:
+    <<: *default
+    parameters: [CLKS_PER_BIT]
+    default_tool: verilator
+    tools:
+      verilator:
+        mode: lint-only
+        verilator_options: [-Wall]
+
+parameters:
+  CLKS_PER_BIT:
+    datatype: int
+    default: 18
+    paramtype: vlogparam
+    description: Clock frequency divided by the baud rate

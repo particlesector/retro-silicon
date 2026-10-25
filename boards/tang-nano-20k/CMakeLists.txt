@@ -1,5 +1,9 @@
 # SPDX-License-Identifier: Apache-2.0
 # Bitstreams for the Tang Nano 20K, built when OSS CAD Suite is on PATH.
+# Board tops: a system plus this board's pins. Linted with or without the tools.
+rs_component(shell_sdram_top RTL rtl/shell_sdram_top.sv DEPENDS shell_sdram)
+rs_component(nes_top RTL rtl/nes_top.sv DEPENDS nes)
+
 find_program(RS_NEXTPNR_HIMBAECHEL nextpnr-himbaechel)
 set(have_tools OFF)
 if(RS_NEXTPNR_HIMBAECHEL)
@@ -42,3 +46,7 @@ endfunction()
 rs_tang_bitstream(uart_echo COMPONENT uart_echo CST uart_echo.cst PARAMS CLKS_PER_BIT=18)
 get_property(shell_ram_id GLOBAL PROPERTY RS_SHELL_RAM_BUILD_ID)
 rs_tang_bitstream(shell_ram COMPONENT shell_ram CST uart_echo.cst PARAMS CLKS_PER_BIT=18 BUILD_ID=${shell_ram_id})
+get_property(shell_sdram_id GLOBAL PROPERTY RS_SHELL_SDRAM_BUILD_ID)
+rs_tang_bitstream(shell_sdram COMPONENT shell_sdram_top CST uart_echo.cst PARAMS CLKS_PER_BIT=18 BUILD_ID=${shell_sdram_id})
+get_property(nes_id GLOBAL PROPERTY RS_NES_BUILD_ID)
+rs_tang_bitstream(nes COMPONENT nes_top CST uart_echo.cst PARAMS CLKS_PER_BIT=18 BUILD_ID=${nes_id})

@@ -1,0 +1,84 @@
+// SPDX-License-Identifier: Apache-2.0
+#include <catch2/catch_test_macros.hpp>
+
+#include <algorithm>
+#include <filesystem>
+#include <iterator>
+#include <string>
+#include <variant>
+#include <vector>
+
+#include "golden.hpp"
+#include "rig/ines.hpp"
+#include "rig/nes.hpp"
+#include "rig/sim_systems.hpp"
+
+namespace {
+
+std::vector<uint8_t> header(uint8_t prg, uint8_t chr, uint8_t f6, uint8_t f7) {
+    std::vector<uint8_t> h(16 + prg * 16384u + chr * 8192u, 0xEE);
+    const uint8_t start[] = {'N', 'E', 'S', 0x1A, prg, chr, f6, f7, 0, 0, 0, 0, 0, 0, 0, 0};
+    std::copy(std::begin(start), std::end(start), h.begin());
+    return h;
+}
+
+} // namespace
+
+TEST_CASE("iNES headers give the mapper, mirroring, battery and sizes") {
+    auto f = header(2, 1, 0x13, 0x40);  // mapper $41: low nibble from byte 6, high from 7
+    f[16] = 0xAA;
+    f[16 + 32768] = 0xBB;
+    auto r = rig::parse_ines(f);
+    REQUIRE(std::holds_alternative<rig::NesRom>(r));
+    auto& rom = std::get<rig::NesRom>(r);
+    CHECK(rom.mapper == 0x41);
+    CHECK(rom.mirroring == rig::NesRom::Mirroring::kVertical);
+    CHECK(rom.battery);
+    CHECK_FALSE(rom.nes2);
+    CHECK(rom.prg.size() == 32768);
+    CHECK(rom.prg[0] == 0xAA);
+    CHECK(rom.chr.size() == 8192);
+    CHECK(rom.chr[0] == 0xBB);
+}
+
+TEST_CASE("iNES parsing skips a trainer, reads NES 2.0 mapper bits and ignores old dumps' junk") {
+    auto t = header(1, 0, 0x04, 0x00);
+    t.insert(t.begin() + 16, 512, 0x55);  // trainer
+    t[16 + 512] = 0x77;
+    auto a = std::get<rig::NesRom>(rig::parse_ines(t));
+    CHECK(a.prg[0] == 0x77);
+    CHECK(a.chr.empty());
+
+    auto n2 = header(1, 0, 0x10, 0x08);
+    n2[8] = 0x02;  // mapper bits 8-11
+    auto b = std::get<rig::NesRom>(rig::parse_ines(n2));
+    CHECK(b.nes2);
+    CHECK(b.mapper == 0x201);
+
+    auto junk = header(1, 0, 0x10, 0x44);  // "DiskDude!"-style text in bytes 7-15
+    CHECK(std::get<rig::NesRom>(rig::parse_ines(junk)).mapper == 1);
+}
+
+TEST_CASE("iNES parsing rejects files that aren't ROMs or are cut short") {
+    std::vector<uint8_t> none{'N', 'E', 'S'};
+    CHECK(std::holds_alternative<std::string>(rig::parse_ines(none)));
+    auto f = header(2, 0, 0, 0);
+    f.resize(f.size() - 1);
+    CHECK(std::holds_alternative<std::string>(rig::parse_ines(f)));
+}
+
+TEST_CASE("nestest passes on the sim backend with the CPU bench's trace CRC") {
+    std::string path = std::string(RS_TESTROMS) + "/nes-test-roms/other/nestest.nes";
+    if (!std::filesystem::exists(path)) SKIP(path << " not found: run testroms/fetch.py");
+    auto golden = golden_crcs(RS_NES_TRACE_GOLDEN);
+    auto it = golden.find({rig::nes::kNestestCycles, 0});
+    REQUIRE(it != golden.end());
+
+    auto rom = rig::load_ines(path);
+    REQUIRE(std::holds_alternative<rig::NesRom>(rom));
+    auto link = rig::make_nes_sim();
+    auto r = rig::nes::nestest(*link, std::get<rig::NesRom>(rom), rig::nes::kNestestCycles, RS_NES_BUILD_ID);
+    INFO(r.detail << " / " << r.notes);
+    REQUIRE(r.passed);
+    REQUIRE(r.crc32 == it->second);
+}

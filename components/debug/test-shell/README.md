@@ -19,6 +19,8 @@ The host sends one command and waits for its response before sending the next. F
 
 All multi-byte values are little-endian.
 
+**Versions:** 1 had PING, INFO, PEEK and POKE; 2 adds CRC.
+
 **Recovery:** the shell drops a command frame without answering when its CRC fails, when its length is over the payload buffer (it resyncs straight away), or when no byte arrives for `IDLE_CLKS` clocks in the middle of it (10 ms by default). The host resends after a silence longer than that, with the same sequence number. Every command is idempotent (addresses are absolute), so running one twice is harmless. The host ignores responses with another sequence number. Because commands and responses use different sync bytes, an echo or loopback never passes for a shell.
 
 ### Commands
@@ -26,9 +28,10 @@ All multi-byte values are little-endian.
 | Code | Command | Payload | Response payload |
 | --- | --- | --- | --- |
 | `01` | PING | Any bytes, up to the payload limit | The same bytes |
-| `02` | INFO | None | 16 bytes: `"RSTS"`, then the protocol version (2 bytes, now 1), `BUILD_ID` (4 bytes), the payload limit (2 bytes), and counts of corrupt and of stalled frames dropped (2 bytes each, saturating) |
+| `02` | INFO | None | 16 bytes: `"RSTS"`, then the protocol version (2 bytes, now 2), `BUILD_ID` (4 bytes), the payload limit (2 bytes), and counts of corrupt and of stalled frames dropped (2 bytes each, saturating) |
 | `10` | PEEK | Address (4), count (2) | `count` bytes read from the bus, from the address up |
 | `11` | POKE | Address (4), then the data | None; writes the data to the bus, from the address up |
+| `12` | CRC | Address (4), count (4) | CRC-32 (as zlib, 4 bytes) of `count` bytes read from the bus, from the address up; the address wraps at the top. The response comes once every byte is read, so the host waits longer for a big count |
 
 ### Status codes
 
@@ -72,6 +75,7 @@ Built from `rtl/ts_rx.sv` (frame receiver), `rtl/ts_tx.sv` (frame transmitter, C
 Sim tests against a bus model with a random 0-4 clock acknowledge delay:
 - INFO fields and PING from 0 to 2,048 bytes.
 - PEEK and POKE across the 32-bit address space.
+- CRC against the host's CRC-32, for 0 to 5,000 bytes and across the top of the address space.
 - Error statuses for unknown commands and bad lengths.
 - Dropping and counting corrupt and stalled frames, and resyncing after an impossible length.
 - 300 commands over a link that damages 0.2% of bytes.

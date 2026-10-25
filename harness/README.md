@@ -5,9 +5,12 @@ The C++ core of the test harness. Tests talk to a design through `rig::Link`, a 
 | Header | Provides |
 | --- | --- |
 | `rig/link.hpp` | `Link`: `write`, `read` with a timeout, `baud`; and `RigError` for failures of the rig itself rather than the design |
-| `rig/sim_link.hpp` | `SimLink`: any Verilated design with a UART (`SimModel`), driven bit by bit; timeouts are simulated time |
-| `rig/sim_systems.hpp` | `make_uart_echo_sim()` and `make_shell_ram_sim()`: this repo's systems at 1.5 Mbaud, with the same build IDs as their bitstreams |
-| `rig/shell.hpp` | The test-shell protocol: frame encoder, a parser that survives noise, and `Client` (PING, INFO, PEEK, POKE, with retries) |
+| `rig/sim_link.hpp` | `SimLink`: any Verilated design with a UART (`SimModel`), driven bit by bit; timeouts are simulated time. Optional seeded jitter delays each write by a few clocks, as a real host is never in step with the FPGA's clock |
+| `rig/sim_systems.hpp` | `make_uart_echo_sim()`, `make_shell_ram_sim()`, `make_shell_sdram_sim()` and `make_nes_sim()`: this repo's systems at 1.5 Mbaud, with the same build IDs as their bitstreams; the SDRAM systems run with `memory/sdram`'s chip model and with jitter on the host's timing |
+| `rig/shell.hpp` | The test-shell protocol: frame encoder, a parser that survives noise, and `Client` (PING, INFO, PEEK, POKE, CRC, with retries; `write` and `read` for any length) |
+| `rig/sdram_test.hpp` | `sdram_test`: seeded data written to all four quarters of the SDRAM through `systems/shell-sdram`, checked with the shell's CRC and sampled back |
+| `rig/ines.hpp` | `parse_ines` and `load_ines`: iNES and NES 2.0 headers (mapper, mirroring, battery, trainer) and the PRG and CHR data |
+| `rig/nes.hpp` | `nes::Console` for `systems/nes` (reset, PRG upload checked by CRC, reset-vector override, stop-at-cycle, status, trace CRC, CPU-space peeks) and `nes::nestest` |
 | `rig/shell_test.hpp` | `shell_test`: random commands against `systems/shell-ram`, checked against a model of its RAM, optionally over a `FaultyLink` |
 | `rig/faulty_link.hpp` | `FaultyLink`: wraps a `Link` and drops, corrupts or adds bytes at a seeded rate, to prove a protocol recovers |
 | `rig/echo_test.hpp` | `echo_test`: streams seeded random data through an echo design and checks every byte, returning a `TestResult` with the CRC32 of what came back |
@@ -17,4 +20,4 @@ The C++ core of the test harness. Tests talk to a design through `rig::Link`, a 
 
 CMake targets: `rs_harness` (everything but this repo's Verilated systems) and `rs_sim_link` (adds them). A board backend implements `Link` over a serial port; it isn't in this repo because it depends on the machine it runs on.
 
-`golden/echo_crc32.txt` and `golden/shell_crc32.txt` hold the tests' CRC32 for given sizes and seeds. Every backend that passes must give these values; the shell test's CRC doesn't depend on injected faults.
+`golden/echo_crc32.txt`, `golden/shell_crc32.txt` and `golden/sdram_crc32.txt` hold the tests' CRC32 for given sizes and seeds, and `golden/nes_trace_crc32.txt` the CPU's bus-trace CRC for nestest, which the CPU's own bench must also give. Every backend that passes must give these values; the shell test's CRC doesn't depend on injected faults.

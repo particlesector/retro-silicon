@@ -54,7 +54,9 @@ TestResult shell_test(Link& link, unsigned commands, unsigned seed, double fault
 
     try {
         auto info = client.info();
-        if (info.version != 1) return finish("shell protocol version " + std::to_string(info.version) + ", expected 1");
+        if (info.version != shell::kVersion)
+            return finish("shell protocol version " + std::to_string(info.version) + ", expected " +
+                          std::to_string(shell::kVersion));
         if (build_id && info.build_id != *build_id)
             return finish("build ID " + hex32(info.build_id) + ", expected " + hex32(*build_id) +
                           ": the wrong bitstream is loaded");

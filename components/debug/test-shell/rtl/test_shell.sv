@@ -34,12 +34,13 @@ module test_shell #(
     localparam logic [7:0] CMD_INFO = 8'h02;  // 16 bytes: magic, version, build ID, limits, error counts
     localparam logic [7:0] CMD_PEEK = 8'h10;  // addr (4), count (2) -> count bytes from the bus
     localparam logic [7:0] CMD_POKE = 8'h11;  // addr (4), data... -> writes data to the bus
+    localparam logic [7:0] CMD_CRC  = 8'h12;  // addr (4), count (4) -> CRC-32 of count bytes from the bus
 
     localparam logic [7:0] ST_OK          = 8'h00;
     localparam logic [7:0] ST_UNKNOWN_CMD = 8'h01;
     localparam logic [7:0] ST_BAD_LENGTH  = 8'h02;
 
-    localparam logic [15:0] VERSION = 16'd1;
+    localparam logic [15:0] VERSION = 16'd2;
     localparam int          AW      = MAX_PAYLOAD_LOG2;
 
     // ---- UART and framing ----
@@ -62,7 +63,7 @@ module test_shell #(
     logic          frame_valid;
     logic [7:0]    f_cmd, f_seq;
     logic [15:0]   f_len;
-    logic [47:0]   f_args;
+    logic [63:0]   f_args;
 
     ts_rx #(.MAX_PAYLOAD_LOG2(MAX_PAYLOAD_LOG2), .IDLE_CLKS(IDLE_CLKS)) u_rx (
         .clk, .rst, .in_data(rx_data), .in_valid(rx_valid), .busy,
@@ -108,8 +109,8 @@ module test_shell #(
     wire [127:0] info = {timeouts, crc_errors, 16'(2 ** AW), BUILD_ID, VERSION, "STSR"};
 
     // ---- Dispatcher ----
-    typedef enum logic [2:0] {D_IDLE, D_POKE, D_POKE_RD, D_POKE_WR, D_START, D_SEND, D_WAIT} dstate_t;
-    typedef enum logic [1:0] {SRC_NONE, SRC_BUF, SRC_INFO, SRC_BUS} src_t;
+    typedef enum logic [2:0] {D_IDLE, D_POKE, D_POKE_RD, D_POKE_WR, D_CRC, D_START, D_SEND, D_WAIT} dstate_t;
+    typedef enum logic [2:0] {SRC_NONE, SRC_BUF, SRC_INFO, SRC_BUS, SRC_CRC} src_t;
 
     dstate_t     dstate;
     src_t        src;
@@ -117,6 +118,14 @@ module test_shell #(
     logic [15:0] fetch_n;   // response bytes fetched so far
     logic        pending;   // a fetch is waiting on the buffer or the bus
     logic [15:0] j;         // POKE: payload byte being written
+    logic [31:0] crc_left;  // CRC: bytes still to read
+    logic        crc_rst, crc_en;
+    logic [31:0] crc_val;
+
+    crc32 u_crc (.clk, .rst(crc_rst), .en(crc_en), .data(bus_rdata), .crc(crc_val));
+
+    assign crc_rst = dstate == D_IDLE;
+    assign crc_en  = dstate == D_CRC && bus_req && bus_ack;
 
     assign busy      = dstate != D_IDLE;
     assign tx_start  = dstate == D_START;
@@ -159,6 +168,17 @@ module test_shell #(
                                 j      <= 16'd4;
                                 dstate <= D_POKE;
                             end
+                        CMD_CRC:
+                            if (f_len != 16'd8)
+                                r_status <= ST_BAD_LENGTH;
+                            else begin
+                                bus_addr <= f_args[31:0];
+                                bus_we   <= 1'b0;
+                                crc_left <= f_args[63:32];
+                                r_len    <= 16'd4;
+                                src      <= SRC_CRC;
+                                dstate   <= D_CRC;
+                            end
                         default: r_status <= ST_UNKNOWN_CMD;
                     endcase
                 end
@@ -181,6 +201,18 @@ module test_shell #(
                     j       <= j + 1'b1;
                     dstate  <= D_POKE;
                 end
+            D_CRC:
+                // One read at a time; each acknowledged byte goes into u_crc.
+                if (bus_req) begin
+                    if (bus_ack) begin
+                        bus_req  <= 1'b0;
+                        bus_addr <= bus_addr + 1'b1;
+                        crc_left <= crc_left - 1'b1;
+                    end
+                end else if (crc_left == '0)
+                    dstate <= D_START;
+                else
+                    bus_req <= 1'b1;
             D_START: begin
                 fetch_n     <= '0;
                 pending     <= 1'b0;
@@ -207,6 +239,10 @@ module test_shell #(
                     case (src)
                         SRC_INFO: begin
                             stage_data  <= info[fetch_n[3:0]*8 +: 8];
+                            stage_valid <= 1'b1;
+                        end
+                        SRC_CRC: begin
+                            stage_data  <= crc_val[fetch_n[1:0]*8 +: 8];
                             stage_valid <= 1'b1;
                         end
                         SRC_BUS: begin

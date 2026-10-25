@@ -69,14 +69,14 @@ std::optional<Frame> Parser::next(size_t accept_len) {
     }
 }
 
-Frame Client::transact(uint8_t cmd, std::span<const uint8_t> payload, size_t response_len) {
+Frame Client::transact(uint8_t cmd, std::span<const uint8_t> payload, size_t response_len, int busy_ms) {
     Frame req{cmd, seq_, {payload.begin(), payload.end()}};
     auto wire = encode(req);
     // Wait long enough for the command to go out and the response to start, and
     // longer than the shell's stall timeout, so after a lost byte the shell has
     // dropped the broken frame before the retry arrives.
     int frame_ms = static_cast<int>((wire.size() * 10 * 1000) / link_.baud()) + 1;
-    int silence_ms = opt_.shell_idle_ms + 2 * frame_ms + opt_.slack_ms;
+    int silence_ms = opt_.shell_idle_ms + 2 * frame_ms + opt_.slack_ms + busy_ms;
     std::vector<uint8_t> buf(4096);
     stats.commands++;
 
@@ -137,6 +137,33 @@ void Client::poke(uint32_t addr, std::span<const uint8_t> data) {
     put32(args, addr);
     args.insert(args.end(), data.begin(), data.end());
     transact(kPoke, args, 0);
+}
+
+uint32_t Client::crc(uint32_t addr, uint32_t count) {
+    std::vector<uint8_t> args;
+    put32(args, addr);
+    put32(args, count);
+    int busy_ms = static_cast<int>(uint64_t{count} * static_cast<uint64_t>(opt_.bus_byte_ns) / 1'000'000) + 1;
+    return get32(transact(kCrc, args, 4, busy_ms).payload, 0);
+}
+
+namespace {
+constexpr size_t kChunk = 2048 - 4;  // the smallest payload buffer, less POKE's address
+} // namespace
+
+void Client::write(uint32_t addr, std::span<const uint8_t> data) {
+    for (size_t i = 0; i < data.size(); i += kChunk)
+        poke(addr + static_cast<uint32_t>(i), data.subspan(i, std::min(kChunk, data.size() - i)));
+}
+
+std::vector<uint8_t> Client::read(uint32_t addr, size_t count) {
+    std::vector<uint8_t> out;
+    out.reserve(count);
+    for (size_t i = 0; i < count; i += kChunk) {
+        auto part = peek(addr + static_cast<uint32_t>(i), static_cast<uint16_t>(std::min(kChunk, count - i)));
+        out.insert(out.end(), part.begin(), part.end());
+    }
+    return out;
 }
 
 } // namespace rig::shell
