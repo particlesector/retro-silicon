@@ -48,7 +48,7 @@ module ts_rx #(
 
     crc32 u_crc (
         .clk, .rst(rst || restart), .en(in_valid && state != S_SYNC && state != S_CHECK),
-        .data(in_data), .crc);
+        .data(in_data), .crc, .st_we(1'b0), .st_wdata('0));
 
     assign buf_waddr = idx[MAX_PAYLOAD_LOG2-1:0];
     assign buf_wdata = in_data;

@@ -85,3 +85,30 @@ TEST_CASE("crc32 holds its value while en is low") {
     for (int i = 0; i < 4; i++) dut.tick();
     REQUIRE(dut.m.crc == 0xCBF43926u);
 }
+
+TEST_CASE("crc32 restored from its save state carries on as if the earlier bytes had gone in") {
+    std::mt19937 rng(2);
+    std::vector<uint8_t> data(1000);
+    for (auto& b : data) b = static_cast<uint8_t>(rng());
+    auto first = std::span<const uint8_t>(data).first(400);
+    auto rest = std::span<const uint8_t>(data).subspan(400);
+
+    Dut a;
+    uint32_t saved = a.run(first);
+
+    Dut b;
+    b.run(as_bytes("something else"));
+    b.m.st_wdata = saved;
+    b.m.st_we = 1;
+    b.m.en = 1;  // a write wins over a byte in the same clock
+    b.tick();
+    b.m.st_we = 0;
+    REQUIRE(b.m.crc == saved);
+    for (uint8_t x : rest) {
+        b.m.data = x;
+        b.tick();
+    }
+    b.m.en = 0;
+    b.m.eval();
+    REQUIRE(b.m.crc == crc32_ref(data));
+}

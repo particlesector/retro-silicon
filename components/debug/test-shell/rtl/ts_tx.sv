@@ -37,7 +37,7 @@ module ts_tx (
     crc32 u_crc (
         .clk, .rst(rst || (state == S_IDLE && start)),
         .en(take && (state == S_DATA || (state == S_HDR && n != 3'd0))),
-        .data(out_data), .crc);
+        .data(out_data), .crc, .st_we(1'b0), .st_wdata('0));
 
     assign idle       = state == S_IDLE;
     assign data_ready = state == S_DATA && out_ready;
