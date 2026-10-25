@@ -89,6 +89,24 @@ public:
         return false;
     }
 
+    // The save-state port, with ce low for the clock it takes.
+    uint32_t state_read(int i) {
+        m.ce = 0;
+        m.st_addr = i;
+        clock();
+        m.ce = 1;
+        return m.st_rdata;
+    }
+    void state_write(int i, uint32_t v) {
+        m.ce = 0;
+        m.st_addr = i;
+        m.st_wdata = v;
+        m.st_we = 1;
+        clock();
+        m.st_we = 0;
+        m.ce = 1;
+    }
+
 private:
     void clock() {
         m.clk = 0;

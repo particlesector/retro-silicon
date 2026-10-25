@@ -24,7 +24,7 @@ Each component lives in `components/<group>/<name>/` and carries the same files:
 
 Folder and core names use hyphens (`ppu-2c02`); module names use underscores (`ppu_2c02`). A folder named for a chip number gets its group as a prefix, since a module name can't start with a digit (`cpu/6502` holds `cpu_6502`). A folder holding more than one top module (like `uart`) lists them in `rs_component(... TOPS ...)`.
 
-`systems/` folders follow the same layout. Board files (pins, timing, build script) go in `boards/<board>/`, and wrappers for vendor primitives in `platform/<vendor>/`.
+`systems/` folders follow the same layout. Board files (pins, timing, build script) and wrappers for vendor primitives go in `boards/<board>/`.
 
 ## CMake helpers
 

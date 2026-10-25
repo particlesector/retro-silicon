@@ -27,12 +27,24 @@ Module `cpu_6502` (the folder name can't start a module name).
 | `sync` | out | 1 | This cycle fetches an opcode |
 | `halted` | out | 1 | A JAM or unsupported opcode stopped the CPU; only reset restarts it |
 | `dbg_pc`, `dbg_a`, `dbg_x`, `dbg_y`, `dbg_s`, `dbg_p` | out | 16, 8 | Registers, for traces; P as PHP pushes it but with B clear |
+| `st_addr`, `st_rdata`, `st_we`, `st_wdata` | | 2, 32, 1, 32 | Save-state port (below) |
 
 ## Parameters
 
 | Parameter | Default | Meaning |
 | --- | --- | --- |
 | `DECIMAL` | 1 | NMOS decimal mode, including its flag quirks (ADC: N and V from an intermediate result, Z from the binary sum; SBC: binary flags). 0 for the NES's 2A03, where ADC and SBC are binary whatever D says |
+
+## Save state
+
+The port follows [docs/conventions.md](../../../docs/conventions.md): four words, readable and writable while `ce` is low, mid-instruction included.
+
+| Word | Holds |
+| --- | --- |
+| 0 | A, X, Y, S (A in bits 31-24) |
+| 1 | PC, then the internal address register |
+| 2 | Opcode, data latch, base address low, then N V D I Z C, page-cross, RMW carry |
+| 3 | Bits 1-0 phase, 4-2 cycle, 6-5 interrupt source, then interrupt go and snapshot, IRQ and NMI samples, NMI pending, NMI vector |
 
 ## Opcodes
 
@@ -44,6 +56,7 @@ Sim tests:
 - **perfect6502 lockstep:** every cycle's bus access matches perfect6502, a transistor-level simulation of the chip, on random code with random IRQs and NMIs (2 million cycles), and on 1,500 decimal-mode ADC and SBC cases, invalid BCD digits included.
 - **nestest:** all 8,991 lines of `nestest.log` match: registers, flags and cycle counts.
 - **blargg:** `instr_test-v5/official_only` passes.
+- **Save state:** 40 random programs with random IRQs and NMIs, saved at a random cycle, restored into another CPU and run on: the same 400 bus cycles each. Leaving out the NMI pending flag, the address register or the cycle counter fails it.
 - **Unit tests:** hand-written checks of the documented bus patterns (indexed addressing, read-modify-write, JMP's page-wrap bug, branches, JSR and RTS, BRK and RTI, reset), interrupt timing, RDY and JAM.
 
 On a Tang Nano 20K, in `systems/nes`: nestest's 26,554 cycles give the same bus-trace CRC as the sim bench (`harness/golden/nes_trace_crc32.txt`).
