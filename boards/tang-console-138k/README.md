@@ -43,7 +43,7 @@ The onboard BL616's UART (V14 from it, U15 to it) behaves as the Tang Nano 20K's
 ## Not working yet
 
 - **User LEDs.** The two LEDs are on G11 and U12, the DONE and READY configuration pins. A blink built with `gowin_pack --done_as_gpio --ready_as_gpio` left both lit, so the designs here leave them alone.
-- **PLLs:** the chip database has no PLL sites for this part yet, so nextpnr can't place one.
+- **PLLs:** the open flow's chip database has no PLL sites for this part yet, so nextpnr can't place one, and it has only one global clock buffer, so no design with two clocks places. Gowin's own tools (the free Education edition) drive the PLL: a UART echo on a 75 MHz clock from it (primitive `PLL`; `PLLA` is the GW5A-25's) passed the echo test. HDMI here will come from them.
 - **DDR3:** needs a controller; HDMI isn't tried yet.
 
 ## Status

@@ -10,6 +10,9 @@ Every component builds with the open-source flow (Yosys, nextpnr, Verilator) and
 | --- | --- | --- | --- |
 | [cpu/6502](components/cpu/6502) | NMOS 6502, cycle-exact on the bus; decimal mode optional (off for the NES); save-state port | ✅ | ✅ Tang Nano 20K, in nes |
 | [video/ppu-2c02](components/video/ppu-2c02) | The NES's 2C02 PPU (NTSC), dot-exact; frames match MesenCE's; save-state port | ✅ | ✅ Tang Nano 20K, in nes |
+| [video/hdmi](components/video/hdmi) | Video timing and TMDS encoding for HDMI (DVI mode), 720p60 by default | ✅ | ✅ Tang Nano 20K, in nes |
+| [video/line-scaler](components/video/line-scaler) | A source's frames on a display of another clock, scaled up through a ring of lines, the source kept in step | ✅ | ✅ Tang Nano 20K, in nes |
+| [common/cdc](components/common/cdc) | Flip-flop synchronizer between clock domains | ✅ | ✅ Tang Nano 20K, in nes |
 | [common/clock-enable](components/common/clock-enable) | Clock enable at NUM/DEN of the clock rate, exact on average | ✅ | ✅ Tang Nano 20K, in nes |
 | [debug/video-probe](components/debug/video-probe) | Frame and line CRCs of a video stream, and line-by-line frame capture | ✅ | ✅ Tang Nano 20K, in nes |
 | [common/crc32](components/common/crc32) | CRC-32 (IEEE, as zlib), one byte per clock | ✅ | ✅ Tang Nano 20K, in shell-sdram and nes |
@@ -24,7 +27,7 @@ Every component builds with the open-source flow (Yosys, nextpnr, Verilator) and
 | [systems/uart-echo](systems/uart-echo) | UART link test: echoes every byte | ✅ | ✅ Tang Nano 20K: 100 MB at 1.5 Mbaud, no errors |
 | [systems/shell-ram](systems/shell-ram) | Test shell with a scratch RAM | ✅ | ✅ Tang Nano 20K: 1,000 commands with faults injected, same CRC as the sim |
 | [systems/shell-sdram](systems/shell-sdram) | Test shell with the SDRAM | ✅ | ✅ Tang Nano 20K: 8 MB written and checked, same CRC as the sim |
-| [systems/nes](systems/nes) | The NES so far: CPU, PPU, OAM DMA, RAM, PRG RAM, an NROM cartridge; save states | ✅ | ✅ Tang Nano 20K and Tang Console 138K: nestest's bus-trace CRC, and 42 PPU test ROMs pass with MesenCE's frame CRCs; save states round-trip, and move between the boards |
+| [systems/nes](systems/nes) | The NES so far: CPU, PPU, OAM DMA, RAM, PRG RAM, an NROM cartridge; save states | ✅ | ✅ Tang Nano 20K and Tang Console 138K: nestest's bus-trace CRC, and 42 PPU test ROMs pass with MesenCE's frame CRCs; save states round-trip, and move between the boards; on the 20K, HDMI at 720p whose video CRCs match the sim's |
 
 A board run means the same test, with the same data, passed on real hardware with the same result as the simulation.
 

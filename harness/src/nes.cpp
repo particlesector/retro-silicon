@@ -124,6 +124,25 @@ Frame Console::capture(uint32_t index) {
     return f;
 }
 
+void Console::pace(bool on) { put32(kVideo, on ? 1 : 0, 1); }
+
+void Console::arm_video_crc(uint32_t index) {
+    put32(kVcapFrame, index);
+    put32(kVideo, 3, 1);  // pacing on, and take the CRC
+}
+
+Video Console::video() {
+    Video v;
+    v.valid = status() & kVideoCrcValid;
+    v.whole = c_.peek(kRegs + kVideoWhole, 1)[0] & 1;
+    v.crc = get32(kVideoCrc);
+    auto n = c_.peek(kRegs + kVideoShown, 6);
+    v.shown = static_cast<uint16_t>(n[0] | n[1] << 8);
+    v.late = static_cast<uint16_t>(n[2] | n[3] << 8);
+    v.overrun = static_cast<uint16_t>(n[4] | n[5] << 8);
+    return v;
+}
+
 uint8_t Console::wait_stopped() {
     uint32_t last = 0;
     int still = 0;
@@ -378,6 +397,65 @@ TestResult state_test(Link& link, const NesRom& rom, uint32_t save_after, uint32
         if (b->trace != a->trace) return finish("trace CRC " + hex(b->trace, 8) + ", uninterrupted " + hex(a->trace, 8));
         if (b->cycles != a->cycles)
             return finish(std::to_string(b->cycles) + " cycles, uninterrupted " + std::to_string(a->cycles));
+        return finish("");
+    } catch (const shell::StatusError& e) {
+        return finish(e.what());
+    }
+}
+
+TestResult hdmi_test(Link& link, const std::string& name, const NesRom& rom, uint32_t frames,
+                     std::optional<uint32_t> build_id) {
+    TestResult r;
+    r.name = name;
+    auto t0 = std::chrono::steady_clock::now();
+    shell::Client client(link);
+    Console nes(client);
+
+    auto finish = [&](std::string detail) {
+        r.passed = detail.empty();
+        r.detail = std::move(detail);
+        r.seconds = std::chrono::duration<double>(std::chrono::steady_clock::now() - t0).count();
+        if (!r.notes.empty()) r.notes += "; ";
+        r.notes += std::to_string(client.stats.commands) + " commands in " + std::to_string(client.stats.attempts) +
+                   " attempts";
+        return r;
+    };
+
+    try {
+        auto info = client.info();
+        if (info.version != shell::kVersion)
+            return finish("shell protocol version " + std::to_string(info.version) + ", expected " +
+                          std::to_string(shell::kVersion));
+        if (build_id && info.build_id != *build_id)
+            return finish("build ID " + hex(info.build_id, 8) + ", expected " + hex(*build_id, 8) +
+                          ": the wrong bitstream is loaded");
+
+        nes.hold_reset();
+        if (auto e = nes.load(rom)) return finish(*e);
+        r.bytes = rom.prg.size() + rom.chr.size();
+        nes.set_vector(std::nullopt);
+        Video before = nes.video();
+        nes.arm_video_crc(frames - 1);
+        // One frame more, so the display frame showing frame - 1 has ended
+        // by the time the system stops.
+        nes.stop_frame(frames + 1);
+        nes.run();
+        nes.wait_stopped();
+        // Read on for over two display frames (a read is four peeks, about
+        // 0.6 ms on the sim's link, the fastest), so a stopped system the
+        // display still waits on shows up as late lines.
+        Video v = nes.video();
+        for (int i = 0; i < 64 || !v.valid; i++) {
+            if (i >= 100 && !v.valid) break;
+            v = nes.video();
+        }
+        r.crc32 = v.crc;
+        r.notes = "shown " + std::to_string(static_cast<uint16_t>(v.shown - before.shown)) + " display frames";
+        if (!v.valid) return finish("no video CRC for frame " + std::to_string(frames - 1));
+        if (!v.whole) return finish("the display frame showing frame " + std::to_string(frames - 1) + " wasn't whole");
+        if (v.late != before.late || v.overrun != before.overrun)
+            return finish(std::to_string(v.late - before.late) + " lines late, " +
+                          std::to_string(v.overrun - before.overrun) + " overwritten");
         return finish("");
     } catch (const shell::StatusError& e) {
         return finish(e.what());

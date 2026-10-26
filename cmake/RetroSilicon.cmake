@@ -14,13 +14,14 @@ endif()
 option(RS_BITSTREAMS "Build the boards' bitstreams" ${rs_have_pnr})
 
 # rs_board_bitstream(<name> BUILD <board build.sh> COMPONENT <c> CST <file> [TOP <module>]
-#                    [PARAMS <NAME=VALUE>...])
+#                    [PARAMS <NAME=VALUE>...] [CLOCKS <net=MHz>...])
 #
 # Builds ${CMAKE_BINARY_DIR}/fpga/<name>/<top>.fs with a board's build script
 # (CST relative to the calling directory) from target <name>_bitstream, whose
-# BITSTREAM property holds that path. A missed timing constraint fails the build.
+# BITSTREAM property holds that path. CLOCKS constrains clock nets the board
+# makes (PLL and divider outputs). A missed timing constraint fails the build.
 function(rs_board_bitstream name)
-    cmake_parse_arguments(PARSE_ARGV 1 arg "" "BUILD;COMPONENT;CST;TOP" "PARAMS")
+    cmake_parse_arguments(PARSE_ARGV 1 arg "" "BUILD;COMPONENT;CST;TOP" "PARAMS;CLOCKS")
     rs_rtl(files ${arg_COMPONENT})
     if(NOT arg_TOP)
         set(arg_TOP ${arg_COMPONENT})
@@ -30,6 +31,9 @@ function(rs_board_bitstream name)
     set(params)
     foreach(p IN LISTS arg_PARAMS)
         list(APPEND params -g ${p})
+    endforeach()
+    foreach(c IN LISTS arg_CLOCKS)
+        list(APPEND params -k ${c})
     endforeach()
     add_custom_command(
         OUTPUT ${dir}/${arg_TOP}.fs
@@ -41,7 +45,7 @@ function(rs_board_bitstream name)
     set_target_properties(${name}_bitstream PROPERTIES BITSTREAM ${dir}/${arg_TOP}.fs)
 endfunction()
 
-# rs_component(<name> RTL <files...> [DEPENDS <components...>] [TOPS <modules...>])
+# rs_component(<name> RTL <files...> [DEPENDS <components...>] [TOPS <modules...>] [LINT <files...>])
 #
 # Registers a component's RTL (paths relative to the calling directory) under
 # <name>, after the RTL of every component it depends on, so later calls can
@@ -49,8 +53,10 @@ endfunction()
 # (default: <name>): Verilator -Wall, and, when Yosys is on PATH, Yosys's
 # synthesis up to technology mapping plus its design checks (undriven or
 # multiply driven signals, combinational loops). Board builds run the rest.
+# LINT files (absolute paths) go to the lint tests only: stand-ins for a
+# board's vendor primitives, which its own synthesis provides.
 function(rs_component name)
-    cmake_parse_arguments(PARSE_ARGV 1 arg "" "" "RTL;DEPENDS;TOPS")
+    cmake_parse_arguments(PARSE_ARGV 1 arg "" "" "RTL;DEPENDS;TOPS;LINT")
     set(files)
     foreach(dep IN LISTS arg_DEPENDS)
         get_property(dep_files GLOBAL PROPERTY RS_RTL_${dep})
@@ -67,6 +73,7 @@ function(rs_component name)
     if(NOT arg_TOPS)
         set(arg_TOPS ${name})
     endif()
+    list(APPEND files ${arg_LINT})
     foreach(top IN LISTS arg_TOPS)
         add_test(NAME "lint verilator ${top}"
                  COMMAND ${VERILATOR_BIN_COMMAND} --lint-only -Wall --top-module ${top} ${files})

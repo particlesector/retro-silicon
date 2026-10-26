@@ -28,6 +28,10 @@ rs_verilate(rs_sim_link COMPONENT nes_sdram PREFIX Vnes_sim PARAMS CLKS_PER_BIT=
 # rates (1.515 Mbaud, and the dot rate at 189/1760 of the clock).
 rs_verilate(rs_sim_link COMPONENT nes_bram PREFIX Vnes_bram_sim
             PARAMS CLKS_PER_BIT=33 IDLE_CLKS=500000 DOT_NUM=189 DOT_DEN=1760 BUILD_ID=${nes_bram_id})
+# The NES as the Tang Nano 20K runs it with HDMI (boards/tang-nano-20k/rtl/nes_top.sv's
+# parameters): 46.40625 MHz, and keeping pace with its display.
+rs_verilate(rs_sim_link COMPONENT nes_sdram PREFIX Vnes_hdmi_sim
+            PARAMS CLKS_PER_BIT=31 IDLE_CLKS=464063 FREQ_MHZ=47 DOT_NUM=14 DOT_DEN=121 PACE=1 BUILD_ID=${nes_id})
 target_include_directories(rs_sim_link PRIVATE ${PROJECT_SOURCE_DIR}/components/memory/sdram/sim)
 # The build IDs the models and bitstreams report, for runners to check.
 target_compile_definitions(rs_sim_link PUBLIC RS_SHELL_RAM_BUILD_ID=${shell_ram_id_c}
@@ -36,12 +40,15 @@ target_compile_definitions(rs_sim_link PUBLIC RS_SHELL_RAM_BUILD_ID=${shell_ram_
                                               RS_NES_BRAM_BUILD_ID=${nes_bram_id_c})
 
 rs_sim_test(harness_test SOURCES tests/echo_test_test.cpp tests/sim_link_test.cpp tests/shell_test.cpp
-                               tests/sdram_test.cpp tests/nes_test.cpp)
+                               tests/sdram_test.cpp tests/nes_test.cpp tests/hdmi_test.cpp)
 target_link_libraries(harness_test PRIVATE rs_sim_link)
+target_include_directories(harness_test PRIVATE ${PROJECT_SOURCE_DIR}/components/video/hdmi/sim)
 target_compile_definitions(harness_test PRIVATE
     RS_ECHO_GOLDEN="${CMAKE_CURRENT_SOURCE_DIR}/golden/echo_crc32.txt"
     RS_SHELL_GOLDEN="${CMAKE_CURRENT_SOURCE_DIR}/golden/shell_crc32.txt"
     RS_SDRAM_GOLDEN="${CMAKE_CURRENT_SOURCE_DIR}/golden/sdram_crc32.txt"
     RS_NES_TRACE_GOLDEN="${CMAKE_CURRENT_SOURCE_DIR}/golden/nes_trace_crc32.txt"
     RS_NES_FRAMES_GOLDEN="${CMAKE_CURRENT_SOURCE_DIR}/golden/nes_frames_crc32.txt"
+    RS_NES_HDMI_GOLDEN="${CMAKE_CURRENT_SOURCE_DIR}/golden/nes_hdmi_crc32.txt"
+    RS_PPU_RGB_SV="${PROJECT_SOURCE_DIR}/components/video/ppu-2c02/rtl/ppu_2c02_rgb.sv"
     RS_TESTROMS="${RS_TESTROMS}")
