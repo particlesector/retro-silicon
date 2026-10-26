@@ -8,6 +8,7 @@
 #include <vector>
 
 #include "Vcrc32.h"
+#include "Vcrc32_w30.h"
 
 namespace {
 
@@ -111,4 +112,32 @@ TEST_CASE("crc32 restored from its save state carries on as if the earlier bytes
     b.m.en = 0;
     b.m.eval();
     REQUIRE(b.m.crc == crc32_ref(data));
+}
+
+TEST_CASE("crc32 with W = 30 takes 30 bits a clock, bit 0 first") {
+    Vcrc32_w30 m;
+    m.rst = 1;
+    m.en = 0;
+    m.clk = 0;
+    m.eval();
+    m.clk = 1;
+    m.eval();
+    m.rst = 0;
+    std::mt19937 rng(30);
+    uint32_t c = 0xFFFFFFFFu;
+    for (int i = 0; i < 5000; i++) {
+        uint32_t d = rng() & 0x3fffffffu;
+        m.en = rng() % 4 != 0;
+        m.data = d;
+        m.clk = 0;
+        m.eval();
+        m.clk = 1;
+        m.eval();
+        if (m.en)
+            for (int b = 0; b < 30; b++) {
+                bool fb = (c ^ (d >> b)) & 1;
+                c = (c >> 1) ^ (fb ? 0xEDB88320u : 0);
+            }
+        REQUIRE(m.crc == ~c);
+    }
 }

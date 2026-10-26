@@ -1,7 +1,7 @@
 CAPI=2:
 # SPDX-License-Identifier: Apache-2.0
 name: retro-silicon:common:crc32:0.1.0
-description: CRC-32 (IEEE 802.3, as zlib), one byte per enabled clock
+description: CRC-32 (IEEE 802.3, as zlib), W bits per enabled clock
 
 filesets:
   rtl:
@@ -20,3 +20,11 @@ targets:
       verilator:
         mode: lint-only
         verilator_options: [-Wall]
+    parameters: [W]
+
+parameters:
+  W:
+    datatype: int
+    paramtype: vlogparam
+    default: 8
+    description: Bits per enabled clock

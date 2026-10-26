@@ -1,0 +1,31 @@
+CAPI=2:
+# SPDX-License-Identifier: Apache-2.0
+name: retro-silicon:video:hdmi:0.1.0
+description: Video timing and TMDS encoding for a DVI-compatible HDMI output
+
+filesets:
+  rtl:
+    files:
+      - rtl/tmds_encoder.sv
+      - rtl/hdmi.sv
+    file_type: systemVerilogSource
+
+targets:
+  default: &default
+    filesets: [rtl]
+    toplevel: hdmi
+  lint:
+    <<: *default
+    default_tool: verilator
+    tools:
+      verilator:
+        mode: lint-only
+        verilator_options: [-Wall]
+    parameters: [LATENCY]
+
+parameters:
+  LATENCY:
+    datatype: int
+    paramtype: vlogparam
+    default: 2
+    description: Clocks from x, y to rgb

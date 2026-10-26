@@ -11,6 +11,7 @@
 ## Clocks and resets
 
 - One clock per clock domain. A block that runs slower takes a clock enable, never a derived clock.
+- A signal crosses into another clock domain only through `common/cdc` (a level, a toggle, a Gray-coded count, or a value held steady around a toggle), or through a block RAM with a port in each domain. Name each side's ports by its domain (`s_`, `d_`) when a block has two.
 - Resets are synchronous and active high, on a port named `rst`. Only registers that need a known value reset.
 - No initial values on registers: Verilator warns, and ASICs and some FPGAs ignore them. The one exception is `common/por`, which turns the FPGA's configuration-time initial value into `rst` for everything else, with the warning waived there only.
 

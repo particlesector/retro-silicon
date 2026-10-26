@@ -1,0 +1,35 @@
+CAPI=2:
+# SPDX-License-Identifier: Apache-2.0
+name: retro-silicon:common:cdc:0.1.0
+description: A flip-flop synchronizer for signals from another clock domain
+
+filesets:
+  rtl:
+    files:
+      - rtl/cdc_sync.sv
+    file_type: systemVerilogSource
+
+targets:
+  default: &default
+    filesets: [rtl]
+    toplevel: cdc_sync
+  lint:
+    <<: *default
+    default_tool: verilator
+    tools:
+      verilator:
+        mode: lint-only
+        verilator_options: [-Wall]
+    parameters: [W, STAGES]
+
+parameters:
+  W:
+    datatype: int
+    paramtype: vlogparam
+    default: 1
+    description: Bits
+  STAGES:
+    datatype: int
+    paramtype: vlogparam
+    default: 2
+    description: Flip-flops in the chain

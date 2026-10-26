@@ -7,6 +7,7 @@ filesets:
   rtl:
     files:
       - rtl/ppu_2c02.sv
+      - rtl/ppu_2c02_rgb.sv
     file_type: systemVerilogSource
 
 targets:
