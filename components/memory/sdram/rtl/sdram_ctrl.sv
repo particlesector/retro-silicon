@@ -57,12 +57,14 @@ module sdram_ctrl #(
     localparam int T_REFI = REFRESH_NS * FREQ_MHZ / 1000;
     localparam int INIT_REFRESHES = 8;
 
-    // Column commands auto-precharge, so they wait until the precharge (one
-    // clock after a READ, tWR after a WRITE) can't come before tRAS is met. The
-    // bank is ready for the next ACTIVE once tRC has passed and the precharge
-    // has finished. The gaps are counted from the column command.
+    // Column commands auto-precharge, so they wait until the precharge can't
+    // come before tRAS is met: a READ's comes a clock after it, but a WRITE's
+    // comes after the chip's own write recovery, which can be under a clock,
+    // so a WRITE waits the whole of tRAS. The bank is ready for the next
+    // ACTIVE once tRC has passed and the precharge has finished (tWR from
+    // here). The gaps are counted from the column command.
     localparam int T_RD_DLY  = at_least(T_RCD, T_RAS - 1);
-    localparam int T_WR_DLY  = at_least(T_RCD, T_RAS - T_WR);
+    localparam int T_WR_DLY  = at_least(T_RCD, T_RAS);
     localparam int READ_GAP  = at_least(T_RC - T_RD_DLY, 1 + T_RP);
     localparam int WRITE_GAP = at_least(T_RC - T_WR_DLY, T_WR + T_RP);
 

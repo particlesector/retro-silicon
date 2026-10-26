@@ -48,3 +48,7 @@ All notable changes to this project are listed here. The format follows [Keep a 
 - `systems/nes` takes its memory as a byte port, through `memory/arbiter`, instead of driving the SDRAM itself; its `FREQ_MHZ` moved to `nes_sdram`.
 - `video/ppu-2c02` registers its next dot every clock and commits it on `ce`, so its dot logic has the clocks between dots: `ce` must now come at least 2 clocks apart, with `vrdata` and the register and state writes settled the clock before. `systems/nes` gives the PPU its video memory for the two clocks before each dot. The Tang Console 138K's NES build goes from 49 MHz to 72 MHz.
 - `boards/gowin/build.sh` holds the Gowin open-flow build; each board's `build.sh` calls it with its part. `rs_board_bitstream` replaces `rs_tang_bitstream`.
+
+### Fixed
+
+- `memory/sdram`: a WRITE waits the whole of tRAS after its row opens. Its auto-precharge can start under a clock after it, so from about 40 MHz the precharge could come before tRAS.
