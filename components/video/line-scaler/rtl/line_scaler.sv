@@ -58,15 +58,36 @@ module line_scaler #(
     localparam int CW = $clog2(SRC_H + 1) + 1;  // finished-line count, mod 2^CW
     localparam int SLACK = 3;                   // lines of the ring kept free, for the count's delay
 
-    logic [PW-1:0] mem [2**L * 2**XW];
+    // The ring, in memories of 8 bits or fewer: a 9-bit one would hold its
+    // ninth bit in a block RAM's parity bits, which openXC7 gets wrong on the
+    // 7-series (on a PYNQ-Z2, a 4K x 9 RAMB36 lost that bit for half its
+    // addresses). The low 8 bits go in one, the rest in another.
+    localparam int NS = (PW + 7) / 8;
+    logic [L+XW-1:0] waddr, raddr;
+
+    assign waddr = {s_y, s_x};
+
+    for (genvar k = 0; k < NS; k++) begin : g_mem
+        localparam int LO = 8 * k;
+        localparam int W  = PW - LO > 8 ? 8 : PW - LO;
+        logic [W-1:0] mem [2**L * 2**XW];
+        logic [W-1:0] q;
+
+        always_ff @(posedge s_clk)
+            if (s_valid)
+                mem[waddr] <= s_pix[LO +: W];
+
+        always_ff @(posedge d_clk)
+            q <= mem[raddr];
+
+        assign d_pix[LO +: W] = q;
+    end
 
     // ---- Source side ----
     logic [CW-1:0] s_cnt, s_gray;
     logic          s_req_t, s_req_q;
 
     always_ff @(posedge s_clk) begin
-        if (s_valid)
-            mem[{s_y, s_x}] <= s_pix;
         if (s_rst) begin
             s_cnt  <= '0;
             s_gray <= '0;
@@ -186,10 +207,11 @@ module line_scaler #(
             sxr = sxr_q + 1'b1;
     end
 
+    assign raddr = {sy[L-1:0], sx};
+
     always_ff @(posedge d_clk) begin
         sx_q  <= sx;
         sxr_q <= sxr;
-        d_pix <= mem[{sy[L-1:0], sx}];
         d_on  <= col && row && line_ok;
     end
 

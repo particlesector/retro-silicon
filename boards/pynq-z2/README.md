@@ -48,10 +48,12 @@ Not yet seen on a display: the capture dongle got no signal from this, nor from 
 
 Use an external 3.3 V USB-serial adapter on PMOD A (JA): FPGA TX on JA1P (Y18, the pin nearest the Raspberry Pi header in the column of Y pins) to the adapter's RX, the adapter's TX to JA1N (Y19, the next pin), and the adapter's ground to that column's GND (the 5th pin). PMOD A shares its pins with the Raspberry Pi header, so leave that empty.
 
+While the FPGA configures, its pins float (no pull-ups), so the adapter's receiver sees whatever the loose line picks up. After some loads that leaves an FT232RL clone reporting errors without end, whatever design is then loaded, until it's reset; now and then the line itself stays noisy for a while. A 10 kΩ pull-up from JA1P to the socket's 3.3 V pin would hold the line high through configuration, as the Tang boards' own pull-ups do.
+
 ## LEDs
 
 LD0 overflow and LD1 framing error (both sticky until reload), LD3 heartbeat, for the echo design. Active high.
 
 ## Status
 
-On the board, with the same CRCs as the Tang boards: the UART echo (also 10 MB with no errors), the test shell with injected faults, nestest's bus trace, the save-state round trip, all 42 test ROMs with MesenCE's frame CRCs, and the HDMI video CRCs. The picture on HDMI OUT is still to come (above).
+On the board, with the same CRCs as the Tang boards: the UART echo (also 10 MB with no errors), the test shell with injected faults, nestest's bus trace, the save-state round trip, all 42 test ROMs with MesenCE's frame CRCs, and the HDMI video CRCs of both test ROMs (full_palette's once `video/line-scaler` stopped using block RAM parity bits). The picture on HDMI OUT is still to come (above).

@@ -63,4 +63,5 @@ All notable changes to this project are listed here. The format follows [Keep a 
 
 ### Fixed
 
+- `video/line-scaler`: the ring is in memories of 8 bits or fewer, so no toolchain has to use block RAM parity bits; with openXC7 a 9-bit ring lost its ninth bit (the NES's emphasis) on a PYNQ-Z2.
 - `memory/sdram`: a WRITE waits the whole of tRAS after its row opens. Its auto-precharge can start under a clock after it, so from about 40 MHz the precharge could come before tRAS.
