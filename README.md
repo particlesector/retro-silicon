@@ -20,11 +20,11 @@ Every component builds with the open-source flow (Yosys, nextpnr, Verilator) and
 | [memory/arbiter](components/memory/arbiter) | Fixed-priority sharing of one byte-port memory | ✅ | ✅ both boards, in nes |
 | [memory/bram](components/memory/bram) | Block RAM behind the same byte port | ✅ | ✅ Tang Console 138K, in nes |
 | [common/save-state](components/common/save-state) | Saves and loads a system's whole state through its bus | ✅ | ✅ both boards, in nes |
-| [common/uart](components/common/uart) | 8N1 receiver and transmitter | ✅ | ✅ Tang Nano 20K, in uart-echo |
-| [common/fifo](components/common/fifo) | Synchronous FIFO in block RAM | ✅ | ✅ Tang Nano 20K, in uart-echo |
-| [common/por](components/common/por) | Power-on reset | ✅ | ✅ Tang Nano 20K, in uart-echo |
+| [common/uart](components/common/uart) | 8N1 receiver and transmitter | ✅ | ✅ Tang Nano 20K and PYNQ-Z2, in uart-echo |
+| [common/fifo](components/common/fifo) | Synchronous FIFO in block RAM | ✅ | ✅ Tang Nano 20K and PYNQ-Z2, in uart-echo |
+| [common/por](components/common/por) | Power-on reset | ✅ | ✅ Tang Nano 20K and PYNQ-Z2, in uart-echo |
 | [debug/test-shell](components/debug/test-shell) | UART command engine: CRC-checked frames, retries, bus access, build ID | ✅ | ✅ Tang Nano 20K, in shell-ram |
-| [systems/uart-echo](systems/uart-echo) | UART link test: echoes every byte | ✅ | ✅ Tang Nano 20K: 100 MB at 1.5 Mbaud, no errors |
+| [systems/uart-echo](systems/uart-echo) | UART link test: echoes every byte | ✅ | ✅ Tang Nano 20K: 100 MB at 1.5 Mbaud, no errors; PYNQ-Z2 (openXC7): 10 MB |
 | [systems/shell-ram](systems/shell-ram) | Test shell with a scratch RAM | ✅ | ✅ Tang Nano 20K: 1,000 commands with faults injected, same CRC as the sim |
 | [systems/shell-sdram](systems/shell-sdram) | Test shell with the SDRAM | ✅ | ✅ Tang Nano 20K: 8 MB written and checked, same CRC as the sim |
 | [systems/nes](systems/nes) | The NES so far: CPU, PPU, OAM DMA, RAM, PRG RAM, an NROM cartridge; save states | ✅ | ✅ Tang Nano 20K and Tang Console 138K: nestest's bus-trace CRC, and 42 PPU test ROMs pass with MesenCE's frame CRCs; save states round-trip, and move between the boards; on the 20K, HDMI at 720p whose video CRCs match the sim's |
@@ -37,7 +37,7 @@ Needs CMake 3.28+, Ninja, a C++20 compiler, Catch2 3, and [OSS CAD Suite](https:
 
 ```sh
 cmake --preset default
-cmake --build --preset default    # also builds the boards' bitstreams when nextpnr is found
+cmake --build --preset default    # also builds the boards' bitstreams when nextpnr is found (nextpnr-xilinx for the PYNQ-Z2)
 ctest --preset default
 
 testroms/fetch.py                 # test ROMs into ~/.cache/retro-silicon/testroms

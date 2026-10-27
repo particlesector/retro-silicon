@@ -6,7 +6,9 @@ include(Catch)
 find_program(RS_YOSYS yosys)
 
 # Board bitstreams build when nextpnr is on PATH, unless this is turned off.
+# Xilinx boards also need openXC7's nextpnr-xilinx.
 find_program(RS_NEXTPNR_HIMBAECHEL nextpnr-himbaechel)
+find_program(RS_NEXTPNR_XILINX nextpnr-xilinx)
 set(rs_have_pnr OFF)
 if(RS_NEXTPNR_HIMBAECHEL)
     set(rs_have_pnr ON)
@@ -14,14 +16,23 @@ endif()
 option(RS_BITSTREAMS "Build the boards' bitstreams" ${rs_have_pnr})
 
 # rs_board_bitstream(<name> BUILD <board build.sh> COMPONENT <c> CST <file> [TOP <module>]
-#                    [PARAMS <NAME=VALUE>...] [CLOCKS <net=MHz>...])
+#                    [VENDOR gowin|xilinx] [PARAMS <NAME=VALUE>...] [CLOCKS <net=MHz>...])
 #
-# Builds ${CMAKE_BINARY_DIR}/fpga/<name>/<top>.fs with a board's build script
-# (CST relative to the calling directory) from target <name>_bitstream, whose
+# Builds ${CMAKE_BINARY_DIR}/fpga/<name>/<top>.fs (Gowin, the default) or
+# <top>.bit (Xilinx) with a board's build script (CST, the pin constraints,
+# relative to the calling directory) from target <name>_bitstream, whose
 # BITSTREAM property holds that path. CLOCKS constrains clock nets the board
-# makes (PLL and divider outputs). A missed timing constraint fails the build.
+# makes (PLL and divider outputs; Gowin only, as Xilinx boards put them in
+# their XDC). A missed timing constraint fails the build.
 function(rs_board_bitstream name)
-    cmake_parse_arguments(PARSE_ARGV 1 arg "" "BUILD;COMPONENT;CST;TOP" "PARAMS;CLOCKS")
+    cmake_parse_arguments(PARSE_ARGV 1 arg "" "BUILD;COMPONENT;CST;TOP;VENDOR" "PARAMS;CLOCKS")
+    if(NOT arg_VENDOR)
+        set(arg_VENDOR gowin)
+    endif()
+    set(ext fs)
+    if(arg_VENDOR STREQUAL "xilinx")
+        set(ext bit)
+    endif()
     rs_rtl(files ${arg_COMPONENT})
     if(NOT arg_TOP)
         set(arg_TOP ${arg_COMPONENT})
@@ -36,13 +47,13 @@ function(rs_board_bitstream name)
         list(APPEND params -k ${c})
     endforeach()
     add_custom_command(
-        OUTPUT ${dir}/${arg_TOP}.fs
+        OUTPUT ${dir}/${arg_TOP}.${ext}
         COMMAND ${arg_BUILD} ${params} -t ${arg_TOP} -c ${cst} -o ${dir} ${files}
-        DEPENDS ${files} ${cst} ${arg_BUILD} ${PROJECT_SOURCE_DIR}/boards/gowin/build.sh
+        DEPENDS ${files} ${cst} ${arg_BUILD} ${PROJECT_SOURCE_DIR}/boards/${arg_VENDOR}/build.sh
         COMMENT "Building the ${name} bitstream"
         VERBATIM)
-    add_custom_target(${name}_bitstream ALL DEPENDS ${dir}/${arg_TOP}.fs)
-    set_target_properties(${name}_bitstream PROPERTIES BITSTREAM ${dir}/${arg_TOP}.fs)
+    add_custom_target(${name}_bitstream ALL DEPENDS ${dir}/${arg_TOP}.${ext})
+    set_target_properties(${name}_bitstream PROPERTIES BITSTREAM ${dir}/${arg_TOP}.${ext})
 endfunction()
 
 # rs_component(<name> RTL <files...> [DEPENDS <components...>] [TOPS <modules...>] [LINT <files...>])
