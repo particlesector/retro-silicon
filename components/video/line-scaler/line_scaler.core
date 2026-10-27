@@ -1,0 +1,37 @@
+CAPI=2:
+# SPDX-License-Identifier: Apache-2.0
+name: retro-silicon:video:line-scaler:0.1.0
+description: A source's frames on a display of another clock, scaled by a whole number through a ring of lines
+
+filesets:
+  rtl:
+    files:
+      - rtl/line_scaler.sv
+    file_type: systemVerilogSource
+    depend:
+      - retro-silicon:common:cdc
+
+targets:
+  default: &default
+    filesets: [rtl]
+    toplevel: line_scaler
+  lint:
+    <<: *default
+    default_tool: verilator
+    tools:
+      verilator:
+        mode: lint-only
+        verilator_options: [-Wall]
+    parameters: [SCALE, LINES_LOG2]
+
+parameters:
+  SCALE:
+    datatype: int
+    paramtype: vlogparam
+    default: 3
+    description: Display pixels per source pixel, each way
+  LINES_LOG2:
+    datatype: int
+    paramtype: vlogparam
+    default: 5
+    description: Source lines in the ring, log 2

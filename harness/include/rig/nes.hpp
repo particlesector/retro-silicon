@@ -49,9 +49,31 @@ enum Reg : uint32_t {
     kCapEn = 0x35,      // bit 0: capture
     kSaveCmd = 0x38,    // {op (1 save, 2 load), sequence}: runs when it changes
     kSaveDone = 0x39,   // read-only: the last command finished
+    kVideo = 0x3C,      // bit 0 keep pace with the display; write bit 1 to take the video CRC
+    kVideoWhole = 0x3D, // read-only: bit 0 the video CRC's display frame showed its frame whole
+    kVcapFrame = 0x40,  // 4 bytes: the frame whose display frame the video CRC is of
+    kVideoCrc = 0x44,   // 4 bytes, read-only: the video CRC
+    kVideoShown = 0x48, // 2 bytes, read-only: display frames whose frame started on request
+    kVideoLate = 0x4A,  // 2 bytes, read-only: lines that came late to the display
+    kVideoOver = 0x4C,  // 2 bytes, read-only: lines overwritten before they were shown
 };
 
-enum Status : uint8_t { kHalted = 1, kStopped = 2, kLate = 4, kRunning = 8, kCapHeld = 16, kCrcValid = 32 };
+enum Status : uint8_t {
+    kHalted = 1, kStopped = 2, kLate = 4, kRunning = 8, kCapHeld = 16, kCrcValid = 32,
+    kPaceWait = 64,     // waiting for the display to ask for the next frame
+    kVideoCrcValid = 128,
+};
+
+// The video side's results (nes_video): the video CRC, of the TMDS symbols of
+// a whole display frame (1650 x 750 pixel clocks, 30 bits each, bit 0 first:
+// blue's symbol in bits 9-0, green's 19-10, red's 29-20), and the pacing's
+// counts.
+struct Video {
+    bool valid = false;  // the CRC asked for has come
+    bool whole = false;  // ...and its display frame showed its frame whole
+    uint32_t crc = 0;
+    uint16_t shown = 0, late = 0, overrun = 0;
+};
 
 // A frame as the PPU outputs it: 256 x 240 values, {emphasis BGR, colour}.
 using Frame = std::vector<uint16_t>;
@@ -90,6 +112,13 @@ public:
     // With the system stopped at the end of frame `index - 1`: runs through
     // frame `index`, capturing it line by line, and stops again after it.
     Frame capture(uint32_t index);
+    // Keeps pace with the display (the default on a board with HDMI) or not.
+    void pace(bool on);
+    // Asks for the video CRC of the display frame that shows frame `index`.
+    // Pacing must be on.
+    void arm_video_crc(uint32_t index);
+    Video video();
+
     // Polls until the system stops at a limit or halts; returns the status.
     // Throws RigError if its cycle count stops moving first.
     uint8_t wait_stopped();
@@ -143,6 +172,15 @@ TestResult rom_test(Link& link, const RomCheck& check, const NesRom& rom, uint32
 // CRC32 is the last frame's.
 TestResult state_test(Link& link, const NesRom& rom, uint32_t save_after, uint32_t frames,
                       std::optional<uint32_t> build_id = std::nullopt);
+
+// The ROM on HDMI: runs it, keeping pace with the display, to frame
+// `frames` and returns the video CRC of the display frame that shows frame
+// `frames - 1` (the frame nes_frames_crc32.txt's CRC is of). Passes when that
+// display frame showed it whole and no line came late or was overwritten.
+// Needs a system with nes_video's pixel clock running: the board, or
+// make_nes_hdmi_sim().
+TestResult hdmi_test(Link& link, const std::string& name, const NesRom& rom, uint32_t frames,
+                     std::optional<uint32_t> build_id = std::nullopt);
 
 // A line of harness/golden/nes_frames_crc32.txt (tools/mesen/frames.py): a
 // ROM, how it reports, and MesenCE's CRC of frame `frames - 1`.

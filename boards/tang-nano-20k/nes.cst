@@ -1,0 +1,36 @@
+// SPDX-License-Identifier: Apache-2.0
+// systems/nes on the Tang Nano 20K: uart_echo.cst's pins, and the HDMI
+// connector. The UART is on header pins 71/72 to an external 3.3 V USB-serial
+// adapter (see uart_echo.cst).
+IO_LOC "clk" 4;
+IO_PORT "clk" IO_TYPE=LVCMOS33;
+IO_LOC "uart_tx" 72;
+IO_PORT "uart_tx" IO_TYPE=LVCMOS33;
+IO_LOC "uart_rx" 71;
+IO_PORT "uart_rx" IO_TYPE=LVCMOS33 PULL_MODE=UP;
+IO_LOC "led[0]" 15;
+IO_LOC "led[1]" 16;
+IO_LOC "led[2]" 17;
+IO_LOC "led[3]" 18;
+IO_LOC "led[4]" 19;
+IO_LOC "led[5]" 20;
+// HDMI: the connector's four pairs, true LVDS (TLVDS_OBUF): every pair here
+// is a true-LVDS pair, where the open flow doesn't allow emulated LVDS. True
+// LVDS sets the I/O standard for its whole bank (4 and 5), so nothing else
+// goes there.
+IO_LOC "tmds_clk_p" 33;
+IO_PORT "tmds_clk_p" IO_TYPE=LVDS25 PULL_MODE=NONE;
+IO_LOC "tmds_clk_n" 34;
+IO_PORT "tmds_clk_n" IO_TYPE=LVDS25 PULL_MODE=NONE;
+IO_LOC "tmds_d_p[0]" 35;
+IO_PORT "tmds_d_p[0]" IO_TYPE=LVDS25 PULL_MODE=NONE;
+IO_LOC "tmds_d_n[0]" 36;
+IO_PORT "tmds_d_n[0]" IO_TYPE=LVDS25 PULL_MODE=NONE;
+IO_LOC "tmds_d_p[1]" 37;
+IO_PORT "tmds_d_p[1]" IO_TYPE=LVDS25 PULL_MODE=NONE;
+IO_LOC "tmds_d_n[1]" 38;
+IO_PORT "tmds_d_n[1]" IO_TYPE=LVDS25 PULL_MODE=NONE;
+IO_LOC "tmds_d_p[2]" 39;
+IO_PORT "tmds_d_p[2]" IO_TYPE=LVDS25 PULL_MODE=NONE;
+IO_LOC "tmds_d_n[2]" 40;
+IO_PORT "tmds_d_n[2]" IO_TYPE=LVDS25 PULL_MODE=NONE;

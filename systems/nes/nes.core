@@ -7,6 +7,7 @@ filesets:
   rtl:
     files:
       - rtl/nes.sv
+      - rtl/nes_video.sv
       - rtl/nes_sdram.sv
       - rtl/nes_bram.sv
     file_type: systemVerilogSource
@@ -14,6 +15,7 @@ filesets:
       - retro-silicon:common:por
       - retro-silicon:common:clock-enable
       - retro-silicon:common:crc32
+      - retro-silicon:common:cdc
       - retro-silicon:debug:test-shell
       - retro-silicon:debug:video-probe
       - retro-silicon:common:save-state
@@ -22,6 +24,8 @@ filesets:
       - retro-silicon:memory:bram
       - retro-silicon:cpu:6502
       - retro-silicon:video:ppu-2c02
+      - retro-silicon:video:line-scaler
+      - retro-silicon:video:hdmi
 
 targets:
   # Parameters go on lint only, as in every component core.

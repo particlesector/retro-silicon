@@ -10,7 +10,7 @@ Module `sdram_ctrl`.
 - **SDRAM clock:** the board drives the chip's clock with the inverse of `clk`, so the chip samples each command half a cycle after it's registered, and read data is captured on the `clk` edge `CAS_LATENCY + 1` cycles after the READ. That half cycle is the I/O timing margin, which is plenty at 27 MHz.
 - **Latency at 27 MHz:** from idle, 5 clocks from `req` to `ack` for a read and 2 for a write. The tail of the access before and a refresh can add up to 5 more, so budget 10 (the random test's worst was 9). At 100 MHz: 8 and 4 from idle, 18 at worst.
 - **Refresh:** one auto-refresh every `REFRESH_NS`, ahead of any waiting request.
-- **Chip timings:** tRCD 20 ns, tRP 20 ns, tRC and tRFC 70 ns, tRAS 50 ns, tWR 15 ns (at least 2 clocks), tMRD 2 clocks: a -7 speed grade with margin. A column command waits until its auto-precharge can't come before tRAS.
+- **Chip timings:** tRCD 20 ns, tRP 20 ns, tRC and tRFC 70 ns, tRAS 50 ns, tWR 15 ns (at least 2 clocks), tMRD 2 clocks: a -7 speed grade with margin. A column command waits until its auto-precharge can't come before tRAS: a READ's precharge comes a clock after it, but a WRITE's can come under a clock after it, so a WRITE waits the whole of tRAS after its ACTIVE.
 
 ## Ports
 
@@ -39,7 +39,7 @@ Module `sdram_ctrl`.
 
 ## Status
 
-Sim tests, at 27 and 100 MHz, against `sim/sdram_model.hpp`, a model of the chip that checks every command against its timing limits (power-up sequence, tRCD, tRP, tRC, tRAS, tWR, refresh interval) and puts read data on the bus only at the cycle the CAS latency allows:
+Sim tests, at 27, 47 and 100 MHz, against `sim/sdram_model.hpp`, a model of the chip that checks every command against its timing limits (power-up sequence, tRCD, tRP, tRC, tRAS, tWR, refresh interval) and puts read data on the bus only at the cycle the CAS latency allows:
 - the power-up sequence;
 - single bytes in every lane and bank;
 - 40,000 random reads and writes against a byte array, with idle gaps so refreshes land everywhere;
@@ -47,5 +47,7 @@ Sim tests, at 27 and 100 MHz, against `sim/sdram_model.hpp`, a model of the chip
 - refreshes on time while a request is held continuously.
 
 Planted bugs (capture one cycle late, no refresh, wrong byte lane, tRCD of 0, no wait after a refresh) are each caught.
+
+Fixed: up to milestone 5 a WRITE waited only tRAS less its own tWR, so from about 40 MHz the chip's auto-precharge could start before tRAS. At 27 MHz it was 49 ns after the ACTIVE against tRAS's 42; at the Tang Nano 20K's 46.4 MHz the NES's HDMI sim caught it at 33.5 ns, and the 47 MHz tests fail without the fix.
 
 On a Tang Nano 20K at 27 MHz, through `systems/shell-sdram`: 8 MB of random data written, checked by the shell's CRC command and sampled back, with the same CRC32 as the sim (`0x0e8da31c`).

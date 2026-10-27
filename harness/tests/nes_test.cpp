@@ -12,6 +12,7 @@
 #include <vector>
 
 #include "golden.hpp"
+#include "nes_rom.hpp"
 #include "rig/ines.hpp"
 #include "rig/nes.hpp"
 #include "rig/shell.hpp"
@@ -72,19 +73,6 @@ TEST_CASE("iNES parsing rejects files that aren't ROMs or are cut short") {
 }
 
 namespace {
-
-// A ROM from harness/golden/nes_frames_crc32.txt, or a skip if the test
-// ROMs haven't been fetched.
-std::pair<rig::nes::GoldenRom, rig::NesRom> golden_rom(const std::string& id) {
-    auto golden = rig::nes::load_golden_roms(RS_NES_FRAMES_GOLDEN);
-    auto g = std::find_if(golden.begin(), golden.end(), [&](auto& x) { return x.check.id == id; });
-    REQUIRE(g != golden.end());
-    std::string path = std::string(RS_TESTROMS) + "/nes-test-roms/" + g->path;
-    if (!std::filesystem::exists(path)) SKIP(path << " not found: run testroms/fetch.py");
-    auto rom = rig::load_ines(path);
-    REQUIRE(std::holds_alternative<rig::NesRom>(rom));
-    return {*g, std::get<rig::NesRom>(rom)};
-}
 
 // Runs a ROM in the sim to its golden frame: it must pass its own check and
 // show MesenCE's frame. `bram` runs it as the Tang Console 138K does.

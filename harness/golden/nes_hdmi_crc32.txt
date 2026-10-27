@@ -1,0 +1,6 @@
+# Video CRCs from the sim's HDMI output (make_nes_hdmi_sim): id, frames, and the
+# CRC-32 of the TMDS symbols of the display frame showing frame `frames - 1`
+# (as nes_video takes it). The sim's receiver checks that frame's picture
+# against MesenCE's frame before these are trusted; the board must match them.
+oam_read 60 0x51bc0f1d
+full_palette 150 0x1c3c17ef

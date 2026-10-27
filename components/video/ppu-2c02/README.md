@@ -2,7 +2,7 @@
 
 The NES's 2C02 picture processing unit (NTSC), dot-exact: 341 dots by 262 lines, with background and sprite rendering, scrolling, the palette, VBL and NMI, sprite 0 hit, and sprite overflow with its hardware bug. Its timing follows the 2C02 as [MesenCE](https://github.com/nesdev-org/MesenCE) models it, so its frames match MesenCE's pixel for pixel; that is how it's tested.
 
-Module `ppu_2c02` (the folder name can't start a module name).
+Module `ppu_2c02` (the folder name can't start a module name), and `ppu_2c02_rgb`, the 2C02's 512 colours ({emphasis, colour}) as 24-bit RGB, registered: a ROM that `tools/gen_rgb.py` generates by simulating the 2C02's composite signal (its measured voltage levels, 12 phases of the colour subcarrier, and the emphasis bits' attenuation) and decoding it as an NTSC TV does. It's the PPU's colours, not any emulator's palette; a test checks the RTL matches the script, and `gen_rgb.py --png` draws it.
 
 ## Timing
 

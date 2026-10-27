@@ -1,13 +1,14 @@
 // SPDX-License-Identifier: Apache-2.0
-// uart_echo on the Tang Nano 20K. The UART is on header pins 41/42 (BANK5, 3.3 V;
-// shared with the unused LCD connector) to an external 3.3 V USB-serial adapter,
-// because the onboard BL616 bridge can't carry sustained streams (see README.md).
-// FPGA pin 42 -> adapter RX, adapter TX -> FPGA pin 41.
+// uart_echo on the Tang Nano 20K. The UART is on header pins 71/72 (bank 1,
+// 3.3 V) to an external 3.3 V USB-serial adapter, because the onboard BL616
+// bridge can't carry sustained streams (see README.md). FPGA pin 72 -> adapter
+// RX, adapter TX -> FPGA pin 71. Bank 1 keeps it clear of the HDMI pairs'
+// banks, whose true LVDS outputs set the I/O standard for the whole bank.
 IO_LOC "clk" 4;
 IO_PORT "clk" IO_TYPE=LVCMOS33;
-IO_LOC "uart_tx" 42;
+IO_LOC "uart_tx" 72;
 IO_PORT "uart_tx" IO_TYPE=LVCMOS33;
-IO_LOC "uart_rx" 41;
+IO_LOC "uart_rx" 71;
 IO_PORT "uart_rx" IO_TYPE=LVCMOS33 PULL_MODE=UP;
 IO_LOC "led[0]" 15;
 IO_LOC "led[1]" 16;

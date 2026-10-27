@@ -1,12 +1,15 @@
 // SPDX-License-Identifier: Apache-2.0
-// CRC-32 (IEEE 802.3, reflected, as used by zlib), one byte per enabled clock.
-// Its save state is one word, the CRC itself: read it from `crc`, and write
-// it back with st_we to carry on from there.
-module crc32 (
+// CRC-32 (IEEE 802.3, reflected, as used by zlib), W bits per enabled clock,
+// bit 0 first: with the default 8, one byte. Its save state is one word, the
+// CRC itself: read it from `crc`, and write it back with st_we to carry on
+// from there.
+module crc32 #(
+    parameter int W = 8
+) (
     input  logic        clk,
     input  logic        rst,      // synchronous; restarts the CRC
     input  logic        en,       // consume `data` this cycle
-    input  logic [7:0]  data,
+    input  logic [W-1:0] data,
     output logic [31:0] crc,      // CRC of every byte since reset, final XOR applied
     input  logic        st_we,    // set the CRC to st_wdata, as if those bytes had gone in
     input  logic [31:0] st_wdata
@@ -15,11 +18,11 @@ module crc32 (
 
     logic [31:0] state;
 
-    function automatic logic [31:0] next_state(input logic [31:0] s, input logic [7:0] d);
+    function automatic logic [31:0] next_state(input logic [31:0] s, input logic [W-1:0] d);
         logic [31:0] c;
-        c = s ^ {24'b0, d};
-        for (int i = 0; i < 8; i++)
-            c = c[0] ? (c >> 1) ^ POLY : c >> 1;
+        c = s;
+        for (int i = 0; i < W; i++)
+            c = c[0] ^ d[i] ? (c >> 1) ^ POLY : c >> 1;
         next_state = c;  // Yosys doesn't support `return`
     endfunction
 

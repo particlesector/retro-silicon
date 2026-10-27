@@ -5,22 +5,26 @@
 # the build, including a missed timing constraint (nextpnr exits non-zero
 # unless --timing-allow-fail is passed, and it never is here).
 #
-# usage: build.sh -d <device> -F <family> -t <top> -c <pins.cst> [-f <MHz>] [-o <outdir>] [-g NAME=VALUE]... <sources...>
-# -g sets a top-level parameter. Writes <outdir>/<top>.fs plus synth.log, pnr.log
-# and report.json (achieved fmax).
+# usage: build.sh -d <device> -F <family> -t <top> -c <pins.cst> [-f <MHz>] [-k NET=MHz]... [-o <outdir>] [-g NAME=VALUE]... <sources...>
+# -g sets a top-level parameter. -f is the clock constraint for any clock not
+# named by -k, which constrains one clock net (a PLL's or divider's output,
+# whose rate nextpnr doesn't work out). Writes <outdir>/<top>.fs plus
+# synth.log, pnr.log and report.json (achieved fmax).
 set -euo pipefail
 
 freq=27
 out=build/fpga
 params=()
+clocks=()
 
-while getopts "d:F:t:c:f:o:g:" opt; do
+while getopts "d:F:t:c:f:k:o:g:" opt; do
   case $opt in
     d) device=$OPTARG ;;
     F) family=$OPTARG ;;
     t) top=$OPTARG ;;
     c) cst=$OPTARG ;;
     f) freq=$OPTARG ;;
+    k) clocks+=("$OPTARG") ;;
     o) out=$OPTARG ;;
     g) params+=("$OPTARG") ;;
     *) sed -n 's/^# usage: //p' "$0" >&2; exit 2 ;;
@@ -46,10 +50,19 @@ synth_family=""
 yosys -q -l "$out/synth.log" \
   -p "read_verilog -sv $*; $chparams synth_gowin $synth_family -top $top -json $out/$top.json"
 
+sdc=()
+if (( ${#clocks[@]} )); then
+  : > "$out/clocks.sdc"
+  for c in "${clocks[@]}"; do
+    echo "create_clock -period $(python3 -c "print(1000 / ${c#*=})") [get_nets {${c%%=*}}]" >> "$out/clocks.sdc"
+  done
+  sdc=(--sdc "$out/clocks.sdc")
+fi
+
 nextpnr-himbaechel -q -l "$out/pnr.log" \
   --json "$out/$top.json" --write "$out/$top.pnr.json" \
   --device "$device" --vopt family="$family" --vopt cst="$cst" \
-  --freq "$freq" --report "$out/report.json"
+  --freq "$freq" "${sdc[@]}" --report "$out/report.json"
 
 # Apycula's bundled Python lacks numpy and friends; it only warns that it runs slower.
 PYTHONWARNINGS=ignore::UserWarning gowin_pack -d "$family" -o "$out/$top.fs" "$out/$top.pnr.json"

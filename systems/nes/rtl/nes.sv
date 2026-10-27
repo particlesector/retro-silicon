@@ -20,9 +20,12 @@
 // and RAM is read on that first clock and written on the last.
 //
 // The system stops and starts only between CPU cycles, so stopping (by the
-// shell, a cycle or frame count, the video probe's capture or a save state) leaves the
-// CPU's bus and the PPU's output exactly as they would have been: the same on
-// any board and in the sim.
+// shell, a cycle or frame count, the video probe's capture, a save state or
+// pacing for the display) leaves the CPU's bus and the PPU's output exactly as
+// they would have been: the same on any board and in the sim.
+//
+// The PPU's pixels go out to nes_video, the HDMI output; with pacing on, the
+// system waits at each frame's end for nes_video's request (see README.md).
 //
 // Shell address map (see README.md for the registers):
 //   0x00000000-0x007FFFFF  the board's memory: PRG ROM from 0
@@ -42,6 +45,7 @@ module nes #(
     parameter int          DOT_NUM      = 35,       // PPU dots per DOT_DEN clocks:
     parameter int          DOT_DEN      = 176,      //   5.369318 MHz from 27 MHz
     parameter int          LEAD_DOTS    = 5,
+    parameter bit          PACE         = 1'b0,     // keep pace with a display from reset
     parameter logic [31:0] BUILD_ID     = '0
 ) (
     input  logic        clk,
@@ -56,7 +60,22 @@ module nes #(
     output logic [7:0]  mem_wdata,
     input  logic        mem_ack,
     input  logic [7:0]  mem_rdata,
-    input  logic        mem_ready
+    input  logic        mem_ready,
+
+    // The picture, to nes_video, and its pacing and checks (see nes_video).
+    output logic        pix_valid,
+    output logic [8:0]  pix,
+    output logic [7:0]  pix_x,
+    output logic [7:0]  pix_y,
+    output logic        v_waiting,
+    input  logic        v_req,
+    output logic        v_cap_t,
+    input  logic [31:0] v_crc,
+    input  logic        v_crc_ok,
+    input  logic        v_crc_t,
+    input  logic [15:0] v_shown,
+    input  logic [15:0] v_late,
+    input  logic [15:0] v_overrun
 );
     logic rst;
     por u_por (.clk, .rst);
@@ -142,7 +161,7 @@ module nes #(
     typedef enum logic [1:0] {C_LEAD, C_START, C_RUN, C_END} cstate_t;
 
     cstate_t    cs;
-    logic       go, sys_rst, halted, cap_held, ss_hold;
+    logic       go, sys_rst, halted, cap_held, ss_hold, pace_wait;
     logic       dot_slot, v_hold, ppu_ce, reg_ce, ce, cyc_start;
     logic [1:0] dn;    // dots so far in this CPU cycle
     logic [2:0] lead;
@@ -150,7 +169,7 @@ module nes #(
     // Stops are levels, so raising a limit runs on from where it stopped.
     assign stopped   = (stop_at != '0 && cycles >= stop_at) || (stop_frame != '0 && frames >= stop_frame);
     assign sys_rst   = rst || ctrl_reset;
-    assign go        = ctrl_run && !ctrl_reset && !stopped && mem_ready && !cap_held && !ss_hold;
+    assign go        = ctrl_run && !ctrl_reset && !stopped && mem_ready && !cap_held && !ss_hold && !pace_wait;
     assign cyc_start = cs == C_START && go;
     assign ce        = cs == C_END;
 
@@ -305,9 +324,7 @@ module nes #(
     logic [13:0] vaddr;
     logic        vwe;
     logic [7:0]  vwdata, vrdata, ppu_rdata;
-    logic        pix_valid, frame_end;
-    logic [8:0]  pix;
-    logic [7:0]  pix_x, pix_y;
+    logic        frame_end;
     logic [31:0] ppu_st_rdata;
 
     /* verilator lint_off UNUSEDSIGNAL */
@@ -536,6 +553,55 @@ module nes #(
         end
     end
 
+    // ---- Display pacing and the video CRC ----
+    // With pacing on, the system stops at each frame's end (line 240) until
+    // the display asks for the next frame (v_req), so the display shows each
+    // frame whole; the stop falls between CPU cycles, like any other, so it
+    // changes nothing the system does. The video CRC is of the display frame
+    // that starts frame vcap_frame (frames, at that request, equal to it).
+    logic        vid_pace, vcap_armed, vcap_wait, vcap_valid, vcap_ok, v_crc_seen;
+    logic [31:0] vcap_frame, vcrc;
+    logic        vcap_arm;  // a write of register 3C with bit 1 set, below
+
+    // It waits on the display only when nothing else holds it, so a request
+    // that comes while it's stopped is left for the one after it's let go.
+    wire held = !ctrl_run || ctrl_reset || stopped || !mem_ready || cap_held || ss_hold;
+    assign v_waiting = pace_wait && !held;
+
+    always_ff @(posedge clk) begin
+        v_crc_seen <= v_crc_t;
+        if (frame_end && vid_pace)
+            pace_wait <= 1'b1;
+        if (v_req && v_waiting) begin
+            pace_wait <= 1'b0;
+            if (vcap_armed && frames == vcap_frame) begin
+                v_cap_t    <= !v_cap_t;
+                vcap_armed <= 1'b0;
+                vcap_wait  <= 1'b1;
+            end
+        end
+        if (v_crc_t != v_crc_seen && vcap_wait) begin
+            vcrc       <= v_crc;
+            vcap_ok    <= v_crc_ok;
+            vcap_valid <= 1'b1;
+            vcap_wait  <= 1'b0;
+        end
+        if (vcap_arm) begin
+            vcap_armed <= 1'b1;
+            vcap_wait  <= 1'b0;
+            vcap_valid <= 1'b0;
+        end
+        if (sys_rst || !vid_pace)
+            pace_wait <= 1'b0;
+        if (rst) begin
+            v_cap_t    <= 1'b0;
+            vcap_armed <= 1'b0;
+            vcap_wait  <= 1'b0;
+            vcap_valid <= 1'b0;
+            vcap_ok    <= 1'b0;
+        end
+    end
+
     // ---- Video probe ----
     logic [31:0] frame_crc, crc_frame, line_rdata;
     logic        crc_valid;
@@ -642,6 +708,8 @@ module nes #(
     wire  [7:0] r = s_addr[7:0];
     wire        running = go || cs == C_RUN || cs == C_END;
 
+    assign vcap_arm = s_new && sel_reg && s_we && !reg_ack && r == 8'h3C && s_wdata[1];
+
     always_ff @(posedge clk) begin
         reg_ack <= s_new && sel_reg && !reg_ack;
         if (s_new && sel_reg && s_we && !reg_ack)
@@ -669,6 +737,11 @@ module nes #(
                 8'h34: cap_line          <= s_wdata;
                 8'h35: cap_en            <= s_wdata[0];
                 8'h38: ss_cmd            <= s_wdata;
+                8'h3C: vid_pace          <= s_wdata[0];
+                8'h40: vcap_frame[7:0]   <= s_wdata;
+                8'h41: vcap_frame[15:8]  <= s_wdata;
+                8'h42: vcap_frame[23:16] <= s_wdata;
+                8'h43: vcap_frame[31:24] <= s_wdata;
                 default: ;
             endcase
         case (r)
@@ -691,7 +764,7 @@ module nes #(
             8'h15:   reg_q <= trace_crc[15:8];
             8'h16:   reg_q <= trace_crc[23:16];
             8'h17:   reg_q <= trace_crc[31:24];
-            8'h18:   reg_q <= {2'b0, crc_valid, cap_held, running, late, stopped, halted};
+            8'h18:   reg_q <= {vcap_valid, pace_wait, crc_valid, cap_held, running, late, stopped, halted};
             8'h1C:   reg_q <= stop_frame[7:0];
             8'h1D:   reg_q <= stop_frame[15:8];
             8'h1E:   reg_q <= stop_frame[23:16];
@@ -717,6 +790,22 @@ module nes #(
             8'h35:   reg_q <= {7'b0, cap_en};
             8'h38:   reg_q <= ss_cmd;
             8'h39:   reg_q <= ss_done;
+            8'h3C:   reg_q <= {6'b0, vcap_armed, vid_pace};
+            8'h3D:   reg_q <= {7'b0, vcap_ok};
+            8'h40:   reg_q <= vcap_frame[7:0];
+            8'h41:   reg_q <= vcap_frame[15:8];
+            8'h42:   reg_q <= vcap_frame[23:16];
+            8'h43:   reg_q <= vcap_frame[31:24];
+            8'h44:   reg_q <= vcrc[7:0];
+            8'h45:   reg_q <= vcrc[15:8];
+            8'h46:   reg_q <= vcrc[23:16];
+            8'h47:   reg_q <= vcrc[31:24];
+            8'h48:   reg_q <= v_shown[7:0];
+            8'h49:   reg_q <= v_shown[15:8];
+            8'h4A:   reg_q <= v_late[7:0];
+            8'h4B:   reg_q <= v_late[15:8];
+            8'h4C:   reg_q <= v_overrun[7:0];
+            8'h4D:   reg_q <= v_overrun[15:8];
             default: reg_q <= '0;
         endcase
         if (rst) begin
@@ -731,6 +820,8 @@ module nes #(
             chr_ram    <= 1'b0;
             cap_en     <= 1'b0;
             ss_cmd     <= '0;
+            vid_pace   <= PACE;
+            vcap_frame <= '0;
         end
     end
 
