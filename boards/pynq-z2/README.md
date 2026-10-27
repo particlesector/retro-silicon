@@ -6,7 +6,9 @@ The library's first board outside Gowin's family, and its check that the compone
 
 ## Building
 
-`build.sh` runs `../xilinx/build.sh` for this part with [openXC7](https://github.com/openXC7): Yosys's `synth_xilinx`, nextpnr-xilinx, and Project X-Ray's fasm2frames and xc7frames2bit. It needs those on PATH and two databases from the same openXC7 release: `RS_XC7_CHIPDB`, the directory holding `xc7z020clg400.bin`, and `RS_PRJXRAY_DB`, Project X-Ray's database. A missed timing constraint fails the build.
+`build.sh` runs `../xilinx/build.sh` for this part with [openXC7](https://github.com/openXC7): Yosys's `synth_xilinx`, nextpnr-xilinx, and Project X-Ray's fasm2frames and xc7frames2bit. It needs those on PATH and two databases from the same openXC7 release: `RS_XC7_CHIPDB`, the directory holding `xc7z020clg400.bin`, and `RS_PRJXRAY_DB`, Project X-Ray's database.
+
+nextpnr-xilinx's results vary a lot from seed to seed (the NES's system clock has come out anywhere from 38 to 52 MHz against 46.4), and now and then it routes through a tile Project X-Ray can't encode (`fasm2frames` stops on a tile name its grid lacks). So the build places with seeds 1 to 8 in turn and keeps the first placement that meets every constraint and assembles; if none does, the build fails.
 
 ```sh
 boards/pynq-z2/build.sh -t <top> -c pins.xdc -o <outdir> [-g NAME=VALUE]... <sources...>
@@ -22,13 +24,25 @@ openFPGALoader -b pynq_z2 build/fpga/pynq_uart_echo/pynq_echo_top.bit
 
 | Target | Design | Top | Notes |
 | --- | --- | --- | --- |
-| `pynq_uart_echo_bitstream` | `systems/uart-echo` | `rtl/pynq_echo_top.sv` | 1.506 Mbaud (`CLKS_PER_BIT=83`) |
+| `pynq_uart_echo_bitstream` | `systems/uart-echo` | `rtl/pynq_echo_top.sv` | 1.506 Mbaud (`CLKS_PER_BIT=83`), `pins.xdc` |
+| `pynq_shell_ram_bitstream` | `systems/shell-ram` | `rtl/pynq_shell_ram_top.sv` | As echo; `BUILD_ID` from the RTL's SHA-256, the same as the Tang boards' |
+| `pynq_nes_bitstream` | `systems/nes` through `nes_bram`, with HDMI | `rtl/pynq_nes_top.sv` | `nes.xdc`; its own clocks (below), 1.497 Mbaud (`CLKS_PER_BIT=31`), 32 KB of block RAM for the memory, paced by the display |
 
-All use `pins.xdc`.
+## Clocks
 
-## Clock
+The echo and the shell run on the 125 MHz clock on H16, which the Ethernet PHY makes; it runs with the processor not booted. 83 clocks a bit is 1.506 Mbaud, 0.4% fast of the host's 1.5 Mbaud.
 
-The designs run on the 125 MHz clock on H16, which the Ethernet PHY makes; it runs with the processor not booted. 83 clocks a bit is 1.506 Mbaud, 0.4% fast of the host's 1.5 Mbaud.
+The NES makes the Tang Nano 20K's clocks, so it runs with the same parameters: 371.25 MHz for the serializers, 74.25 MHz for the pixels and 46.40625 MHz for the system, where a UART bit is 31 clocks and the PPU's dot rate 14/121 of the clock, exactly NTSC's. No integer PLL or MMCM setting makes 742.5 MHz from 125, and openXC7 sets an MMCM's fractional dividers wrong (measured on this board: a fractional multiplier gave about 11.8 MHz for 74.2, a fractional output divider no clock), so it takes two steps: a PLL makes 82.5 MHz (125 / 5 × 33 / 10), and an MMCM multiplies that by 9 to 742.5 MHz and divides it by 2, 10 and 16. The system's clock goes through a BUFGCE held off until the MMCM locks.
+
+## Memory
+
+`nes_bram` has 32 KB here, NROM's largest PRG ROM. Yosys builds anything deeper from pairs of cascaded block RAMs, and nextpnr-xilinx fails to place them; the mappers of milestone 9 will need a way round that, or the DDR3, which only the processor's side reaches.
+
+## HDMI
+
+HDMI OUT is driven as TMDS (`TMDS_33`) by `boards/xilinx/rtl/tmds_phy_xc7.sv`: a master and slave OSERDESE2 per channel, 10:1 at 371.25 MHz on both edges, into an OBUFDS. The picture is the same 720p as the Tang Nano 20K's, from the same `nes_video`, and its video CRCs match the 20K's.
+
+Not yet seen on a display: the capture dongle got no signal from this, nor from two other output designs (a fabric serializer through ODDRs, as openXC7's own HDMI demo has, into the same TMDS_33 outputs, and the same into pseudo-differential LVCMOS33 pins), nor from colour bars without the NES. The hot-plug pin (`R19`) reads high throughout.
 
 ## UART
 
@@ -40,4 +54,4 @@ LD0 overflow and LD1 framing error (both sticky until reload), LD3 heartbeat, fo
 
 ## Status
 
-UART echo passes on the board: 10 MB with no errors, and the same CRC as the Tang boards.
+On the board, with the same CRCs as the Tang boards: the UART echo (also 10 MB with no errors), the test shell with injected faults, nestest's bus trace, the save-state round trip, all 42 test ROMs with MesenCE's frame CRCs, and the HDMI video CRCs. The picture on HDMI OUT is still to come (above).

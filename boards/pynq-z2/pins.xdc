@@ -7,7 +7,7 @@ create_clock -period 8.000 -name clk [get_ports { clk }]
 
 # The data link: a 3.3 V USB-serial adapter on PMOD A's JA1P and JA1N.
 set_property -dict { PACKAGE_PIN Y18 IOSTANDARD LVCMOS33 } [get_ports { uart_tx }]
-set_property -dict { PACKAGE_PIN Y19 IOSTANDARD LVCMOS33 } [get_ports { uart_rx }]
+set_property -dict { PACKAGE_PIN Y19 IOSTANDARD LVCMOS33 PULLUP true } [get_ports { uart_rx }]
 
 # LD0-LD3, active high.
 set_property -dict { PACKAGE_PIN R14 IOSTANDARD LVCMOS33 } [get_ports { led[0] }]
