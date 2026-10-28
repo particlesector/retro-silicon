@@ -50,6 +50,8 @@ All notable changes to this project are listed here. The format follows [Keep a 
 - `boards/tang-nano-20k`: the NES with HDMI, its clocks from the PLL: 371.25 MHz for the serializers, 74.25 MHz for the pixels and 46.40625 MHz for the system.
 - `boards/gowin`: `tmds_phy` (OSER10 serializers and LVDS outputs); `build.sh -k` constrains a clock the design makes; stand-ins for Gowin primitives for the lint tests, through `rs_component(... LINT ...)`.
 - `harness`: `nes::hdmi_test`, the video registers in `nes::Console`, `make_nes_hdmi_sim` (the Tang Nano 20K's NES with both its clocks, decoded by a TMDS receiver in the tests), and golden video CRCs (`golden/nes_hdmi_crc32.txt`).
+- `boards/pynq-z2`, the first board outside Gowin's family: a Zynq-7020 built with openXC7 through `boards/xilinx/build.sh`, with the UART echo, the test shell, and the NES on block RAM with HDMI at 720p; `rs_board_bitstream` takes `VENDOR xilinx`.
+- `boards/xilinx`: `tmds_phy_xc7` (OSERDESE2 serializers and OBUFDS outputs), with a sim test of its channel order, and stand-ins for Xilinx primitives for the lint and sim tests.
 
 ### Changed
 
@@ -61,4 +63,5 @@ All notable changes to this project are listed here. The format follows [Keep a 
 
 ### Fixed
 
+- `video/line-scaler`: the ring is in memories of 8 bits or fewer, so no toolchain has to use block RAM parity bits; with openXC7 a 9-bit ring lost its ninth bit (the NES's emphasis) on a PYNQ-Z2.
 - `memory/sdram`: a WRITE waits the whole of tRAS after its row opens. Its auto-precharge can start under a clock after it, so from about 40 MHz the precharge could come before tRAS.

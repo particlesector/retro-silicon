@@ -4,6 +4,8 @@ Shows a source's frames on a display that runs on another clock, scaled up by a 
 
 Module `line_scaler`.
 
+The ring is kept in memories of 8 bits or fewer: the low 8 bits of each pixel in one, any more in another. A single 9-bit memory would put the ninth bit in a block RAM's parity bits, which openXC7 gets wrong on the 7-series: on a PYNQ-Z2, a 4K x 9 RAMB36 lost that bit for half its addresses, and with it the NES's emphasis bits.
+
 ## How it keeps the source in step
 
 The source keeps pace with the display: after each frame it stops (`s_waiting`) until `s_req` starts the next. The display sends that request at the start of its line `REQ_Y`, early enough that the source's first picture line arrives before the display starts drawing it. A console stops at a frame boundary without changing anything it does, so it still runs at its own rate within each frame; only the pause between frames sets the frame rate to the display's.
