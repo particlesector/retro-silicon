@@ -8,26 +8,26 @@ Every component builds with the open-source flow (Yosys, nextpnr, Verilator) and
 
 | Component | What it is | Sim tests | Board run |
 | --- | --- | --- | --- |
-| [cpu/6502](components/cpu/6502) | NMOS 6502, cycle-exact on the bus; decimal mode optional (off for the NES); save-state port | ✅ | ✅ Tang Nano 20K, in nes |
-| [video/ppu-2c02](components/video/ppu-2c02) | The NES's 2C02 PPU (NTSC), dot-exact; frames match MesenCE's; save-state port | ✅ | ✅ Tang Nano 20K, in nes |
-| [video/hdmi](components/video/hdmi) | Video timing and TMDS encoding for HDMI (DVI mode), 720p60 by default | ✅ | ✅ Tang Nano 20K, in nes |
-| [video/line-scaler](components/video/line-scaler) | A source's frames on a display of another clock, scaled up through a ring of lines, the source kept in step | ✅ | ✅ Tang Nano 20K, in nes |
-| [common/cdc](components/common/cdc) | Flip-flop synchronizer between clock domains | ✅ | ✅ Tang Nano 20K, in nes |
-| [common/clock-enable](components/common/clock-enable) | Clock enable at NUM/DEN of the clock rate, exact on average | ✅ | ✅ Tang Nano 20K, in nes |
-| [debug/video-probe](components/debug/video-probe) | Frame and line CRCs of a video stream, and line-by-line frame capture | ✅ | ✅ Tang Nano 20K, in nes |
-| [common/crc32](components/common/crc32) | CRC-32 (IEEE, as zlib), one byte per clock | ✅ | ✅ Tang Nano 20K, in shell-sdram and nes |
+| [cpu/6502](components/cpu/6502) | NMOS 6502, cycle-exact on the bus; decimal mode optional (off for the NES); save-state port | ✅ | ✅ Tang Nano 20K and PYNQ-Z2, in nes |
+| [video/ppu-2c02](components/video/ppu-2c02) | The NES's 2C02 PPU (NTSC), dot-exact; frames match MesenCE's; save-state port | ✅ | ✅ Tang Nano 20K and PYNQ-Z2, in nes |
+| [video/hdmi](components/video/hdmi) | Video timing and TMDS encoding for HDMI (DVI mode), 720p60 by default | ✅ | ✅ Tang Nano 20K and PYNQ-Z2, in nes |
+| [video/line-scaler](components/video/line-scaler) | A source's frames on a display of another clock, scaled up through a ring of lines, the source kept in step | ✅ | ✅ Tang Nano 20K and PYNQ-Z2, in nes |
+| [common/cdc](components/common/cdc) | Flip-flop synchronizer between clock domains | ✅ | ✅ Tang Nano 20K and PYNQ-Z2, in nes |
+| [common/clock-enable](components/common/clock-enable) | Clock enable at NUM/DEN of the clock rate, exact on average | ✅ | ✅ Tang Nano 20K and PYNQ-Z2, in nes |
+| [debug/video-probe](components/debug/video-probe) | Frame and line CRCs of a video stream, and line-by-line frame capture | ✅ | ✅ Tang Nano 20K and PYNQ-Z2, in nes |
+| [common/crc32](components/common/crc32) | CRC-32 (IEEE, as zlib), one byte per clock | ✅ | ✅ Tang Nano 20K, in shell-sdram and nes; PYNQ-Z2, in nes |
 | [memory/sdram](components/memory/sdram) | Byte-port controller for a 2M × 32 SDR SDRAM, such as the Tang Nano 20K's | ✅ | ✅ Tang Nano 20K, in shell-sdram and nes |
-| [memory/arbiter](components/memory/arbiter) | Fixed-priority sharing of one byte-port memory | ✅ | ✅ both boards, in nes |
-| [memory/bram](components/memory/bram) | Block RAM behind the same byte port | ✅ | ✅ Tang Console 138K, in nes |
-| [common/save-state](components/common/save-state) | Saves and loads a system's whole state through its bus | ✅ | ✅ both boards, in nes |
+| [memory/arbiter](components/memory/arbiter) | Fixed-priority sharing of one byte-port memory | ✅ | ✅ all three boards, in nes |
+| [memory/bram](components/memory/bram) | Block RAM behind the same byte port | ✅ | ✅ Tang Console 138K and PYNQ-Z2, in nes |
+| [common/save-state](components/common/save-state) | Saves and loads a system's whole state through its bus | ✅ | ✅ all three boards, in nes |
 | [common/uart](components/common/uart) | 8N1 receiver and transmitter | ✅ | ✅ Tang Nano 20K and PYNQ-Z2, in uart-echo |
 | [common/fifo](components/common/fifo) | Synchronous FIFO in block RAM | ✅ | ✅ Tang Nano 20K and PYNQ-Z2, in uart-echo |
 | [common/por](components/common/por) | Power-on reset | ✅ | ✅ Tang Nano 20K and PYNQ-Z2, in uart-echo |
-| [debug/test-shell](components/debug/test-shell) | UART command engine: CRC-checked frames, retries, bus access, build ID | ✅ | ✅ Tang Nano 20K, in shell-ram |
+| [debug/test-shell](components/debug/test-shell) | UART command engine: CRC-checked frames, retries, bus access, build ID | ✅ | ✅ Tang Nano 20K and PYNQ-Z2, in shell-ram |
 | [systems/uart-echo](systems/uart-echo) | UART link test: echoes every byte | ✅ | ✅ Tang Nano 20K: 100 MB at 1.5 Mbaud, no errors; PYNQ-Z2 (openXC7): 10 MB |
-| [systems/shell-ram](systems/shell-ram) | Test shell with a scratch RAM | ✅ | ✅ Tang Nano 20K: 1,000 commands with faults injected, same CRC as the sim |
+| [systems/shell-ram](systems/shell-ram) | Test shell with a scratch RAM | ✅ | ✅ Tang Nano 20K: 1,000 commands with faults injected, same CRC as the sim; PYNQ-Z2 (openXC7): the same |
 | [systems/shell-sdram](systems/shell-sdram) | Test shell with the SDRAM | ✅ | ✅ Tang Nano 20K: 8 MB written and checked, same CRC as the sim |
-| [systems/nes](systems/nes) | The NES so far: CPU, PPU, OAM DMA, RAM, PRG RAM, an NROM cartridge; save states | ✅ | ✅ Tang Nano 20K and Tang Console 138K: nestest's bus-trace CRC, and 42 PPU test ROMs pass with MesenCE's frame CRCs; save states round-trip, and move between the boards; on the 20K, HDMI at 720p whose video CRCs match the sim's |
+| [systems/nes](systems/nes) | The NES so far: CPU, PPU, OAM DMA, RAM, PRG RAM, an NROM cartridge; save states | ✅ | ✅ Tang Nano 20K and Tang Console 138K: nestest's bus-trace CRC, and 42 PPU test ROMs pass with MesenCE's frame CRCs; save states round-trip, and move between the boards; on the 20K, HDMI at 720p whose video CRCs match the sim's. PYNQ-Z2 (openXC7): the same, with HDMI |
 
 A board run means the same test, with the same data, passed on real hardware with the same result as the simulation.
 

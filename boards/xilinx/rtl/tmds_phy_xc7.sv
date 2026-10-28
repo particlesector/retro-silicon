@@ -60,6 +60,6 @@ module tmds_phy_xc7 (
         OBUFDS u_buf (.I(q[i]), .O(p[i]), .OB(n[i]));
     end
 
-    assign {tmds_d_p, tmds_clk_p} = p;
-    assign {tmds_d_n, tmds_clk_n} = n;
+    assign {tmds_clk_p, tmds_d_p} = p;
+    assign {tmds_clk_n, tmds_d_n} = n;
 endmodule

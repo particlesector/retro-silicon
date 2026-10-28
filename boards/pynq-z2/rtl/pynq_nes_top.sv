@@ -4,20 +4,22 @@
 // largest PRG ROM: Yosys builds anything deeper from cascaded block RAM
 // pairs, which nextpnr-xilinx fails to place.
 //
-// Clocks: the same as the Tang Nano 20K's, from the 125 MHz clock in two
-// steps, because openXC7 sets an MMCM's fractional dividers wrong (a board
-// measured a fractional multiplier at about 11.8 MHz where 74.2 was asked
-// for) and no integer PLL or MMCM makes 742.5 MHz from 125 alone. A PLL makes
-// 82.5 MHz (125 / 5 x 33 / 10); from it an MMCM runs at 742.5 MHz (x9) and
-// gives 371.25 MHz for the serializers (/2), 74.25 MHz for the pixels (/10)
-// and 46.40625 MHz for the system (/16), held off by BUFGCE until the MMCM
-// locks. At 46.40625 MHz a UART bit is 31 clocks (1.497 Mbaud) and the PPU's
-// dot rate 14/121 of the clock, exactly NTSC's.
+// Clocks: from the 125 MHz clock in two steps, because openXC7 sets an
+// MMCM's fractional dividers wrong (a board measured a fractional multiplier
+// at about 11.8 MHz where 74.2 was asked for) and no integer PLL or MMCM makes
+// 742.5 MHz from 125 alone. A PLL makes 82.5 MHz (125 / 5 x 33 / 10); from it
+// an MMCM runs at 742.5 MHz (x9) and gives 371.25 MHz for the serializers
+// (/2), 74.25 MHz for the pixels (/10), as on the Tang Nano 20K, and 37.125
+// MHz for the system (/20), held off by BUFGCE until the MMCM locks. The
+// system runs slower than the 20K's 46.4 MHz because nextpnr-xilinx's
+// placements of the NES reach anywhere from 38 to 52 MHz. At 37.125 MHz a
+// UART bit is 25 clocks (1.485 Mbaud, 1% slow) and the PPU's dot rate 35/242
+// of the clock, exactly NTSC's.
 //
 // LEDs (active high): ld0 a corrupt command frame was seen, ld1 a stalled one,
 // ld2 running, ld3 heartbeat.
 module pynq_nes_top #(
-    parameter int          CLKS_PER_BIT = 31,
+    parameter int          CLKS_PER_BIT = 25,
     parameter logic [31:0] BUILD_ID     = '0
 ) (
     input  logic       clk,  // 125 MHz
@@ -49,7 +51,7 @@ module pynq_nes_top #(
 
     MMCME2_BASE #(
         .CLKIN1_PERIOD(12.121), .DIVCLK_DIVIDE(1), .CLKFBOUT_MULT_F(9.0),
-        .CLKOUT0_DIVIDE_F(2.0), .CLKOUT1_DIVIDE(10), .CLKOUT2_DIVIDE(16)
+        .CLKOUT0_DIVIDE_F(2.0), .CLKOUT1_DIVIDE(10), .CLKOUT2_DIVIDE(20)
     ) u_mmcm (
         .CLKIN1(c82), .CLKFBIN(mm_fb), .CLKFBOUT(mm_fb), .CLKFBOUTB(mm_fbb), .RST(!plock), .PWRDWN(1'b0),
         .CLKOUT0(fclk_u), .CLKOUT0B(mm_o0b), .CLKOUT1(pclk_u), .CLKOUT1B(mm_o1b),
@@ -65,7 +67,7 @@ module pynq_nes_top #(
     /* verilator lint_on UNUSEDSIGNAL */
     logic [9:0] tmds0, tmds1, tmds2;
 
-    nes_bram #(.CLKS_PER_BIT(CLKS_PER_BIT), .IDLE_CLKS(464_063), .DOT_NUM(14), .DOT_DEN(121), .MEM_AW(15), .PACE(1'b1),
+    nes_bram #(.CLKS_PER_BIT(CLKS_PER_BIT), .IDLE_CLKS(371_250), .DOT_NUM(35), .DOT_DEN(242), .MEM_AW(15), .PACE(1'b1),
                .BUILD_ID(BUILD_ID)) u_sys (
         .clk(sclk), .uart_rx, .uart_tx, .led(sys_led),
         .pclk, .tmds0, .tmds1, .tmds2);
