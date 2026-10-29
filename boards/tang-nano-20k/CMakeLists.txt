@@ -22,5 +22,8 @@ rs_board_bitstream(shell_sdram BUILD ${build} COMPONENT shell_sdram_top CST uart
 get_property(nes_id GLOBAL PROPERTY RS_NES_BUILD_ID)
 # The NES makes its own clocks (rtl/nes_top.sv): 46.40625 MHz for the system,
 # 74.25 MHz for the HDMI pixels and 371.25 MHz for their serializers.
+# Seed 1's placement with the APU met timing but lost bits of the PPU's
+# palette writes on the chip (nextpnr doesn't check hold for Gowin); seed 2's
+# passes every board test. Re-check on the board whenever the RTL changes.
 rs_board_bitstream(nes BUILD ${build} COMPONENT nes_top CST nes.cst PARAMS BUILD_ID=${nes_id}
-                   CLOCKS sclk=46.40625 pclk=74.25 fclk=371.25)
+                   CLOCKS sclk=46.40625 pclk=74.25 fclk=371.25 SEED 2)
