@@ -6,9 +6,11 @@ The NES as far as it's built:
 - 2 KB of RAM mirrored to `$1FFF`, and 8 KB of PRG RAM at `$6000`;
 - an NROM cartridge (mapper 0): PRG ROM in the board's memory, 8 KB of CHR ROM or CHR RAM in block RAM, and horizontal or vertical nametable mirroring.
 
-The test shell loads ROMs, runs the system and reads results, frame CRCs and whole frames. A save-state controller saves and loads the whole system. The picture goes out as HDMI at 720p. The controllers and other mappers come in later milestones; until then, reads of `$4000`-`$5FFF` other than `$4015` give open bus (the last value on the data bus), and writes there other than the APU's and `$4014` do nothing. The APU's channel levels come out raw on `a_pulse1` and the other `a_` ports, and go into the audio CRC; mixing and HDMI audio come next.
+The test shell loads ROMs, runs the system and reads results, frame CRCs and whole frames. A save-state controller saves and loads the whole system. The picture goes out as HDMI at 720p. The controllers and other mappers come in later milestones; until then, reads of `$4000`-`$5FFF` other than `$4015` give open bus (the last value on the data bus), and writes there other than the APU's and `$4014` do nothing.
 
-Built from `common/por`, `common/clock-enable`, `common/crc32`, `common/save-state`, `common/cdc`, `debug/test-shell`, `debug/video-probe`, `memory/arbiter`, `cpu/6502`, `audio/apu-2a03`, `video/ppu-2c02`, `video/line-scaler` and `video/hdmi`. The host side is `rig::nes` in [harness](../../harness).
+**Sound.** The APU's channel levels go into the audio CRC each CPU cycle, and through `apu_mixer` and `audio/resampler` to 48 kHz PCM. That's 800 samples per 29,780.5 cycles, the average NES frame with rendering on, so 48 kHz against the 60 Hz display the NES keeps pace with. The samples come out on `a_valid` and `a_pcm`, and `nes_video` sends them as HDMI audio, the same on both channels.
+
+Built from `common/por`, `common/clock-enable`, `common/crc32`, `common/save-state`, `common/cdc`, `debug/test-shell`, `debug/video-probe`, `memory/arbiter`, `cpu/6502`, `audio/apu-2a03`, `audio/resampler`, `video/ppu-2c02`, `video/line-scaler` and `video/hdmi`. The host side is `rig::nes` in [harness](../../harness).
 
 ## Memory
 
@@ -45,7 +47,7 @@ The system stops and starts only between CPU cycles, so stopping it changes noth
 
 ## Save states
 
-`common/save-state` walks 20,992 bytes: the CPU's 4 state words, the PPU's 101, the system's own 6 (below), the APU's 17, RAM, PRG RAM, CHR and the nametable RAM, in that order, between the bus and its buffer at `0x06000000`. PRG ROM and the cartridge registers aren't part of it: load the ROM, then the state.
+`common/save-state` walks 21,016 bytes: the CPU's 4 state words, the PPU's 101, the system's own 12 (below), the APU's 17, RAM, PRG RAM, CHR and the nametable RAM, in that order, between the bus and its buffer at `0x06000000`. PRG ROM and the cartridge registers aren't part of it: load the ROM, then the state.
 
 - **Save:** write register `38` with op 1 and a new sequence number; once `39` reads the same, the buffer holds the state. If the system is running, it stops at its next frame boundary for the walk, then runs on.
 - **Load:** write the buffer, release reset, and write `38` with op 2. The system is left stopped where the state was saved; set the limits and run.
@@ -57,11 +59,11 @@ Display pacing isn't part of a state: after a load, the system falls back in ste
 `nes_video` turns the PPU's pixels into HDMI at 1280x720, 60 Hz, on a 74.25 MHz pixel clock from the board:
 - `video/line-scaler` takes them from the system's clock to the pixel clock through a ring of 32 lines in block RAM, three times their size, 768x720 in the middle of the line;
 - `ppu_2c02_rgb` gives the 2C02's colours, generated from a simulation of its composite signal (`video/ppu-2c02/tools/gen_rgb.py`);
-- `video/hdmi` times and encodes them, in DVI mode (no audio yet).
+- `video/hdmi` times and encodes them, as HDMI with the NES's sound and the AVI and audio InfoFrames.
 
 **Pacing.** A 720p frame (16.667 ms) is a little longer than an NES frame (16.639 ms), so with pacing on (register `3C` bit 0; the default where `PACE` is set, as on the Tang Nano 20K) the system stops at each frame's end, line 240, until the display asks for the next frame, at the start of its line 680. The NES's first picture line then arrives four display lines before it's due, and over the frame it gets up to 14 lines ahead, which the ring holds. It waits about 28 µs a frame. It waits on the display only while nothing else holds it (run off, reset, a stop at a limit, a capture or a save state): a request that comes then is left for the next, so a system stopped at its frame's end isn't taken for one that's late. The stop falls between CPU cycles, like every other, so it changes nothing the system does. With pacing off, the system runs at its own rate and the display shows black. The sim's `make_nes_sim()` runs unpaced, with no pixel clock.
 
-**Video CRC.** For the test shell, `nes_video` takes the CRC of one display frame's TMDS symbols: all 1650 x 750 pixel clocks, 30 bits each, bit 0 first (blue's symbol in bits 9-0, green's 19-10, red's 29-20), so it covers the timing and encoding as well as the picture. Write the frame's index to `40`, then `3C` with bit 1 set; the CRC is of the display frame that shows that frame. The status's bit 7 says it has come, and `3D` whether that display frame showed the frame whole. `48`-`4D` count display frames whose frame started on request, and lines that came late or were overwritten before they were shown: those two stay 0 in a working system.
+**Video CRC.** For the test shell, `nes_video` takes the CRC of one display frame's TMDS symbols: all 1650 x 750 pixel clocks, 30 bits each, bit 0 first (blue's symbol in bits 9-0, green's 19-10, red's 29-20), so it covers the timing and encoding as well as the picture. The data islands' packet symbols count as 0. Which line's island carries a sample depends on when it crosses from the NES's clock to the pixel clock, which differs by a clock or two from board to board. The sim checks the packets instead: every sample against the system's PCM count and CRC. Write the frame's index to `40`, then `3C` with bit 1 set; the CRC is of the display frame that shows that frame. The status's bit 7 says it has come, and `3D` whether that display frame showed the frame whole. `48`-`4D` count display frames whose frame started on request, and lines that came late or were overwritten before they were shown: those two stay 0 in a working system.
 
 The system's own state words, at `0x04002000`:
 
@@ -73,6 +75,9 @@ The system's own state words, at `0x04002000`:
 | 3 | OAM DMA's page, its count's bits 7-0, its byte, open bus (bits 31-24, 23-16, 15-8, 7-0) |
 | 4 | OAM DMA's count bit 8 (14); the APU's DMC cancel (13) and request (12) waiting for the cycle's end; in DMA (11); the DMC's dummy cycle needed (10) and abort (9); lead dots (8-6); the cycle state (5-4); late (3); DMC DMA on (2); OAM DMA on (1); halt needed (0) |
 | 5 | The audio CRC |
+| 6-9 | The resampler's 4 words |
+| 10 | The PCM CRC |
+| 11 | The PCM sample count |
 
 The clock-enable's phase isn't state: it only sets how many clocks pass before the next dot.
 
@@ -87,7 +92,7 @@ The clock-enable's phase isn't state: it only sets how many clocks pass before t
 | `0x03004000`–`0x030047FF` | The nametable RAM as it is, unmirrored |
 | `0x04000000`–`0x0400000F` | CPU save state, 4 words, little-endian |
 | `0x04001000`–`0x04001193` | PPU save state, 101 words (OAM is words 0-63) |
-| `0x04002000`–`0x04002017` | The system's own state, 6 words (above) |
+| `0x04002000`–`0x0400202F` | The system's own state, 12 words (above) |
 | `0x04003000`–`0x04003043` | APU save state, 17 words |
 | `0x05000000`–`0x050003BF` | CRC of each line of the last frame, 4 bytes a line; read while stopped |
 | `0x05001000`–`0x050011FF` | The captured line, 2 bytes a pixel |
@@ -123,6 +128,8 @@ Anything else reads 0 and ignores writes. Multi-byte registers are little-endian
 | `4A` | 2 | Lines that came to the display late (read-only) |
 | `4C` | 2 | Lines overwritten before the display showed them (read-only) |
 | `50` | 4 | The audio CRC (read-only): CRC-32 of the APU's channel levels in every CPU cycle since reset, 3 bytes a cycle: {pulse 2, pulse 1}, {noise, triangle}, the DMC's level |
+| `54` | 4 | The PCM CRC (read-only): CRC-32 of the 48 kHz samples since reset, 2 bytes each, low first |
+| `58` | 4 | How many 48 kHz samples since reset (read-only) |
 
 The limits are levels: raising one lets the system run on from where it stopped. All registers are absolute, so a command the shell runs twice does no harm.
 
@@ -138,7 +145,7 @@ The limits are levels: raising one lets the system run on from where it stopped.
 | `pix_valid`, `pix`, `pix_x`, `pix_y` | out | 1, 9, 8, 8 | The PPU's pixels, to `nes_video` |
 | `v_waiting`, `v_req` | out, in | 1 | Pacing: stopped for the display and nothing else; the display's request for the next frame |
 | `v_cap_t`, `v_crc`, `v_crc_ok`, `v_crc_t`, `v_shown`, `v_late`, `v_overrun` | | | The video CRC and counts, from `nes_video` |
-| `a_pulse1`, `a_pulse2`, `a_triangle`, `a_noise`, `a_dmc` | out | 4, 4, 4, 4, 7 | The APU's channel levels in the current CPU cycle |
+| `a_valid`, `a_pcm` | out | 1, 16 | The sound: a one-clock pulse with each 48 kHz sample, signed |
 
 `nes_sdram` has the SDRAM pins instead, as on `sdram_ctrl`, and `nes_bram` no memory ports; both have `pclk` in and `tmds0`-`tmds2` out in place of the video ports.
 

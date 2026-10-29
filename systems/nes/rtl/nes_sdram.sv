@@ -2,7 +2,7 @@
 // systems/nes with its memory in a 2M x 32 SDRAM (memory/sdram), such as the
 // Tang Nano 20K's. The board drives the chip's clock with the inverse of clk
 // and splits the data bus for its tristate buffer. Its picture goes out as
-// HDMI through nes_video.
+// HDMI, picture and sound, through nes_video.
 module nes_sdram #(
     parameter int          CLKS_PER_BIT = 18,
     parameter int          IDLE_CLKS    = 270_000,
@@ -45,10 +45,8 @@ module nes_sdram #(
     logic [7:0]  pix_x, pix_y;
     logic [31:0] v_crc;
     logic [15:0] v_shown, v_late, v_overrun;
-    /* verilator lint_off UNUSEDSIGNAL */
-    logic [3:0]  a_pulse1, a_pulse2, a_triangle, a_noise;  // the APU's levels: HDMI audio is next
-    logic [6:0]  a_dmc;
-    /* verilator lint_on UNUSEDSIGNAL */
+    logic        a_valid;  // the sound, 48 kHz
+    logic [15:0] a_pcm;
 
     por u_por (.clk, .rst);
 
@@ -59,10 +57,10 @@ module nes_sdram #(
         .mem_ack(ack), .mem_rdata(rdata), .mem_ready(ready),
         .pix_valid, .pix, .pix_x, .pix_y, .v_waiting, .v_req, .v_cap_t,
         .v_crc, .v_crc_ok, .v_crc_t, .v_shown, .v_late, .v_overrun,
-        .a_pulse1, .a_pulse2, .a_triangle, .a_noise, .a_dmc);
+        .a_valid, .a_pcm);
 
     nes_video u_video (
-        .clk, .rst, .pix_valid, .pix, .pix_x, .pix_y, .waiting(v_waiting), .req(v_req),
+        .clk, .rst, .pix_valid, .pix, .pix_x, .pix_y, .waiting(v_waiting), .req(v_req), .a_valid, .a_pcm,
         .cap_t(v_cap_t), .crc(v_crc), .crc_ok(v_crc_ok), .crc_t(v_crc_t),
         .shown(v_shown), .late(v_late), .overrun(v_overrun),
         .pclk, .tmds0, .tmds1, .tmds2);

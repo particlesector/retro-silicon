@@ -7,6 +7,7 @@
 #include <vector>
 
 #include "Vhdmi_720p.h"
+#include "Vhdmi_audio.h"
 #include "Vhdmi_small.h"
 #include "Vtmds_encoder.h"
 #include "tmds_model.hpp"
@@ -199,4 +200,88 @@ TEST_CASE("hdmi follows its parameters: a small mode, negative syncs, a longer l
     auto frames = run(m, md, 20);
     REQUIRE(frames.size() == 20);
     for (auto& f : frames) check_frame(f, md);
+}
+
+TEST_CASE("hdmi with AUDIO: 720p with data islands, InfoFrames and 48 kHz audio a sink decodes") {
+    Vhdmi_audio m;
+    const Mode md{1280, 110, 40, 220, 720, 5, 5, 20, true, true, 2};
+    const unsigned ht = md.htotal(), vt = md.vtotal();
+    m.rst = 1;
+    clock(m);
+    m.rst = 0;
+    struct Pos {
+        unsigned x, y;
+        bool act;
+    };
+    std::vector<Pos> hist;
+    std::vector<std::pair<int16_t, int16_t>> sent;
+    tmds::HdmiDecoder rx;
+    long first = -1;   // the clock whose symbols are the first frame's first position
+    unsigned acc = 0;
+    int frames = 0, bad_pixels = 0, bad_syncs = 0;
+    for (long p = 0; frames < 3; p++) {
+        hist.push_back({m.x, m.y, m.act != 0});
+        long src = p - md.latency;
+        m.rgb = src >= 0 && hist[src].act ? pattern(hist[src].x, hist[src].y) : 0;
+        // 48 kHz: 64 samples every 99,000 pixel clocks.
+        acc += 64;
+        m.aud_valid = 0;
+        if (acc >= 99000) {
+            acc -= 99000;
+            int16_t l = static_cast<int16_t>(sent.size() * 37), r = static_cast<int16_t>(-int(sent.size()) * 91);
+            m.aud_valid = 1;
+            m.aud_l = static_cast<uint16_t>(l);
+            m.aud_r = static_cast<uint16_t>(r);
+            sent.push_back({l, r});
+        }
+        clock(m);
+        // The symbols now are for the position LATENCY + 1 clocks before this
+        // one (the encoders' two stages, less the clock just run).
+        long at = p - md.latency - 1;
+        if (at < 0) continue;
+        auto px = rx(m.tmds0, m.tmds1, m.tmds2);
+        if (first < 0) {
+            if (hist[at].x == 0 && hist[at].y == 0) {
+                first = at;
+                rx.dvi_video = false;  // the first line after reset has no line before it for a preamble
+            } else
+                continue;
+        }
+        unsigned x = hist[at].x, y = hist[at].y;
+        if (x == 0 && y == 0 && at != first) frames++;
+        bool act = x < md.ha && y < md.va;
+        if (act != (px.period == tmds::Period::Video)) bad_pixels++;
+        if (act) {
+            uint32_t want = pattern(x, y);
+            if (px.d[0] != (want & 0xff) || px.d[1] != ((want >> 8) & 0xff) || px.d[2] != (want >> 16)) bad_pixels++;
+            continue;
+        }
+        unsigned vline = x >= md.ha + md.hf ? y : (y == 0 ? vt - 1 : y - 1);
+        unsigned want = (vline >= md.va + md.vf && vline < md.va + md.vf + md.vs) << 1 |
+                        (x >= md.ha + md.hf && x < md.ha + md.hf + md.hs);
+        if (px.period != tmds::Period::VideoGuard && px.sync != want) bad_syncs++;
+        // The video preamble and guard band end each line before a picture line.
+        bool next_pic = y + 1 < md.va || y == vt - 1;
+        if (next_pic && x >= ht - 10 && x < ht - 2 && px.period != tmds::Period::VideoPreamble) bad_pixels++;
+        if (next_pic && x >= ht - 2 && px.period != tmds::Period::VideoGuard) bad_pixels++;
+    }
+    INFO((rx.errors.empty() ? std::string("no errors") : rx.errors[0]));
+    CHECK(rx.errors.empty());
+    CHECK_FALSE(rx.dvi_video);
+    CHECK(bad_pixels == 0);
+    CHECK(bad_syncs == 0);
+    CHECK(rx.islands >= 3 * static_cast<int>(vt));
+    CHECK(rx.video_periods >= 3 * static_cast<int>(md.va));
+    CHECK(rx.n == 6144);
+    CHECK(rx.cts == 74250);
+    REQUIRE(rx.avi.size() == 3 + 14);
+    CHECK(rx.avi[3 + 4] == 4);                  // VIC 4: 720p60
+    CHECK(((rx.avi[3 + 3] >> 2) & 3) == 2);     // full-range RGB
+    REQUIRE(rx.audio_if.size() == 3 + 11);
+    CHECK((rx.audio_if[3 + 1] & 7) == 1);       // 2 channels
+    // Every sample sent, in order, but those still queued at the end.
+    REQUIRE(rx.samples.size() + 4 >= sent.size());
+    REQUIRE(rx.samples.size() <= sent.size());
+    for (size_t i = 0; i < rx.samples.size(); i++) REQUIRE(rx.samples[i] == sent[i]);
+    CHECK(rx.samples.size() > 2 * 800);
 }

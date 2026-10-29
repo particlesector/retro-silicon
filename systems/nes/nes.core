@@ -25,6 +25,7 @@ filesets:
       - retro-silicon:cpu:6502
       - retro-silicon:video:ppu-2c02
       - retro-silicon:audio:apu-2a03
+      - retro-silicon:audio:resampler
       - retro-silicon:video:line-scaler
       - retro-silicon:video:hdmi
 

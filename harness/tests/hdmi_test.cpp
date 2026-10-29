@@ -54,12 +54,15 @@ std::map<std::string, uint32_t> golden_video() {
     return out;
 }
 
-// An HDMI receiver for 1280x720 at 60 Hz: finds the frames in the symbol
-// stream (the first picture pixel after a vertical sync), decodes each pixel
-// clock, and checks every frame against CEA-861's layout: control symbols
-// with the syncs where they belong, picture elsewhere. With `expect` set it
-// also checks the picture: the NES frame three times its size from x = 256,
-// through `pal`, black around it. It takes each frame's CRC as nes_video does.
+// An HDMI receiver for 1280x720 at 60 Hz: decodes each pixel clock as a sink
+// does (tmds::HdmiDecoder, which keeps the audio and checks every packet),
+// finds the frames (the first picture pixel after a vertical sync), and
+// checks every frame against CEA-861's layout and nes_video's HDMI: the
+// syncs where they belong, a data island after each line's picture, the
+// video preamble and guard band before each picture line, control symbols
+// elsewhere. With `expect` set it also checks the picture: the NES frame
+// three times its size from x = 256, through `pal`, black around it. It takes
+// each frame's CRC as nes_video does, the data islands' packets as 0.
 class Receiver {
 public:
     static constexpr unsigned kH = 1650, kV = 750, kHa = 1280, kVa = 720, kX0 = 256;
@@ -73,29 +76,30 @@ public:
     std::vector<Result> frames;
     const rig::nes::Frame* expect = nullptr;
     std::array<uint32_t, 512> pal{};
+    tmds::HdmiDecoder dec;
 
     void operator()(uint32_t sym) {
-        uint16_t q[3] = {static_cast<uint16_t>(sym & 0x3ff), static_cast<uint16_t>((sym >> 10) & 0x3ff),
-                         static_cast<uint16_t>(sym >> 20)};
-        tmds::Symbol s[3] = {tmds::decode(q[0]), tmds::decode(q[1]), tmds::decode(q[2])};
+        auto px = dec(static_cast<uint16_t>(sym & 0x3ff), static_cast<uint16_t>((sym >> 10) & 0x3ff),
+                      static_cast<uint16_t>(sym >> 20));
+        using tmds::Period;
         if (idx_ < 0) {  // finding the first frame
-            bool vs = s[0].control && (s[0].c & 2);
+            bool vs = px.period != Period::Video && px.period != Period::VideoGuard && (px.sync & 2);
             if (vs) seen_vsync_ = true;
-            if (!seen_vsync_ || vs || s[0].control) return;
+            if (!seen_vsync_ || px.period != Period::Video) return;
             idx_ = 0;
             cur_ = Result{};
             crc_ = 0xFFFFFFFFu;
         }
+        uint32_t csym = px.period == Period::Island ? 0 : sym;  // nes_video's CRC leaves the packets out
         for (int b = 0; b < 30; b++) {
-            bool fb = (crc_ ^ (sym >> b)) & 1;
+            bool fb = (crc_ ^ (csym >> b)) & 1;
             crc_ = (crc_ >> 1) ^ (fb ? 0xEDB88320u : 0);
         }
         unsigned x = static_cast<unsigned>(idx_) % kH, y = static_cast<unsigned>(idx_) / kH;
         bool act = x < kHa && y < kVa;
-        for (auto& c : s)
-            if (c.control == act) cur_.timing = false;
+        if (act != (px.period == Period::Video)) cur_.timing = false;
         if (act) {
-            uint32_t rgb = s[2].d << 16 | s[1].d << 8 | s[0].d;
+            uint32_t rgb = px.d[2] << 16 | px.d[1] << 8 | px.d[0];
             bool pic = x >= kX0 && x < kX0 + 768;
             if (!pic) {
                 if (rgb != 0) cur_.timing = false;
@@ -106,7 +110,16 @@ public:
         } else {
             unsigned vline = x >= 1390 ? y : (y == 0 ? kV - 1 : y - 1);
             unsigned want = (vline >= 725 && vline < 730) << 1 | (x >= 1390 && x < 1430);
-            if (s[0].c != want || s[1].c != 0 || s[2].c != 0) cur_.timing = false;
+            if (px.period != Period::VideoGuard && px.sync != want) cur_.timing = false;
+            bool next_pic = y + 1 < kVa || y == kV - 1;
+            Period p = x >= 1284 && x < 1292   ? Period::IslandPreamble
+                       : x >= 1292 && x < 1294 ? Period::IslandGuard
+                       : x >= 1294 && x < 1358 ? Period::Island
+                       : x >= 1358 && x < 1360 ? Period::IslandGuard
+                       : next_pic && x >= kH - 10 && x < kH - 2 ? Period::VideoPreamble
+                       : next_pic && x >= kH - 2               ? Period::VideoGuard
+                                                                : Period::Control;
+            if (px.period != p) cur_.timing = false;
         }
         if (++idx_ == static_cast<long>(kH * kV)) {
             cur_.crc = ~crc_;
@@ -155,6 +168,27 @@ uint32_t on_hdmi(const std::string& id) {
     auto r = rig::nes::hdmi_test(*link, id, rom, g.frames, RS_NES_BUILD_ID);
     INFO(r.detail << " / " << r.notes);
     REQUIRE(r.passed);
+    // The sound: every sample the system made, in order, on both channels.
+    rig::shell::Client client(*link);
+    rig::nes::Console nes(client);
+    auto [pcm_crc, pcm_n] = nes.pcm();
+    INFO((rx.dec.errors.empty() ? std::string("no HDMI errors") : rx.dec.errors[0]));
+    CHECK(rx.dec.errors.empty());
+    CHECK(rx.dec.n == 6144);
+    CHECK(rx.dec.cts == 74250);
+    CHECK(pcm_n > 800 * (g.frames - 2));
+    REQUIRE(rx.dec.samples.size() == pcm_n);
+    uint32_t c = 0xFFFFFFFFu;
+    bool same = true;
+    for (auto [l, rr] : rx.dec.samples) {
+        same = same && l == rr;
+        for (uint8_t b : {static_cast<uint8_t>(l), static_cast<uint8_t>(static_cast<uint16_t>(l) >> 8)}) {
+            c ^= b;
+            for (int k = 0; k < 8; k++) c = (c >> 1) ^ (c & 1 ? 0xEDB88320u : 0);
+        }
+    }
+    CHECK(same);
+    CHECK(~c == pcm_crc);
     REQUIRE(rx.frames.size() > 2);
     int matched = 0;
     for (size_t i = 0; i < rx.frames.size(); i++) {

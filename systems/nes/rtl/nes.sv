@@ -4,7 +4,9 @@
 // board's memory, 8 KB of CHR ROM or RAM in block RAM, nametable mirroring by
 // a register), under the test shell, with a save-state controller. The
 // controllers come later; their registers read as open bus. The APU's channel
-// levels go out raw, and into the audio CRC.
+// levels go into the audio CRC, and through apu_mixer and audio/resampler out
+// as 48 kHz PCM (800 samples per 29,780.5 CPU cycles, the average NES frame:
+// 48 kHz against a 60 Hz display that the NES keeps pace with).
 //
 // The board's memory is a byte port, as memory/sdram's: the board puts SDRAM,
 // block RAM or anything else behind it. memory/arbiter shares it between the
@@ -35,7 +37,7 @@
 //   0x03000000-0x03003FFF  the PPU's: CHR ($0000-$1FFF) and nametables ($2000-$3FFF);
 //                          0x03004000-0x030047FF the nametable RAM as it is, unmirrored
 //   0x04000000-0x0400000F  CPU save state; 0x04001000-0x04001193 PPU save state;
-//                          0x04002000-0x04002017 the system's own; 0x04003000-0x04003043 APU save state
+//                          0x04002000-0x0400202F the system's own; 0x04003000-0x04003043 APU save state
 //   0x05000000-0x050003BF  line CRCs of the last frame; 0x05001000-0x050011FF the captured line
 //   0x06000000-0x06007FFF  the save-state buffer
 // LEDs (active low): led[0] a corrupt command frame, led[1] a stalled one,
@@ -78,12 +80,9 @@ module nes #(
     input  logic [15:0] v_late,
     input  logic [15:0] v_overrun,
 
-    // The APU's channel levels, as they stand in the current CPU cycle.
-    output logic [3:0]  a_pulse1,
-    output logic [3:0]  a_pulse2,
-    output logic [3:0]  a_triangle,
-    output logic [3:0]  a_noise,
-    output logic [6:0]  a_dmc
+    // The sound: a one-clock pulse with each 48 kHz sample, signed.
+    output logic        a_valid,
+    output logic [15:0] a_pcm
 );
     logic rst;
     por u_por (.clk, .rst);
@@ -104,13 +103,13 @@ module nes #(
         .crc_error, .timeout);
 
     // The regions a save state walks, in order: the CPU's, PPU's, system's and
-    // APU's state words, RAM, PRG RAM, CHR and the nametable RAM. 20,992 bytes.
+    // APU's state words, RAM, PRG RAM, CHR and the nametable RAM. 21,016 bytes.
     localparam int SS_REGIONS = 8;
     localparam logic [SS_REGIONS*32-1:0] SS_BASES = {
         32'h03004000, 32'h03000000, 32'h02006000, 32'h02000000,
         32'h04003000, 32'h04002000, 32'h04001000, 32'h04000000};
     localparam logic [SS_REGIONS*32-1:0] SS_LENS = {
-        32'd2048, 32'd8192, 32'd8192, 32'd2048, 32'd68, 32'd24, 32'd404, 32'd16};
+        32'd2048, 32'd8192, 32'd8192, 32'd2048, 32'd68, 32'd48, 32'd404, 32'd16};
 
     logic [7:0]  ss_cmd, ss_done, ss_hq;
     logic        ss_busy, ss_hold_req, ss_hold_frame, ss_ready, ss_own;
@@ -186,7 +185,7 @@ module nes #(
         .clk, .rst(sys_rst), .en(cs == C_RUN || cs == C_END || go), .ce(dot_slot));
 
     logic        st_we_cpu, st_we_ppu, st_we_sys, st_we_apu;  // save-state writes, below
-    logic [2:0]  st_sys_w;
+    logic [3:0]  st_sys_w;
     logic [31:0] st_wdata;
 
     always_ff @(posedge clk) begin
@@ -214,7 +213,7 @@ module nes #(
             default:
                 cs <= C_START;
         endcase
-        if (st_we_sys && st_sys_w == 3'd4) begin
+        if (st_we_sys && st_sys_w == 4'd4) begin
             cs   <= cstate_t'(st_wdata[5:4]);
             lead <= st_wdata[8:6];
         end
@@ -396,11 +395,11 @@ module nes #(
             ev_start <= 1'b1;
         if (apu_dma_cancel)
             ev_stop <= 1'b1;
-        if (st_we_sys && st_sys_w == 3'd3)
+        if (st_we_sys && st_sys_w == 4'd3)
             {spr_page, spr_cnt[7:0], spr_data} <= st_wdata[31:8];
-        if (st_we_sys && st_sys_w == 3'd4)
+        if (st_we_sys && st_sys_w == 4'd4)
             {spr_cnt[8], ev_stop, ev_start, in_dma, need_dummy, dmc_abort} <= st_wdata[14:9];
-        if (st_we_sys && st_sys_w == 3'd4)
+        if (st_we_sys && st_sys_w == 4'd4)
             {dmc_run, spr_on, need_halt} <= st_wdata[2:0];
         if (sys_rst) begin
             need_halt  <= 1'b0;
@@ -456,6 +455,8 @@ module nes #(
     // doesn't run.
     logic [7:0]  apu_status;
     logic [31:0] apu_st_rdata;
+    logic [3:0]  a_pulse1, a_pulse2, a_triangle, a_noise;
+    logic [6:0]  a_dmc;
     logic [1:0]  apu_pre;
     wire         apu_extra = apu_pre == 2'd1;
 
@@ -656,7 +657,7 @@ module nes #(
     logic [2:0]  tr_n;
 
     crc32 u_trace (.clk, .rst(sys_rst), .en(tr_n != '0), .data(tr[7:0]), .crc(trace_crc),
-                   .st_we(st_we_sys && st_sys_w == 3'd2), .st_wdata);
+                   .st_we(st_we_sys && st_sys_w == 4'd2), .st_wdata);
 
     // The audio CRC: each CPU cycle's channel levels as 3 bytes, {pulse 2,
     // pulse 1}, {noise, triangle}, DMC.
@@ -665,7 +666,7 @@ module nes #(
     logic [1:0]  au_n;
 
     crc32 u_audio (.clk, .rst(sys_rst), .en(au_n != '0), .data(au[7:0]), .crc(audio_crc),
-                   .st_we(st_we_sys && st_sys_w == 3'd5), .st_wdata);
+                   .st_we(st_we_sys && st_sys_w == 4'd5), .st_wdata);
 
     always_ff @(posedge clk) begin
         if (au_n != '0) begin
@@ -678,6 +679,48 @@ module nes #(
         end
         if (sys_rst)
             au_n <= '0;
+    end
+
+    // ---- Sound: the mix, at 48 kHz ----
+    // The mixer registers the cycle's levels on its ce, the resampler takes
+    // them the clock after. The PCM CRC covers every sample since reset, 2
+    // bytes each, low first; pcm_n counts them.
+    logic [15:0] mix;
+    logic        ce_q, pcm_v;
+    logic [31:0] rs_st_rdata, pcm_crc, pcm_n;
+    logic [15:0] pcm_b;
+    logic [1:0]  pcm_bn;
+
+    apu_mixer u_mix (.clk, .pulse1(a_pulse1), .pulse2(a_pulse2), .triangle(a_triangle), .noise(a_noise),
+                     .dmc(a_dmc), .out(mix));
+
+    resampler u_rs (.clk, .rst(sys_rst), .ce(ce_q), .in(mix), .valid(pcm_v), .out(a_pcm),
+                    .st_addr(2'(st_sys_w - 4'd6)), .st_rdata(rs_st_rdata),
+                    .st_we(st_we_sys && st_sys_w >= 4'd6 && st_sys_w <= 4'd9), .st_wdata);
+
+    crc32 u_pcm (.clk, .rst(sys_rst), .en(pcm_bn != '0), .data(pcm_b[7:0]), .crc(pcm_crc),
+                 .st_we(st_we_sys && st_sys_w == 4'd10), .st_wdata);
+
+    assign a_valid = pcm_v;
+
+    always_ff @(posedge clk) begin
+        ce_q <= ce;
+        if (pcm_bn != '0) begin
+            pcm_b  <= pcm_b >> 8;
+            pcm_bn <= pcm_bn - 1'b1;
+        end
+        if (pcm_v) begin
+            pcm_b  <= a_pcm;
+            pcm_bn <= 2'd2;
+            pcm_n  <= pcm_n + 1'b1;
+        end
+        if (st_we_sys && st_sys_w == 4'd11)
+            pcm_n <= st_wdata;
+        if (sys_rst) begin
+            ce_q   <= 1'b0;
+            pcm_bn <= '0;
+            pcm_n  <= '0;
+        end
     end
 
     always_ff @(posedge clk) begin
@@ -699,10 +742,10 @@ module nes #(
             frames <= frames + 1'b1;
         if (st_we_sys)
             case (st_sys_w)
-                3'd0: cycles   <= st_wdata;
-                3'd1: frames   <= st_wdata;
-                3'd3: open_bus <= st_wdata[7:0];
-                3'd4: late     <= st_wdata[3];
+                4'd0: cycles   <= st_wdata;
+                4'd1: frames   <= st_wdata;
+                4'd3: open_bus <= st_wdata[7:0];
+                4'd4: late     <= st_wdata[3];
                 default: ;
             endcase
         if (sys_rst) begin
@@ -790,7 +833,7 @@ module nes #(
     //   4 {OAM DMA count [8] [14], DMC cancel and request waiting [13:12], in DMA,
     //      DMC dummy cycle needed, DMC abort [10:9], lead dots [8:6],
     //      cycle state [5:4], late, DMC DMA on, OAM DMA on, halt needed},
-    //   5 the audio CRC.
+    //   5 the audio CRC, 6-9 the resampler's words, 10 the PCM CRC, 11 the PCM sample count.
     // Pipelines that drain within a few clocks of a stop (the trace CRC's
     // bytes) have drained before a save state's walk starts.
     logic [23:0] st_stage;
@@ -806,20 +849,23 @@ module nes #(
     assign st_wdata  = {s_wdata, st_stage};
     assign st_we_cpu = st_commit && st_sel == 2'd0 && s_addr[11:4] == '0;
     assign st_we_ppu = st_commit && st_sel == 2'd1 && s_addr[11:9] == '0;
-    assign st_we_sys = st_commit && st_sel == 2'd2 && s_addr[11:5] == '0 && s_addr[4:2] <= 3'd5;
+    assign st_we_sys = st_commit && st_sel == 2'd2 && s_addr[11:6] == '0 && s_addr[5:2] <= 4'd11;
     assign st_we_apu = st_commit && st_sel == 2'd3 && s_addr[11:7] == '0;
-    assign st_sys_w  = s_addr[4:2];
+    assign st_sys_w  = s_addr[5:2];
     assign ss_hwe    = sp_issue && sel_ssbuf && s_we && !ss_busy;
 
     always_comb
-        case (s_addr[4:2])
-            3'd0:    sys_st = cycles;
-            3'd1:    sys_st = frames;
-            3'd2:    sys_st = trace_crc;
-            3'd3:    sys_st = {spr_page, spr_cnt[7:0], spr_data, open_bus};
-            3'd4:    sys_st = {17'b0, spr_cnt[8], ev_stop, ev_start, in_dma, need_dummy, dmc_abort,
+        case (s_addr[5:2])
+            4'd0:    sys_st = cycles;
+            4'd1:    sys_st = frames;
+            4'd2:    sys_st = trace_crc;
+            4'd3:    sys_st = {spr_page, spr_cnt[7:0], spr_data, open_bus};
+            4'd4:    sys_st = {17'b0, spr_cnt[8], ev_stop, ev_start, in_dma, need_dummy, dmc_abort,
                                lead, cs, late, dmc_run, spr_on, need_halt};
-            3'd5:    sys_st = audio_crc;
+            4'd5:    sys_st = audio_crc;
+            4'd6, 4'd7, 4'd8, 4'd9: sys_st = rs_st_rdata;
+            4'd10:   sys_st = pcm_crc;
+            4'd11:   sys_st = pcm_n;
             default: sys_st = '0;
         endcase
 
@@ -831,7 +877,7 @@ module nes #(
         else if (!ss_hold_frame || frame_end || paused)
             ss_hold <= 1'b1;
 
-    assign ss_ready = ss_hold && paused && !ctrl_reset && tr_n == '0 && au_n == '0;
+    assign ss_ready = ss_hold && paused && !ctrl_reset && tr_n == '0 && au_n == '0 && pcm_bn == '0;
 
     always_ff @(posedge clk) begin
         sp_ack <= sp_wait == 2'd1 && !rst;
@@ -850,7 +896,7 @@ module nes #(
             case (st_sel)
                 2'd0:    st_q <= s_addr[11:4] == '0 ? cpu_st_rdata : '0;
                 2'd1:    st_q <= s_addr[11:9] == '0 ? ppu_st_rdata : '0;
-                2'd2:    st_q <= s_addr[11:5] == '0 ? sys_st : '0;
+                2'd2:    st_q <= s_addr[11:6] == '0 ? sys_st : '0;
                 default: st_q <= s_addr[11:7] == '0 ? apu_st_rdata : '0;
             endcase
         if (sp_wait == 2'd1) begin
@@ -977,6 +1023,14 @@ module nes #(
             8'h51:   reg_q <= audio_crc[15:8];
             8'h52:   reg_q <= audio_crc[23:16];
             8'h53:   reg_q <= audio_crc[31:24];
+            8'h54:   reg_q <= pcm_crc[7:0];
+            8'h55:   reg_q <= pcm_crc[15:8];
+            8'h56:   reg_q <= pcm_crc[23:16];
+            8'h57:   reg_q <= pcm_crc[31:24];
+            8'h58:   reg_q <= pcm_n[7:0];
+            8'h59:   reg_q <= pcm_n[15:8];
+            8'h5A:   reg_q <= pcm_n[23:16];
+            8'h5B:   reg_q <= pcm_n[31:24];
             default: reg_q <= '0;
         endcase
         if (rst) begin

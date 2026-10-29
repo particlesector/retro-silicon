@@ -27,7 +27,7 @@ constexpr uint32_t kApuState = 0x04003000;
 constexpr uint32_t kLineCrcs = 0x05000000;
 constexpr uint32_t kCapture = 0x05001000;
 constexpr uint32_t kSaveBuffer = 0x06000000;
-constexpr size_t kSaveStateBytes = 20992;   // what the save-state controller walks
+constexpr size_t kSaveStateBytes = 21016;   // what the save-state controller walks
 
 constexpr int kWidth = 256, kHeight = 240;
 constexpr int kPpuStateWords = 101;
@@ -59,6 +59,8 @@ enum Reg : uint32_t {
     kVideoLate = 0x4A,  // 2 bytes, read-only: lines that came late to the display
     kVideoOver = 0x4C,  // 2 bytes, read-only: lines overwritten before they were shown
     kAudioCrc = 0x50,   // 4 bytes, read-only: CRC-32 of the APU's channel levels, every CPU cycle since reset
+    kPcmCrc = 0x54,     // 4 bytes, read-only: CRC-32 of the 48 kHz samples since reset, 2 bytes each, low first
+    kPcmCount = 0x58,   // 4 bytes, read-only: how many samples
 };
 
 enum Status : uint8_t {
@@ -109,6 +111,8 @@ public:
     uint32_t frames();
     uint32_t trace_crc();
     uint32_t audio_crc();
+    // The 48 kHz sound since reset: its samples' CRC and count.
+    std::pair<uint32_t, uint32_t> pcm();
     // The last whole frame's CRC and index; nothing if no frame has ended.
     std::optional<std::pair<uint32_t, uint32_t>> frame_crc();
     std::vector<uint32_t> line_crcs();  // of the last frame; read while stopped

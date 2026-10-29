@@ -92,6 +92,7 @@ uint32_t Console::cycles() { return get32(kCycles); }
 uint32_t Console::frames() { return get32(kFrames); }
 uint32_t Console::trace_crc() { return get32(kTraceCrc); }
 uint32_t Console::audio_crc() { return get32(kAudioCrc); }
+std::pair<uint32_t, uint32_t> Console::pcm() { return {get32(kPcmCrc), get32(kPcmCount)}; }
 std::vector<uint8_t> Console::peek(uint16_t addr, uint16_t count) { return c_.peek(kCpu + addr, count); }
 
 std::optional<std::pair<uint32_t, uint32_t>> Console::frame_crc() {
