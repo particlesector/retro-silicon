@@ -1,0 +1,29 @@
+CAPI=2:
+# SPDX-License-Identifier: Apache-2.0
+name: retro-silicon:audio:apu-2a03:0.1.0
+description: The NES's 2A03 APU (NTSC), cycle-exact, with a save-state port
+
+filesets:
+  rtl:
+    files:
+      - rtl/apu_length.sv
+      - rtl/apu_envelope.sv
+      - rtl/apu_frame.sv
+      - rtl/apu_pulse.sv
+      - rtl/apu_triangle.sv
+      - rtl/apu_noise.sv
+      - rtl/apu_dmc.sv
+      - rtl/apu_2a03.sv
+    file_type: systemVerilogSource
+
+targets:
+  default: &default
+    filesets: [rtl]
+    toplevel: apu_2a03
+  lint:
+    <<: *default
+    default_tool: verilator
+    tools:
+      verilator:
+        mode: lint-only
+        verilator_options: [-Wall]

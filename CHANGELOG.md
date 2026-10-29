@@ -53,6 +53,7 @@ All notable changes to this project are listed here. The format follows [Keep a 
 - `boards/pynq-z2`, the first board outside Gowin's family: a Zynq-7020 built with openXC7 through `boards/xilinx/build.sh`, with the UART echo, the test shell, and the NES on block RAM with HDMI at 720p; `rs_board_bitstream` takes `VENDOR xilinx`.
 - `boards/xilinx`: `tmds_phy_xc7` (OSERDESE2 serializers and OBUFDS outputs), with a sim test of its channel order, and stand-ins for Xilinx primitives for the lint and sim tests.
 - `testroms/`: 39 APU and timing ROMs, the NROM single-test versions of blargg's apu_test, cpu_interrupts_v2, instr_misc and instr_timing, his 2005 APU tests, sprdma_and_dmc_dma and apu_mixer, each confirmed to pass in MesenCE.
+- `audio/apu-2a03`: the NES's 2A03 APU (NTSC), cycle-exact: pulse, triangle, noise and DMC channels and the frame counter, with a save-state port and a C++ model it matches cycle for cycle.
 
 ### Changed
 
