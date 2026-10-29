@@ -176,6 +176,8 @@ Save states (`rig::nes::state_test`): nmi_sync saved at a frame boundary while i
 
 Before the PPU, the nestest run caught three planted bugs: the shell taking the CPU's RAM slot, the CPU's read slot not reserved, and a CPU cycle too short for the SDRAM. The planted PPU bugs the ROMs catch are listed in the PPU's README.
 
+Sound: the 34 APU and timing ROMs in the golden list pass in the sim and on both boards, each with the sim's audio CRC (`harness/golden/nes_audio_crc32.txt`). Through HDMI, the sim's receiver gets every 48 kHz sample the system made, and a monitor plays the 20K's sound.
+
 HDMI (`rig::nes::hdmi_test`): `oam_read` and `full_palette` run paced, and the CRC of the display frame showing each one's golden frame matches the sim's (`harness/golden/nes_hdmi_crc32.txt`), where a TMDS receiver model checks that frame's every pixel and sync; on the Tang Nano 20K the CRCs match, with every display frame whole and no late or overwritten lines.
 
 On the Tang Nano 20K, with HDMI: 14,300 LUTs (69% of a GW2A-18C), 4,300 flip-flops and 35 of 46 block RAMs (16 of them the save-state buffer, 5 the line ring, 1 the colours), with fmax 72 MHz against the 46.4 MHz system clock and 140 MHz against the 74.25 MHz pixel clock. On the Tang Console 138K: 12,600 LUTs (9%) and 157 of 340 block RAMs (128 of them the 256 KB memory), with fmax 65 MHz against 50.

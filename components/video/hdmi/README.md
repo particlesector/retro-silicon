@@ -60,7 +60,7 @@ Sim tests (`sim/tmds_model.hpp` holds a TMDS encoder written from the DVI spec, 
 - A planted encoder bug (dropping the balanced-byte case of the disparity rule) fails all three.
 - With `AUDIO`: three 720p frames decode with every picture pixel and sync in place, each picture line's preamble and guard band, a data island on every line, no packet errors, clock regeneration 6144/74250, the AVI InfoFrame's format and full range, and every sample pair fed at 48 kHz back in order.
 
-On the board: in `systems/nes` on a Tang Nano 20K, the CRC of a whole display frame's symbols matches the sim's for `oam_read` and `full_palette`, frame after frame.
+On the board: in `systems/nes` on a Tang Nano 20K, the CRC of a whole display frame's symbols matches the sim's for `oam_read` and `full_palette`, frame after frame. With `AUDIO`, the same holds on the Tang Nano 20K and the PYNQ-Z2 (the packets counted as 0), a capture dongle shows the picture, and a monitor plays the sound.
 
 ## References
 
