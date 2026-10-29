@@ -1,0 +1,22 @@
+CAPI=2:
+# SPDX-License-Identifier: Apache-2.0
+name: retro-silicon:audio:resampler:0.1.0
+description: An audio level to signed PCM at a lower rate - low-pass, decimate, DC block - with a save-state port
+
+filesets:
+  rtl:
+    files:
+      - rtl/resampler.sv
+    file_type: systemVerilogSource
+
+targets:
+  default: &default
+    filesets: [rtl]
+    toplevel: resampler
+  lint:
+    <<: *default
+    default_tool: verilator
+    tools:
+      verilator:
+        mode: lint-only
+        verilator_options: [-Wall]

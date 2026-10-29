@@ -14,6 +14,7 @@ filesets:
       - rtl/apu_noise.sv
       - rtl/apu_dmc.sv
       - rtl/apu_2a03.sv
+      - rtl/apu_mixer.sv
     file_type: systemVerilogSource
 
 targets:

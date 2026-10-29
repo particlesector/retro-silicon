@@ -23,6 +23,7 @@ set(RS_TESTROMS ${default_roms} CACHE PATH "Test-ROM directory (testroms/fetch.p
 
 # Dependencies first: rs_component needs the components it depends on.
 add_subdirectory(components/audio/apu-2a03)
+add_subdirectory(components/audio/resampler)
 add_subdirectory(components/common/cdc)
 add_subdirectory(components/common/clock-enable)
 add_subdirectory(components/common/crc32)

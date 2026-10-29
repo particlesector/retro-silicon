@@ -4,6 +4,8 @@ The NES's 2A03 audio processing unit (NTSC), cycle-exact: two pulse channels wit
 
 Module `apu_2a03` (the folder name can't start a module name), built from `apu_frame`, `apu_pulse`, `apu_triangle`, `apu_noise`, `apu_dmc`, `apu_length` and `apu_envelope`.
 
+Module `apu_mixer` mixes the levels as the 2A03's output does, nonlinearly, with the NESdev wiki's formulas: `95.52 / (8128 / (p1 + p2) + 100)` for the pulses and `163.67 / (24329 / (3t + 2n + d) + 100)` for the rest. It's two tables that `tools/gen_mixer.py` generates, and gives a registered 16-bit unsigned sum, 0 for silence and 65,518 at most. A test checks the RTL is the script's, and another checks it against the formulas, computed separately, to within 1.
+
 ## Timing
 
 - **CPU cycles:** one per clock with `ce` high. On each `ce` the APU takes that cycle's register access, then runs the next cycle's tick, so its outputs and `status` after a `ce` are the state a read in the following cycle sees, as on the 2A03.
