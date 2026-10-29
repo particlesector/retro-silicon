@@ -79,3 +79,5 @@ blargg_apu-08 50 0x2e758058
 blargg_apu-09 50 0x9b0ad9fd
 blargg_apu-10 50 0x3685c37f
 blargg_apu-11 50 0x54ae4a6c
+thwaite 630 0x243b1548
+croom 630 0xa8eceb75

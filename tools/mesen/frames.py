@@ -10,6 +10,7 @@ zeropage or frame) that needs only what the core has (see SUPPORTED), runs the
 ROM in MesenCE from power-up and records the CRC-32 of a frame some time after
 it finishes, in the core's pixel format: 2 bytes a pixel, low first, the PPU's
 {emphasis BGR, colour}. Writes `id frames crc32 check result path` lines,
+path being the ROM's under the test-ROM directory (its source, then its path),
 frames being how many frames have ended, so the CRC is of frame frames-1
 (counting from 0), and result the zero-page address for check = "zeropage".
 
@@ -149,7 +150,7 @@ def main():
             continue
         print(f"{r['id']}: frame {frames - 1} 0x{m.group(2)}")
         result = f"0x{r['result']:02x}" if r["check"] == "zeropage" else "-"
-        lines.append(f"{r['id']} {frames} 0x{m.group(2)} {r['check']} {result} {r['path']}")
+        lines.append(f"{r['id']} {frames} 0x{m.group(2)} {r['check']} {result} {r['source']}/{r['path']}")
     args.out.write_text("\n".join(lines) + "\n")
     return worst
 

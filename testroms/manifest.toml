@@ -919,3 +919,41 @@ covers = "When a length reload takes effect"
 check = "zeropage"
 result = 0xF0
 frames = 20
+
+# Homebrew built from source (fetch.py clones each at its commit and runs its
+# build: it needs ca65 from cc65, GNU Make and Python 3 with Pillow). Free
+# software by their authors, credited wherever their frames or sound appear.
+
+[sources.thwaite]
+git = "https://github.com/pinobatch/thwaite-nes"
+commit = "00e36745188bc165990f60eed6b093c3ce6ad0e3"
+build = ["make", "thwaite.nes"]
+license = "GPL-3.0-or-later"
+credit = "Thwaite by Damian Yerrick"
+
+[sources.croom]
+git = "https://github.com/pinobatch/croom-nes"
+commit = "ed19c3c07ca389b70cf2e0dd2ce0320df28d511d"
+build = ["make", "croom.nes"]
+license = "GPL-3.0-or-later"
+credit = "Concentration Room by Damian Yerrick"
+
+[[rom]]
+id = "thwaite"
+source = "thwaite"
+path = "thwaite.nes"
+sha256 = "ee51cd9562f28195ba015d9857c6c4fc9bf67cdfb213e95f655e586b92195173"
+needs = "cpu, ppu, apu"
+covers = "A homebrew game (NROM-256): its title screen and attract mode, with music"
+check = "frame"
+frames = 600
+
+[[rom]]
+id = "croom"
+source = "croom"
+path = "croom.nes"
+sha256 = "926bad4e153ff6cad08843056f2408bf6999518a174d6a669fa36345b0a7a31e"
+needs = "cpu, ppu, apu"
+covers = "A homebrew game (NROM-128): its title screen, with music"
+check = "frame"
+frames = 600

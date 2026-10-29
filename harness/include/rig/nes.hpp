@@ -197,7 +197,7 @@ struct GoldenRom {
     RomCheck check;
     uint32_t frames = 0;
     uint32_t crc = 0;
-    std::string path;  // under the test-ROM directory's nes-test-roms/
+    std::string path;  // under the test-ROM directory: its source, then its path
 };
 std::vector<GoldenRom> load_golden_roms(const std::string& file);
 

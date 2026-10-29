@@ -18,7 +18,7 @@ inline std::pair<rig::nes::GoldenRom, rig::NesRom> golden_rom(const std::string&
     auto golden = rig::nes::load_golden_roms(RS_NES_FRAMES_GOLDEN);
     auto g = std::find_if(golden.begin(), golden.end(), [&](auto& x) { return x.check.id == id; });
     REQUIRE(g != golden.end());
-    std::string path = std::string(RS_TESTROMS) + "/nes-test-roms/" + g->path;
+    std::string path = std::string(RS_TESTROMS) + "/" + g->path;
     if (!std::filesystem::exists(path)) SKIP(path << " not found: run testroms/fetch.py");
     auto rom = rig::load_ines(path);
     REQUIRE(std::holds_alternative<rig::NesRom>(rom));
