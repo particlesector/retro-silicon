@@ -52,6 +52,7 @@ All notable changes to this project are listed here. The format follows [Keep a 
 - `harness`: `nes::hdmi_test`, the video registers in `nes::Console`, `make_nes_hdmi_sim` (the Tang Nano 20K's NES with both its clocks, decoded by a TMDS receiver in the tests), and golden video CRCs (`golden/nes_hdmi_crc32.txt`).
 - `boards/pynq-z2`, the first board outside Gowin's family: a Zynq-7020 built with openXC7 through `boards/xilinx/build.sh`, with the UART echo, the test shell, and the NES on block RAM with HDMI at 720p; `rs_board_bitstream` takes `VENDOR xilinx`.
 - `boards/xilinx`: `tmds_phy_xc7` (OSERDESE2 serializers and OBUFDS outputs), with a sim test of its channel order, and stand-ins for Xilinx primitives for the lint and sim tests.
+- `testroms/`: 39 APU and timing ROMs, the NROM single-test versions of blargg's apu_test, cpu_interrupts_v2, instr_misc and instr_timing, his 2005 APU tests, sprdma_and_dmc_dma and apu_mixer, each confirmed to pass in MesenCE.
 
 ### Changed
 

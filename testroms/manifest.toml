@@ -544,3 +544,378 @@ needs = "cpu, apu"
 covers = "Length counters, frame counter, IRQ flag, DMC rates"
 check = "blargg"
 frames = 306
+
+# APU, and the CPU tests that need it (milestone 7). NROM singles of the combined ROMs above.
+
+[[rom]]
+id = "apu_test-1"
+source = "nes-test-roms"
+path = "apu_test/rom_singles/1-len_ctr.nes"
+sha256 = "aacf86c1d773badd11392e54506a43a06a3dd0b67a4c255909d1daf770a4a1e2"
+needs = "cpu, ppu, apu"
+covers = "Length counters: loading, halting, clearing through $4015"
+check = "blargg"
+frames = 21
+
+[[rom]]
+id = "apu_test-2"
+source = "nes-test-roms"
+path = "apu_test/rom_singles/2-len_table.nes"
+sha256 = "c002ff1483b4dfb36a6eb004d49739cd58a2dff16e0bac167d5a7c12235caeeb"
+needs = "cpu, ppu, apu"
+covers = "Every entry of the length-counter table"
+check = "blargg"
+frames = 16
+
+[[rom]]
+id = "apu_test-3"
+source = "nes-test-roms"
+path = "apu_test/rom_singles/3-irq_flag.nes"
+sha256 = "dd888551665937391a2d691b1f96d1858316dbfce4951306146e9e396367f079"
+needs = "cpu, ppu, apu"
+covers = "The frame counter's IRQ flag and inhibit"
+check = "blargg"
+frames = 21
+
+[[rom]]
+id = "apu_test-4"
+source = "nes-test-roms"
+path = "apu_test/rom_singles/4-jitter.nes"
+sha256 = "bff573d72d0f134fe307f0bb8b968b8d2ffdb85e8aadad9c152839068d6db32a"
+needs = "cpu, ppu, apu"
+covers = "When a $4017 write takes effect, to the CPU cycle"
+check = "blargg"
+frames = 21
+
+[[rom]]
+id = "apu_test-5"
+source = "nes-test-roms"
+path = "apu_test/rom_singles/5-len_timing.nes"
+sha256 = "4d88f8cc0b21303dc151af4d0f4169d79284634a73082d7ea1ae5cfafedd1e46"
+needs = "cpu, ppu, apu"
+covers = "When the frame counter clocks the length counters"
+check = "blargg"
+frames = 115
+
+[[rom]]
+id = "apu_test-6"
+source = "nes-test-roms"
+path = "apu_test/rom_singles/6-irq_flag_timing.nes"
+sha256 = "fc1daff82dd1a49c7c1242392ffbf1c6f44fb70156868582117f2a844cc4dffd"
+needs = "cpu, ppu, apu"
+covers = "When the frame IRQ flag is set and cleared"
+check = "blargg"
+frames = 22
+
+[[rom]]
+id = "apu_test-7"
+source = "nes-test-roms"
+path = "apu_test/rom_singles/7-dmc_basics.nes"
+sha256 = "547324867ee0ba2aa11401001d8d1288530aa4e0ecaaac1667ce79980a388ec1"
+needs = "cpu, ppu, apu"
+covers = "DMC basics: sample length, IRQ flag, buffer, $4015 status"
+check = "blargg"
+frames = 25
+
+[[rom]]
+id = "apu_test-8"
+source = "nes-test-roms"
+path = "apu_test/rom_singles/8-dmc_rates.nes"
+sha256 = "5d9a79a505b37fa277cacc95a362f7e2a56e59ace7a698213d78432cc06a8867"
+needs = "cpu, ppu, apu"
+covers = "The DMC's rate table"
+check = "blargg"
+frames = 29
+
+[[rom]]
+id = "cpu_interrupts-1"
+source = "nes-test-roms"
+path = "cpu_interrupts_v2/rom_singles/1-cli_latency.nes"
+sha256 = "e402d36118f77dcbbe8ddca90c15fc76a46bcb30b25cb028c383e4a621de5fc0"
+needs = "cpu, ppu, apu"
+covers = "CLI, SEI and PLP delay an IRQ by one instruction"
+check = "blargg"
+frames = 17
+
+[[rom]]
+id = "cpu_interrupts-2"
+source = "nes-test-roms"
+path = "cpu_interrupts_v2/rom_singles/2-nmi_and_brk.nes"
+sha256 = "6e6bf6205930afcfebdc213c583df53986a688a8b36f8856b805ef4c1853e6eb"
+needs = "cpu, ppu, apu"
+covers = "An NMI arriving during BRK"
+check = "blargg"
+frames = 111
+
+[[rom]]
+id = "cpu_interrupts-3"
+source = "nes-test-roms"
+path = "cpu_interrupts_v2/rom_singles/3-nmi_and_irq.nes"
+sha256 = "3008a9524d174a8aca562ff0361eba81da53e38cf1ebb5125322fe151f14d945"
+needs = "cpu, ppu, apu"
+covers = "NMI and IRQ arriving together"
+check = "blargg"
+frames = 134
+
+[[rom]]
+id = "cpu_interrupts-4"
+source = "nes-test-roms"
+path = "cpu_interrupts_v2/rom_singles/4-irq_and_dma.nes"
+sha256 = "6d7b4c1947ada64679af56cf0c227286b2408afe1747dfaa4dc7363d57ff87f6"
+needs = "cpu, ppu, apu"
+covers = "An IRQ during OAM DMA"
+check = "blargg"
+frames = 69
+
+[[rom]]
+id = "cpu_interrupts-5"
+source = "nes-test-roms"
+path = "cpu_interrupts_v2/rom_singles/5-branch_delays_irq.nes"
+sha256 = "f9e10b4a24d8f3cd3e51fb7457c72858aab96a6467fdbbd806d0661c2d32fdc7"
+needs = "cpu, ppu, apu"
+covers = "A taken branch delays an IRQ"
+check = "blargg"
+frames = 380
+
+[[rom]]
+id = "instr_misc-01"
+source = "nes-test-roms"
+path = "instr_misc/rom_singles/01-abs_x_wrap.nes"
+sha256 = "892e892b3b5d3526913b5491252f628d987baf44509dd28a7d109efc8a16bacc"
+needs = "cpu, ppu, apu"
+covers = "Absolute,X addressing wraps at $FFFF"
+check = "blargg"
+frames = 12
+
+[[rom]]
+id = "instr_misc-02"
+source = "nes-test-roms"
+path = "instr_misc/rom_singles/02-branch_wrap.nes"
+sha256 = "2e535f572a16ab0e27bf6e076de6aaa2a9885c9ae1b02acda7853810529b24c5"
+needs = "cpu, ppu, apu"
+covers = "Branches wrap around the address space"
+check = "blargg"
+frames = 13
+
+[[rom]]
+id = "instr_misc-03"
+source = "nes-test-roms"
+path = "instr_misc/rom_singles/03-dummy_reads.nes"
+sha256 = "9210b8a274c060e0abf9cf7a9f4a140598a8fa01ce852b0a9aef500c9728e822"
+needs = "cpu, ppu, apu"
+covers = "The CPU's dummy reads, seen through the PPU"
+check = "blargg"
+frames = 57
+
+[[rom]]
+id = "instr_misc-04"
+source = "nes-test-roms"
+path = "instr_misc/rom_singles/04-dummy_reads_apu.nes"
+sha256 = "3e4e974a57b82247861576bc855b589fa6d00291ec159f79795c9e3f50c39fef"
+needs = "cpu, ppu, apu"
+covers = "The CPU's dummy reads, seen through the APU's $4015"
+check = "blargg"
+frames = 142
+
+[[rom]]
+id = "instr_timing-1"
+source = "nes-test-roms"
+path = "instr_timing/rom_singles/1-instr_timing.nes"
+sha256 = "e260068839fe3d0402376e97e4ee15f5790ee77c701fd0700bba057527910222"
+needs = "cpu, ppu, apu"
+covers = "Cycle count of every instruction, timed with the APU"
+check = "blargg"
+frames = 1014
+
+[[rom]]
+id = "instr_timing-2"
+source = "nes-test-roms"
+path = "instr_timing/rom_singles/2-branch_timing.nes"
+sha256 = "0afaa393f375844ab98834c1ecba7fa6d8c44880c8b6e738936d0f04a84c8538"
+needs = "cpu, ppu, apu"
+covers = "Branch timing, taken and not, across pages"
+check = "blargg"
+frames = 141
+
+[[rom]]
+id = "sprdma_and_dmc_dma"
+source = "nes-test-roms"
+path = "sprdma_and_dmc_dma/sprdma_and_dmc_dma.nes"
+sha256 = "db3199bc1b0bdc07a316b3ab999d8fd8bb361456d2154e364c132cb06a26a10f"
+needs = "cpu, ppu, apu"
+covers = "A DMC DMA during OAM DMA"
+check = "blargg"
+frames = 140
+
+[[rom]]
+id = "sprdma_and_dmc_dma-512"
+source = "nes-test-roms"
+path = "sprdma_and_dmc_dma/sprdma_and_dmc_dma_512.nes"
+sha256 = "3789f5134b0561b4344e3f4ce08b4d2a416f67435e083917a80d87fdb9d3583c"
+needs = "cpu, ppu, apu"
+covers = "A DMC DMA during OAM DMA, at other alignments"
+check = "blargg"
+frames = 141
+
+[[rom]]
+id = "apu_mixer-square"
+source = "nes-test-roms"
+path = "apu_mixer/square.nes"
+sha256 = "b16e333a2d3698201fc45c21375507a80981928562d3b10f865e23da3922696a"
+needs = "cpu, ppu, apu"
+covers = "Pulse channel levels against a reference, for listening"
+check = "blargg"
+frames = 970
+
+[[rom]]
+id = "apu_mixer-triangle"
+source = "nes-test-roms"
+path = "apu_mixer/triangle.nes"
+sha256 = "3756d4be75126ab51b40e013e60a125e0f6f198307dcfb9612cd4477f6762279"
+needs = "cpu, ppu, apu"
+covers = "Triangle channel levels against a reference, for listening"
+check = "blargg"
+frames = 607
+
+[[rom]]
+id = "apu_mixer-noise"
+source = "nes-test-roms"
+path = "apu_mixer/noise.nes"
+sha256 = "47b637cc911dc4416f55891c67976780e0985b6729b339a3f1db277ef6bd4910"
+needs = "cpu, ppu, apu"
+covers = "Noise channel levels against a reference, for listening"
+check = "blargg"
+frames = 1160
+
+[[rom]]
+id = "apu_mixer-dmc"
+source = "nes-test-roms"
+path = "apu_mixer/dmc.nes"
+sha256 = "036e7a3222f56e7a823b693bae0243e6c8c7ae032defbbd15c8631da468d6ea7"
+needs = "cpu, ppu, apu"
+covers = "DMC levels against a reference, for listening"
+check = "blargg"
+frames = 721
+
+# blargg's 2005 APU tests: the result at $F0, 1 for a pass (it counts the test's steps while it runs).
+
+[[rom]]
+id = "blargg_apu-01"
+source = "nes-test-roms"
+path = "blargg_apu_2005.07.30/01.len_ctr.nes"
+sha256 = "e1e3a29ab5369ab84a6f5f2f426c64bde86b9a1d26a906739d43fbf624bb8829"
+needs = "cpu, ppu, apu"
+covers = "Length counters"
+check = "zeropage"
+result = 0xF0
+frames = 20
+
+[[rom]]
+id = "blargg_apu-02"
+source = "nes-test-roms"
+path = "blargg_apu_2005.07.30/02.len_table.nes"
+sha256 = "63cc6a57fae3da5e30df9520d02b723c5b93789e8a6eef6793f876345b245b51"
+needs = "cpu, ppu, apu"
+covers = "Length-counter table"
+check = "zeropage"
+result = 0xF0
+frames = 20
+
+[[rom]]
+id = "blargg_apu-03"
+source = "nes-test-roms"
+path = "blargg_apu_2005.07.30/03.irq_flag.nes"
+sha256 = "6f71c7e3de4b6c00da92c20a86c1c2095196a55dc201ee3286004ecf33a08c2f"
+needs = "cpu, ppu, apu"
+covers = "Frame IRQ flag"
+check = "zeropage"
+result = 0xF0
+frames = 20
+
+[[rom]]
+id = "blargg_apu-04"
+source = "nes-test-roms"
+path = "blargg_apu_2005.07.30/04.clock_jitter.nes"
+sha256 = "46fa69b26fe8c24dc1d0b5908f90ab0141972eeb607bd563d28f53d6f4543fe6"
+needs = "cpu, ppu, apu"
+covers = "Frame counter clock jitter"
+check = "zeropage"
+result = 0xF0
+frames = 20
+
+[[rom]]
+id = "blargg_apu-05"
+source = "nes-test-roms"
+path = "blargg_apu_2005.07.30/05.len_timing_mode0.nes"
+sha256 = "606802d6849ccfcf74e907a8512c03a50d443752d1f616e62a242a1fa7eca0ff"
+needs = "cpu, ppu, apu"
+covers = "Length clocking in 4-step mode"
+check = "zeropage"
+result = 0xF0
+frames = 20
+
+[[rom]]
+id = "blargg_apu-06"
+source = "nes-test-roms"
+path = "blargg_apu_2005.07.30/06.len_timing_mode1.nes"
+sha256 = "0f34e26d56ad235d8d6d63565ed4728fbd0b9b8590a4fd4048eaf64283b429d4"
+needs = "cpu, ppu, apu"
+covers = "Length clocking in 5-step mode"
+check = "zeropage"
+result = 0xF0
+frames = 20
+
+[[rom]]
+id = "blargg_apu-07"
+source = "nes-test-roms"
+path = "blargg_apu_2005.07.30/07.irq_flag_timing.nes"
+sha256 = "851c9698941d51da34b4bfbc9644aa08ee41b39c6c814cc9b8412c204ea68085"
+needs = "cpu, ppu, apu"
+covers = "When the frame IRQ flag is set"
+check = "zeropage"
+result = 0xF0
+frames = 20
+
+[[rom]]
+id = "blargg_apu-08"
+source = "nes-test-roms"
+path = "blargg_apu_2005.07.30/08.irq_timing.nes"
+sha256 = "0a20a2b9ca9a8e78d65b500b161294c889399f0ff048edd104b07b15255946ca"
+needs = "cpu, ppu, apu"
+covers = "When the frame IRQ is taken"
+check = "zeropage"
+result = 0xF0
+frames = 20
+
+[[rom]]
+id = "blargg_apu-09"
+source = "nes-test-roms"
+path = "blargg_apu_2005.07.30/09.reset_timing.nes"
+sha256 = "bb04f8328a51abb2d17e6e5362b8375f3cbfbf0641733d068b22f23e7dc588e6"
+needs = "cpu, ppu, apu"
+covers = "The frame counter after power-up"
+check = "zeropage"
+result = 0xF0
+frames = 20
+
+[[rom]]
+id = "blargg_apu-10"
+source = "nes-test-roms"
+path = "blargg_apu_2005.07.30/10.len_halt_timing.nes"
+sha256 = "cbdaa9a5cf9c19ba2360d3349a47922eec25a3e610374d963c422f2b67c57ac9"
+needs = "cpu, ppu, apu"
+covers = "When a length halt takes effect"
+check = "zeropage"
+result = 0xF0
+frames = 20
+
+[[rom]]
+id = "blargg_apu-11"
+source = "nes-test-roms"
+path = "blargg_apu_2005.07.30/11.len_reload_timing.nes"
+sha256 = "40e633285a4a8710780bfd80d346dee62406f4be161eb75615f469cd9e84e132"
+needs = "cpu, ppu, apu"
+covers = "When a length reload takes effect"
+check = "zeropage"
+result = 0xF0
+frames = 20
