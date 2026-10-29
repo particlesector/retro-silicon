@@ -60,6 +60,7 @@ All notable changes to this project are listed here. The format follows [Keep a 
 - `video/ppu-2c02` registers its next dot every clock and commits it on `ce`, so its dot logic has the clocks between dots: `ce` must now come at least 2 clocks apart, with `vrdata` and the register and state writes settled the clock before. `systems/nes` gives the PPU its video memory for the two clocks before each dot. The Tang Console 138K's NES build goes from 49 MHz to 65 MHz.
 - `boards/gowin/build.sh` holds the Gowin open-flow build; each board's `build.sh` calls it with its part. `rs_board_bitstream` replaces `rs_tang_bitstream`.
 - `boards/tang-nano-20k`: the UART moved from header pins 41/42 to 71 (FPGA RX) and 72 (FPGA TX), out of the HDMI pairs' banks; the NES runs at 46.40625 MHz (31 clocks a bit).
+- `README.md` is shorter and points at the website, retro-silicon.particlesector.com, which generates every component's status from the simulation and board runs; the hand-kept status table is gone.
 
 ### Fixed
 
