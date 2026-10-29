@@ -83,6 +83,10 @@ void matches_mesen(const std::string& id, bool bram = false) {
     INFO(r.detail << " / " << r.notes);
     CHECK(r.passed);
     CHECK(r.crc32 == g.crc);
+    // The APU's levels through to that frame: the board's must match.
+    auto audio = rig::nes::load_golden_audio(RS_NES_AUDIO_GOLDEN);
+    REQUIRE(audio.count(id));
+    CHECK(r.audio_crc32 == audio[id]);
 }
 
 } // namespace
@@ -200,6 +204,40 @@ MATCHES_MESEN("blargg_ppu-vbl_clear_time")
 MATCHES_MESEN("blargg_ppu-vram_access")
 MATCHES_MESEN("nmi_sync")
 MATCHES_MESEN("full_palette")
+MATCHES_MESEN("apu_test-1")
+MATCHES_MESEN("apu_test-2")
+MATCHES_MESEN("apu_test-3")
+MATCHES_MESEN("apu_test-4")
+MATCHES_MESEN("apu_test-5")
+MATCHES_MESEN("apu_test-6")
+MATCHES_MESEN("apu_test-7")
+MATCHES_MESEN("apu_test-8")
+MATCHES_MESEN("cpu_interrupts-1")
+MATCHES_MESEN("cpu_interrupts-2")
+MATCHES_MESEN("cpu_interrupts-3")
+MATCHES_MESEN("cpu_interrupts-4")
+MATCHES_MESEN("cpu_interrupts-5")
+MATCHES_MESEN("instr_misc-01")
+MATCHES_MESEN("instr_misc-02")
+MATCHES_MESEN("instr_misc-03")
+MATCHES_MESEN("instr_timing-2")
+MATCHES_MESEN("sprdma_and_dmc_dma")
+MATCHES_MESEN("sprdma_and_dmc_dma-512")
+MATCHES_MESEN("apu_mixer-square")
+MATCHES_MESEN("apu_mixer-triangle")
+MATCHES_MESEN("apu_mixer-noise")
+MATCHES_MESEN("apu_mixer-dmc")
+MATCHES_MESEN("blargg_apu-01")
+MATCHES_MESEN("blargg_apu-02")
+MATCHES_MESEN("blargg_apu-03")
+MATCHES_MESEN("blargg_apu-04")
+MATCHES_MESEN("blargg_apu-05")
+MATCHES_MESEN("blargg_apu-06")
+MATCHES_MESEN("blargg_apu-07")
+MATCHES_MESEN("blargg_apu-08")
+MATCHES_MESEN("blargg_apu-09")
+MATCHES_MESEN("blargg_apu-10")
+MATCHES_MESEN("blargg_apu-11")
 
 TEST_CASE("nestest passes on the sim backend with the CPU bench's trace CRC") {
     std::string path = std::string(RS_TESTROMS) + "/nes-test-roms/other/nestest.nes";
@@ -230,3 +268,4 @@ TEST_CASE("a test after nestest on the same system isn't held by the limits nest
     CHECK(r.passed);
     CHECK(r.crc32 == g.crc);
 }
+

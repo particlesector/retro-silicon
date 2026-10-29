@@ -27,7 +27,8 @@ module apu_frame (
     output logic       quarter,   // clocks this cycle's tick (with ce)
     output logic       half,
     output logic       irq_flag,  // $4015 bit 6
-    output logic       irq,       // the frame IRQ to the CPU
+    output logic       irq,       // the frame IRQ line, as registered
+    output logic       irq_now,   // the line after this cycle's access: what the CPU samples
     // Save state: {count, step, mode, inhibit, flag, line, clear wait, pending, pending mode, delay, block}
     output logic [31:0] st,
     input  logic        st_we,
@@ -38,7 +39,8 @@ module apu_frame (
     logic [1:0]  clr, block;
     logic        mode, inhibit, line, pend, pend_mode;
 
-    assign irq = line;
+    assign irq     = line;
+    assign irq_now = w_line;
     assign st  = {count, step, mode, inhibit, irq_flag, line, clr, pend, pend_mode, delay, block};
 
     function automatic logic [15:0] step_at(input logic m, input logic [2:0] s);

@@ -31,7 +31,7 @@ import tomllib
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
-SUPPORTED = {"cpu", "ppu"}  # what systems/nes has so far
+SUPPORTED = {"cpu", "ppu", "apu", "apu frame counter"}  # what systems/nes has so far
 MARGIN = 30                 # frames after MesenCE's result before the golden frame
 
 LUA = """

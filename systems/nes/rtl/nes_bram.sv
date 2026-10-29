@@ -33,6 +33,10 @@ module nes_bram #(
     logic [7:0]  pix_x, pix_y;
     logic [31:0] v_crc;
     logic [15:0] v_shown, v_late, v_overrun;
+    /* verilator lint_off UNUSEDSIGNAL */
+    logic [3:0]  a_pulse1, a_pulse2, a_triangle, a_noise;  // the APU's levels: HDMI audio is next
+    logic [6:0]  a_dmc;
+    /* verilator lint_on UNUSEDSIGNAL */
 
     por u_por (.clk, .rst);
 
@@ -42,7 +46,8 @@ module nes_bram #(
         .mem_req(req), .mem_we(we), .mem_addr(addr), .mem_wdata(wdata),
         .mem_ack(ack), .mem_rdata(rdata), .mem_ready(ready),
         .pix_valid, .pix, .pix_x, .pix_y, .v_waiting, .v_req, .v_cap_t,
-        .v_crc, .v_crc_ok, .v_crc_t, .v_shown, .v_late, .v_overrun);
+        .v_crc, .v_crc_ok, .v_crc_t, .v_shown, .v_late, .v_overrun,
+        .a_pulse1, .a_pulse2, .a_triangle, .a_noise, .a_dmc);
 
     nes_video u_video (
         .clk, .rst, .pix_valid, .pix, .pix_x, .pix_y, .waiting(v_waiting), .req(v_req),

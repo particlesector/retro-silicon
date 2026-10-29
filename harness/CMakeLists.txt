@@ -49,6 +49,7 @@ target_compile_definitions(harness_test PRIVATE
     RS_SDRAM_GOLDEN="${CMAKE_CURRENT_SOURCE_DIR}/golden/sdram_crc32.txt"
     RS_NES_TRACE_GOLDEN="${CMAKE_CURRENT_SOURCE_DIR}/golden/nes_trace_crc32.txt"
     RS_NES_FRAMES_GOLDEN="${CMAKE_CURRENT_SOURCE_DIR}/golden/nes_frames_crc32.txt"
+    RS_NES_AUDIO_GOLDEN="${CMAKE_CURRENT_SOURCE_DIR}/golden/nes_audio_crc32.txt"
     RS_NES_HDMI_GOLDEN="${CMAKE_CURRENT_SOURCE_DIR}/golden/nes_hdmi_crc32.txt"
     RS_PPU_RGB_SV="${PROJECT_SOURCE_DIR}/components/video/ppu-2c02/rtl/ppu_2c02_rgb.sv"
     RS_TESTROMS="${RS_TESTROMS}")

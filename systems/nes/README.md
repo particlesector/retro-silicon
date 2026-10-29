@@ -1,14 +1,14 @@
 # nes
 
 The NES as far as it's built:
-- the 2A03's CPU (`cpu/6502` with `DECIMAL = 0`) and its OAM DMA;
+- the 2A03's CPU (`cpu/6502` with `DECIMAL = 0`), its APU (`audio/apu-2a03`), and its DMC and OAM DMA;
 - the 2C02 PPU (`video/ppu-2c02`);
 - 2 KB of RAM mirrored to `$1FFF`, and 8 KB of PRG RAM at `$6000`;
 - an NROM cartridge (mapper 0): PRG ROM in the board's memory, 8 KB of CHR ROM or CHR RAM in block RAM, and horizontal or vertical nametable mirroring.
 
-The test shell loads ROMs, runs the system and reads results, frame CRCs and whole frames. A save-state controller saves and loads the whole system. The picture goes out as HDMI at 720p. The APU, controllers and other mappers come in later milestones; until then, reads of `$4000`-`$5FFF` give open bus (the last value on the data bus) and writes there do nothing, except `$4014`.
+The test shell loads ROMs, runs the system and reads results, frame CRCs and whole frames. A save-state controller saves and loads the whole system. The picture goes out as HDMI at 720p. The controllers and other mappers come in later milestones; until then, reads of `$4000`-`$5FFF` other than `$4015` give open bus (the last value on the data bus), and writes there other than the APU's and `$4014` do nothing. The APU's channel levels come out raw on `a_pulse1` and the other `a_` ports, and go into the audio CRC; mixing and HDMI audio come next.
 
-Built from `common/por`, `common/clock-enable`, `common/crc32`, `common/save-state`, `common/cdc`, `debug/test-shell`, `debug/video-probe`, `memory/arbiter`, `cpu/6502`, `video/ppu-2c02`, `video/line-scaler` and `video/hdmi`. The host side is `rig::nes` in [harness](../../harness).
+Built from `common/por`, `common/clock-enable`, `common/crc32`, `common/save-state`, `common/cdc`, `debug/test-shell`, `debug/video-probe`, `memory/arbiter`, `cpu/6502`, `audio/apu-2a03`, `video/ppu-2c02`, `video/line-scaler` and `video/hdmi`. The host side is `rig::nes` in [harness](../../harness).
 
 ## Memory
 
@@ -32,13 +32,20 @@ The system's behaviour doesn't depend on which, or on the clock: a PRG read only
   - **RAM and PRG RAM** are block RAMs shared with the shell. The CPU reads on its cycle's first clock and writes on its last; the shell uses the clocks in between.
   - **CHR and the nametables** are block RAMs shared the same way: the PPU has them for the two clocks before each dot (it reads on both, so the byte holds for its next-dot logic, and writes on the first), and the shell uses the others.
 - **The shell** reaches the memory at any time, after any CPU read that is waiting.
-- **OAM DMA:** a `$4014` write halts the CPU on its next read cycle. The DMA then copies the page to `$2004`: a read on even CPU cycles (counted from reset), a write on odd, with a dummy cycle to align when needed. That makes 513 or 514 cycles, as in MesenCE.
+- **The APU** takes each CPU cycle's access at the cycle's end, then runs the next cycle's tick, with the cycle's parity (`cycles` bit 0) for its odd/even delays. Its IRQ is the CPU's `irq_n`, as it stands after the cycle's access. A `$4015` read doesn't change open bus, which gives its bit 5, as on the 2A03.
+- **DMA**, as MesenCE runs it. A `$4014` write or a DMC request halts the CPU on its next read cycle. Then each cycle is one of these, until both DMAs are done:
+  - on an even CPU cycle (counted from reset), the DMC's read, once it has had a halt cycle and a dummy cycle;
+  - otherwise on an even cycle, OAM DMA's read;
+  - on an odd cycle, OAM DMA's write to `$2004` if it has a byte;
+  - otherwise a dummy cycle that repeats the CPU's read.
+
+  OAM DMA's cycles count as the DMC's halt and dummy cycles, and OAM DMA alone takes 513 or 514 cycles. A DMC request cancelled before its halt cycle never starts; one cancelled during its halt cycle stops after it. Not modelled: MesenCE's DMA reads of `$4000`-`$401F` while the CPU's address is there, and the restart of OAM DMA's count when a DMC request comes during a DMC read.
 
 The system stops and starts only between CPU cycles, so stopping it changes nothing it does. That holds whether the shell, a cycle or frame limit, the frame capture or a save state stops it. The CPU's bus, the trace CRC and every frame are the same on any board, at any clock, and in the sim.
 
 ## Save states
 
-`common/save-state` walks 20,920 bytes: the CPU's 4 state words, the PPU's 101, the system's own 5 (below), RAM, PRG RAM, CHR and the nametable RAM, in that order, between the bus and its buffer at `0x06000000`. PRG ROM and the cartridge registers aren't part of it: load the ROM, then the state.
+`common/save-state` walks 20,992 bytes: the CPU's 4 state words, the PPU's 101, the system's own 6 (below), the APU's 17, RAM, PRG RAM, CHR and the nametable RAM, in that order, between the bus and its buffer at `0x06000000`. PRG ROM and the cartridge registers aren't part of it: load the ROM, then the state.
 
 - **Save:** write register `38` with op 1 and a new sequence number; once `39` reads the same, the buffer holds the state. If the system is running, it stops at its next frame boundary for the walk, then runs on.
 - **Load:** write the buffer, release reset, and write `38` with op 2. The system is left stopped where the state was saved; set the limits and run.
@@ -63,8 +70,9 @@ The system's own state words, at `0x04002000`:
 | 0 | CPU cycles since reset |
 | 1 | Frames ended |
 | 2 | The trace CRC |
-| 3 | DMA page, DMA index, the DMA's byte, open bus (bits 31-24, 23-16, 15-8, 7-0) |
-| 4 | Lead dots (8-6), the cycle state (5-4), late (3), DMA byte held (2), DMA on (1), DMA requested (0) |
+| 3 | OAM DMA's page, its count's bits 7-0, its byte, open bus (bits 31-24, 23-16, 15-8, 7-0) |
+| 4 | OAM DMA's count bit 8 (14); the APU's DMC cancel (13) and request (12) waiting for the cycle's end; in DMA (11); the DMC's dummy cycle needed (10) and abort (9); lead dots (8-6); the cycle state (5-4); late (3); DMC DMA on (2); OAM DMA on (1); halt needed (0) |
+| 5 | The audio CRC |
 
 The clock-enable's phase isn't state: it only sets how many clocks pass before the next dot.
 
@@ -79,7 +87,8 @@ The clock-enable's phase isn't state: it only sets how many clocks pass before t
 | `0x03004000`–`0x030047FF` | The nametable RAM as it is, unmirrored |
 | `0x04000000`–`0x0400000F` | CPU save state, 4 words, little-endian |
 | `0x04001000`–`0x04001193` | PPU save state, 101 words (OAM is words 0-63) |
-| `0x04002000`–`0x04002013` | The system's own state, 5 words (above) |
+| `0x04002000`–`0x04002017` | The system's own state, 6 words (above) |
+| `0x04003000`–`0x04003043` | APU save state, 17 words |
 | `0x05000000`–`0x050003BF` | CRC of each line of the last frame, 4 bytes a line; read while stopped |
 | `0x05001000`–`0x050011FF` | The captured line, 2 bytes a pixel |
 | `0x06000000`–`0x06007FFF` | The save-state buffer; while no command runs |
@@ -113,6 +122,7 @@ Anything else reads 0 and ignores writes. Multi-byte registers are little-endian
 | `48` | 2 | Display frames whose frame started on request (read-only) |
 | `4A` | 2 | Lines that came to the display late (read-only) |
 | `4C` | 2 | Lines overwritten before the display showed them (read-only) |
+| `50` | 4 | The audio CRC (read-only): CRC-32 of the APU's channel levels in every CPU cycle since reset, 3 bytes a cycle: {pulse 2, pulse 1}, {noise, triangle}, the DMC's level |
 
 The limits are levels: raising one lets the system run on from where it stopped. All registers are absolute, so a command the shell runs twice does no harm.
 
@@ -128,6 +138,7 @@ The limits are levels: raising one lets the system run on from where it stopped.
 | `pix_valid`, `pix`, `pix_x`, `pix_y` | out | 1, 9, 8, 8 | The PPU's pixels, to `nes_video` |
 | `v_waiting`, `v_req` | out, in | 1 | Pacing: stopped for the display and nothing else; the display's request for the next frame |
 | `v_cap_t`, `v_crc`, `v_crc_ok`, `v_crc_t`, `v_shown`, `v_late`, `v_overrun` | | | The video CRC and counts, from `nes_video` |
+| `a_pulse1`, `a_pulse2`, `a_triangle`, `a_noise`, `a_dmc` | out | 4, 4, 4, 4, 7 | The APU's channel levels in the current CPU cycle |
 
 `nes_sdram` has the SDRAM pins instead, as on `sdram_ctrl`, and `nes_bram` no memory ports; both have `pclk` in and `tmds0`-`tmds2` out in place of the video ports.
 

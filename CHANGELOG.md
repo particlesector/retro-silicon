@@ -54,6 +54,8 @@ All notable changes to this project are listed here. The format follows [Keep a 
 - `boards/xilinx`: `tmds_phy_xc7` (OSERDESE2 serializers and OBUFDS outputs), with a sim test of its channel order, and stand-ins for Xilinx primitives for the lint and sim tests.
 - `testroms/`: 39 APU and timing ROMs, the NROM single-test versions of blargg's apu_test, cpu_interrupts_v2, instr_misc and instr_timing, his 2005 APU tests, sprdma_and_dmc_dma and apu_mixer, each confirmed to pass in MesenCE.
 - `audio/apu-2a03`: the NES's 2A03 APU (NTSC), cycle-exact: pulse, triangle, noise and DMC channels and the frame counter, with a save-state port and a C++ model it matches cycle for cycle.
+- `systems/nes`: the APU, its IRQ and `$4015`; one DMA unit for the DMC's and OAM's DMA, as MesenCE runs them; the APU's 17 state words and the audio CRC (register `50`) in save states, now 20,992 bytes; the channel levels on `a_` ports.
+- `harness`: the audio CRC (`Console::audio_crc`, `TestResult::audio_crc32`), checked by the save-state test and against `golden/nes_audio_crc32.txt`; 34 APU and timing ROMs in the sim tests.
 
 ### Changed
 

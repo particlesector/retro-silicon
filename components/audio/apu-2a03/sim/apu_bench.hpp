@@ -39,11 +39,13 @@ public:
     int dma_wait = -1;        // cycles until the pending DMA's byte arrives
     int dma_latency_max = 4;  // the DMA's wait is 1 to this many cycles
     std::mt19937 rng{1};
+    bool irq_at_end_ok = true;  // irq_n, with the last cycle's access presented, matched the model
 
     ApuBench() {
         m.rst = 1;
         clock();
         m.rst = 0;
+        clock();  // the first cycle's tick
         m.eval();
         for (size_t i = 0; i < mem.size(); i++) mem[i] = static_cast<uint8_t>(i * 7 + (i >> 8));
     }
@@ -71,11 +73,15 @@ public:
         m.rd_status = in.rd_status;
         m.dma_done = in.dma_done;
         m.dma_data = in.dma_data;
+        m.eval();
+        bool rtl_irq_at_end = !m.irq_n;
         m.ce = 1;
         clock();
         m.ce = 0;
         m.wr = m.rd_status = m.dma_done = 0;
+        m.eval();
         model.cycle(in);
+        irq_at_end_ok = rtl_irq_at_end == model.irq_at_end;
         cycles++;
         if (m.dma_cancel) dma_wait = -1;
         if (m.dma_req) dma_wait = std::uniform_int_distribution<int>(0, dma_latency_max - 1)(rng);

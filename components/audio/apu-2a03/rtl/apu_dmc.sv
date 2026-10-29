@@ -29,6 +29,7 @@ module apu_dmc (
     output logic [15:0] dma_addr,
     output logic        active,    // bytes remain ($4015 bit 4)
     output logic        irq,       // the DMC's IRQ ($4015 bit 7)
+    output logic        irq_now,   // after this cycle's access, before its DMA byte
     output logic [6:0]  out,
     // Save state: 4 words
     input  logic [1:0]  st_addr,
@@ -76,6 +77,8 @@ module apu_dmc (
     logic [3:0]  n_bits;
     logic [1:0]  w_start_wait, w_stop_wait, n_start_wait, n_stop_wait;
     logic        n_buf_empty, n_silence, req, cancel;
+
+    assign irq_now = !wr_en && !(wr && wreg == 2'd0 && !wdata[7]) && irq;
 
     always_comb begin
         w_irq_en     = irq_en;

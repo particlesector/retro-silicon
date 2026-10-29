@@ -90,7 +90,7 @@ module apu_noise (
         if (rst) begin
             lfsr   <= 15'd1;
             mode   <= 1'b0;
-            period <= '0;
+            period <= 12'd3;  // the table's first period, as MesenCE powers up
             timer  <= '0;
         end else if (st_we) begin
             if (st_addr == 2'd0)

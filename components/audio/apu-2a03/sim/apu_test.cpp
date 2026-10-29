@@ -44,6 +44,10 @@ void random_traffic(ApuBench& b, uint32_t seed, uint64_t n) {
             b.cycle();
         }
         auto rtl = b.rtl(), ref = b.ref();
+        if (!b.irq_at_end_ok) {
+            INFO("cycle " << b.cycles << ": irq_n at the cycle's end");
+            REQUIRE(b.irq_at_end_ok);
+        }
         if (!(rtl == ref)) {
             INFO("cycle " << b.cycles);
             INFO("rtl   " << describe(rtl));

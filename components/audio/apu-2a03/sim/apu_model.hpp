@@ -193,7 +193,7 @@ struct Triangle {
 };
 
 struct Noise {
-    Timer timer;
+    Timer timer{kNoisePeriods[0] - 1, 0};
     Length length;
     Envelope env;
     uint16_t shifter = 1;
@@ -339,10 +339,12 @@ public:
     uint32_t count = 0;
     bool inhibit = false, irq_flag = false, irq_line = false;
 
-    // Power-on: as if $4017 had been written with 0, 3 cycles before.
+    // Power-on: as if $4017 had been written with 0, 3 cycles before. Then
+    // the first CPU cycle's tick, which MesenCE runs at that cycle's start.
     Apu() {
         new_value = 0;
         write_delay = 3;
+        tick();
     }
 
     uint8_t status() const {
@@ -351,6 +353,7 @@ public:
                                     (dmc.remaining > 0) << 4 | irq_flag << 6 | dmc.irq << 7);
     }
     bool irq() const { return irq_line || dmc.irq; }
+    bool irq_at_end = false;  // the IRQ the CPU samples at the cycle's end: after the access, before the DMA byte
 
     void cycle(const Inputs& in) {
         dmc.request = dmc.cancel = false;
@@ -359,6 +362,7 @@ public:
             if (irq_flag && clear_wait == 0) clear_wait = in.odd ? 2 : 1;
         }
         if (in.wr) write(in.addr, in.wdata, in.odd);
+        irq_at_end = irq();
         if (in.dma_done) dmc.dma_byte(in.dma_data);
         tick();
     }

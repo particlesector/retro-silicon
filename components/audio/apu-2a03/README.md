@@ -7,6 +7,8 @@ Module `apu_2a03` (the folder name can't start a module name), built from `apu_f
 ## Timing
 
 - **CPU cycles:** one per clock with `ce` high. On each `ce` the APU takes that cycle's register access, then runs the next cycle's tick, so its outputs and `status` after a `ce` are the state a read in the following cycle sees, as on the 2A03.
+- **Reset:** the clock after reset runs the first cycle's tick, with no access, as MesenCE ticks the APU at the start of every cycle. So `ce` must not come on that clock. The noise period starts at the table's first entry, as in MesenCE.
+- **IRQ:** the access inputs are the cycle's whether or not `ce` is high, and `irq_n` follows them. It is the IRQ as the CPU samples it at the cycle's end: after the access (a `$4015` read clears the frame IRQ) and before the tick and any DMA byte.
 - **Cycle parity:** `odd` says whether the cycle's count is odd. Some register effects wait 1 cycle more on odd cycles. A `$4017` write takes effect 3 cycles after an even cycle and 4 after an odd one. A `$4015` write that starts the DMC requests its first byte 2 or 3 cycles later; one that stops it waits the same 2 or 3. A `$4015` read clears the frame IRQ flag 1 or 2 cycles later.
 - **The frame counter:** in 4-step mode it clocks at 7457, 14913, 22371 and 29829 cycles into its sequence, with the IRQ flag raised at 29828-29830. In 5-step mode it clocks at 7457, 14913, 22371 and 37281 and raises no IRQ. A `$4017` write with bit 7 set clocks a half frame as it takes effect. No clock comes within 2 cycles of the last. After reset it acts as if `$4017` had been written with 0, 3 cycles before.
 - **Length counters:** a load lands in the tick after the frame counter's clock, and only if that clock left the counter alone. A halt write likewise takes effect after the clock (blargg's `len_reload_timing` and `len_halt_timing`).
@@ -22,7 +24,7 @@ Module `apu_2a03` (the folder name can't start a module name), built from `apu_f
 | `wr`, `addr`, `wdata` | in | 1, 5, 8 | A write to `$4000 + addr` this cycle (`$4014` and `$4016` are ignored) |
 | `rd_status` | in | 1 | A read of `$4015` this cycle |
 | `status` | out | 8 | `$4015`: DMC IRQ, frame IRQ, 0 (open bus, the system's), DMC active, then the length counters of noise, triangle, pulse 2, pulse 1 |
-| `irq_n` | out | 1 | The frame counter's or DMC's IRQ, active low |
+| `irq_n` | out | 1 | The frame counter's or DMC's IRQ after this cycle's access, active low |
 | `dma_req`, `dma_cancel`, `dma_addr` | out | 1, 1, 16 | The DMC's DMA request |
 | `dma_done`, `dma_data` | in | 1, 8 | The DMA's byte |
 | `pulse1`, `pulse2`, `triangle`, `noise` | out | 4 | Channel levels, 0-15 |
@@ -55,9 +57,18 @@ Unit tests check:
 - a DMC sample by DMA wrapping from `$FFFF` to `$8000`, with its IRQ;
 - a save-state round trip in the middle of random register traffic.
 
-`sim/apu_model.hpp` is a C++ model written in MesenCE's style, unit by unit. The RTL matches it cycle for cycle, on every output, through 2.4 million cycles of random register traffic.
+`sim/apu_model.hpp` is a C++ model written in MesenCE's style, unit by unit. The RTL matches it cycle for cycle, on every output and on `irq_n` at each cycle's end, through 2.4 million cycles of random register traffic.
 
-Not yet tested in `systems/nes` against blargg's APU ROMs. Not modelled: PAL timing, the DMC sample-duplication glitch of later 2A03 revisions (MesenCE has it off by default), and the `$4015` reads and writes of test mode.
+In `systems/nes`, these ROMs pass in the sim, with MesenCE's frames:
+
+- blargg's `apu_test` (8);
+- his 2005 APU tests (11);
+- `cpu_interrupts_v2` (5);
+- `instr_misc` 1-3 and `instr_timing`'s branch test;
+- `sprdma_and_dmc_dma` and its 512-byte version;
+- `apu_mixer`'s four (which only play sound: their audio CRCs are the check).
+
+`instr_misc-04` and `instr_timing-1` need the CPU's unstable unofficial opcodes. Not modelled: PAL timing, the DMC sample-duplication glitch of later 2A03 revisions (MesenCE has it off by default), and the `$4015` reads and writes of test mode.
 
 ## References
 
