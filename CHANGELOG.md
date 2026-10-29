@@ -60,7 +60,7 @@ All notable changes to this project are listed here. The format follows [Keep a 
 - `cpu/6502`, `video/ppu-2c02`, `audio/apu-2a03`, `audio/resampler`, `systems/nes`: a `SAVE_STATE` parameter (default 1); 0 leaves out the save-state port's logic for a board short of logic. The Tang Nano 20K's NES builds with it off.
 - `audio/resampler`: an audio level to signed 16-bit PCM at a lower rate (low-pass, decimation, DC block), in integer arithmetic, with a save-state port.
 - `systems/nes`: the APU, its IRQ and `$4015`; one DMA unit for the DMC's and OAM's DMA, as MesenCE runs them; the APU's 17 state words and the audio CRC (register `50`) in save states, now 20,992 bytes; the channel levels on `a_` ports.
-- `boards/gowin/build.sh -s` and `rs_board_bitstream(... SEED)`: a fixed placement seed. nextpnr doesn't check hold for Gowin parts, and the Tang Nano 20K's NES with the APU met timing at seed 1 but lost palette bits on the chip; it builds with seed 2.
+- `boards/gowin/build.sh -s` and `rs_board_bitstream(... SEED)`: a fixed placement seed. nextpnr doesn't check hold for Gowin parts, and some Tang Nano 20K placements that meet timing fail on the chip (with HDMI audio, seeds 2 and 3); its NES builds with seed 5.
 - `harness`: the audio CRC (`Console::audio_crc`, `TestResult::audio_crc32`), checked by the save-state test and against `golden/nes_audio_crc32.txt`; 34 APU and timing ROMs in the sim tests.
 
 ### Changed
