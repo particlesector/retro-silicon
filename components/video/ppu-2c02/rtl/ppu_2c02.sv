@@ -34,7 +34,8 @@
 //   80-87  sprite units: pattern low, pattern high, X, then valid, priority, palette
 //   88-100 registers and pipeline (see the packing at the end)
 module ppu_2c02 #(
-    parameter int OPEN_BUS_DECAY = 3  // frames before an unrefreshed open-bus bit reads 0
+    parameter int OPEN_BUS_DECAY = 3,     // frames before an unrefreshed open-bus bit reads 0
+    parameter bit SAVE_STATE     = 1'b1   // 0 leaves out the save-state port's logic, but for OAM's writes
 ) (
     input  logic        clk,
     input  logic        rst,  // synchronous; the power-up state
@@ -876,7 +877,7 @@ module ppu_2c02 #(
             vaddr <= '0; vwe <= 1'b0; vwdata <= '0;
             reg_rdata <= '0;
             sl_valid <= '0;
-        end else if (st_we) begin
+        end else if (SAVE_STATE && st_we) begin
             if (st_addr >= 7'd88)
                 {ctrl, mask, oamaddr, rdbuf,
                  v, t, w, sv_pad[0],
@@ -974,10 +975,10 @@ module ppu_2c02 #(
             pal[28] <= 8'h00; pal[29] <= 8'h20; pal[30] <= 8'h2C; pal[31] <= 8'h08;
             for (int i = 0; i < 32; i++)
                 sec[i] <= '0;
-        end else if (st_we && st_addr >= 7'd64 && st_addr < 7'd72) begin
+        end else if (SAVE_STATE && st_we && st_addr >= 7'd64 && st_addr < 7'd72) begin
             for (int i = 0; i < 4; i++)
                 pal[{st_addr[2:0], 2'(i)}] <= st_wdata[8*i +: 8];
-        end else if (st_we && st_addr >= 7'd72 && st_addr < 7'd80) begin
+        end else if (SAVE_STATE && st_we && st_addr >= 7'd72 && st_addr < 7'd80) begin
             for (int i = 0; i < 4; i++)
                 sec[{st_addr[2:0], 2'(i)}] <= st_wdata[8*i +: 8];
         end else if (ce) begin
@@ -995,7 +996,7 @@ module ppu_2c02 #(
     end
 
     // ---- Save-state reads ----
-    always_ff @(posedge clk)
+    always_ff @(posedge clk) begin
         if (st_addr < 7'd64)
             st_rdata <= oam[st_addr[5:0]];
         else if (st_addr < 7'd72)
@@ -1009,4 +1010,7 @@ module ppu_2c02 #(
             st_rdata <= sv[32*(RW-1-(32'(st_addr) - 88)) +: 32];
         else
             st_rdata <= '0;
+        if (!SAVE_STATE)
+            st_rdata <= '0;
+    end
 endmodule

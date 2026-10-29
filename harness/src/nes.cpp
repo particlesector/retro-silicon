@@ -91,6 +91,8 @@ uint8_t Console::status() { return c_.peek(kRegs + kStatus, 1)[0]; }
 uint32_t Console::cycles() { return get32(kCycles); }
 uint32_t Console::frames() { return get32(kFrames); }
 uint32_t Console::trace_crc() { return get32(kTraceCrc); }
+uint32_t Console::audio_crc() { return get32(kAudioCrc); }
+std::pair<uint32_t, uint32_t> Console::pcm() { return {get32(kPcmCrc), get32(kPcmCount)}; }
 std::vector<uint8_t> Console::peek(uint16_t addr, uint16_t count) { return c_.peek(kCpu + addr, count); }
 
 std::optional<std::pair<uint32_t, uint32_t>> Console::frame_crc() {
@@ -287,6 +289,7 @@ TestResult rom_test(Link& link, const RomCheck& check, const NesRom& rom, uint32
         uint8_t st = nes.wait_stopped();
         auto crc = nes.frame_crc();
         if (crc) r.crc32 = crc->first;
+        r.audio_crc32 = nes.audio_crc();
         r.notes = std::to_string(nes.frames()) + " frames, " + std::to_string(nes.cycles()) + " CPU cycles";
         std::optional<std::string> fail;
         if (check.kind == RomCheck::kBlargg) {
@@ -338,14 +341,14 @@ TestResult state_test(Link& link, const NesRom& rom, uint32_t save_after, uint32
     };
 
     struct End {
-        uint32_t crc, trace, cycles;
+        uint32_t crc, trace, audio, cycles;
         std::vector<uint32_t> lines;
     };
     auto end = [&]() -> std::optional<End> {
         uint8_t st = nes.wait_stopped();
         auto crc = nes.frame_crc();
         if ((st & (kHalted | kLate)) || !crc || crc->second != frames - 1) return std::nullopt;
-        return End{crc->first, nes.trace_crc(), nes.cycles(), nes.line_crcs()};
+        return End{crc->first, nes.trace_crc(), nes.audio_crc(), nes.cycles(), nes.line_crcs()};
     };
 
     try {
@@ -389,12 +392,14 @@ TestResult state_test(Link& link, const NesRom& rom, uint32_t save_after, uint32
         if (!b) return finish("the restored run didn't reach frame " + std::to_string(frames - 1) + " cleanly");
 
         r.crc32 = b->crc;
+        r.audio_crc32 = b->audio;
         r.bytes = state.size();
         r.notes = "saved at frame " + std::to_string(at) + " of " + std::to_string(frames) + ", " +
                   std::to_string(b->cycles) + " CPU cycles; trace " + hex(b->trace, 8);
         if (b->crc != a->crc) return finish("last frame CRC " + hex(b->crc, 8) + ", uninterrupted " + hex(a->crc, 8));
         if (b->lines != a->lines) return finish("line CRCs differ from the uninterrupted run's");
         if (b->trace != a->trace) return finish("trace CRC " + hex(b->trace, 8) + ", uninterrupted " + hex(a->trace, 8));
+        if (b->audio != a->audio) return finish("audio CRC " + hex(b->audio, 8) + ", uninterrupted " + hex(a->audio, 8));
         if (b->cycles != a->cycles)
             return finish(std::to_string(b->cycles) + " cycles, uninterrupted " + std::to_string(a->cycles));
         return finish("");
@@ -478,6 +483,23 @@ std::vector<GoldenRom> load_golden_roms(const std::string& file) {
         g.check.kind = kind == "zeropage" ? RomCheck::kZeroPage : kind == "frame" ? RomCheck::kFrame : RomCheck::kBlargg;
         if (g.check.kind == RomCheck::kZeroPage) g.check.result = static_cast<uint16_t>(std::stoul(result, nullptr, 16));
         out.push_back(std::move(g));
+    }
+    return out;
+}
+
+std::map<std::string, uint32_t> load_golden_audio(const std::string& file) {
+    std::map<std::string, uint32_t> out;
+    std::ifstream f(file);
+    if (!f) throw RigError("can't read " + file);
+    std::string line;
+    while (std::getline(f, line)) {
+        if (line.empty() || line[0] == '#') continue;
+        std::istringstream ss(line);
+        std::string id, crc;
+        uint32_t frames;
+        ss >> id >> frames >> crc;
+        if (!ss) throw RigError("bad line in " + file + ": " + line);
+        out[id] = static_cast<uint32_t>(std::stoul(crc, nullptr, 16));
     }
     return out;
 }

@@ -16,16 +16,18 @@ endif()
 option(RS_BITSTREAMS "Build the boards' bitstreams" ${rs_have_pnr})
 
 # rs_board_bitstream(<name> BUILD <board build.sh> COMPONENT <c> CST <file> [TOP <module>]
-#                    [VENDOR gowin|xilinx] [PARAMS <NAME=VALUE>...] [CLOCKS <net=MHz>...])
+#                    [VENDOR gowin|xilinx] [PARAMS <NAME=VALUE>...] [CLOCKS <net=MHz>...]
+#                    [SEED <n>])
 #
 # Builds ${CMAKE_BINARY_DIR}/fpga/<name>/<top>.fs (Gowin, the default) or
 # <top>.bit (Xilinx) with a board's build script (CST, the pin constraints,
 # relative to the calling directory) from target <name>_bitstream, whose
 # BITSTREAM property holds that path. CLOCKS constrains clock nets the board
 # makes (PLL and divider outputs; Gowin only, as Xilinx boards put them in
-# their XDC). A missed timing constraint fails the build.
+# their XDC). SEED fixes nextpnr's placement seed (Gowin only: the Xilinx
+# build tries seeds itself). A missed timing constraint fails the build.
 function(rs_board_bitstream name)
-    cmake_parse_arguments(PARSE_ARGV 1 arg "" "BUILD;COMPONENT;CST;TOP;VENDOR" "PARAMS;CLOCKS")
+    cmake_parse_arguments(PARSE_ARGV 1 arg "" "BUILD;COMPONENT;CST;TOP;VENDOR;SEED" "PARAMS;CLOCKS")
     if(NOT arg_VENDOR)
         set(arg_VENDOR gowin)
     endif()
@@ -46,6 +48,12 @@ function(rs_board_bitstream name)
     foreach(c IN LISTS arg_CLOCKS)
         list(APPEND params -k ${c})
     endforeach()
+    if(arg_SEED)
+        if(NOT arg_VENDOR STREQUAL "gowin")
+            message(FATAL_ERROR "rs_board_bitstream(${name}): SEED is for Gowin builds")
+        endif()
+        list(APPEND params -s ${arg_SEED})
+    endif()
     add_custom_command(
         OUTPUT ${dir}/${arg_TOP}.${ext}
         COMMAND ${arg_BUILD} ${params} -t ${arg_TOP} -c ${cst} -o ${dir} ${files}

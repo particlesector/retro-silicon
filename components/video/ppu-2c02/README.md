@@ -36,6 +36,7 @@ The palette, OAM and secondary OAM are inside the PPU; the pattern tables and na
 | Parameter | Default | Meaning |
 | --- | --- | --- |
 | `OPEN_BUS_DECAY` | 3 | Frames before an open-bus bit that nothing refreshes reads 0 (1-6). MesenCE uses 3; real 2C02s are said to decay faster |
+| `SAVE_STATE` | 1 | 0 leaves out the save-state port's logic, all but OAM's writes (a system clears OAM through them at power-up): other writes do nothing and reads give 0. For a board short of logic: the port costs about 2,000 LUTs on a GW2A |
 
 ## Save state
 

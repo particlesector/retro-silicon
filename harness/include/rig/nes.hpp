@@ -4,6 +4,7 @@
 // frames and their CRCs, and the test runs.
 
 #include <cstdint>
+#include <map>
 #include <optional>
 #include <string>
 #include <vector>
@@ -22,10 +23,11 @@ constexpr uint32_t kPpu = 0x03000000;    // the PPU's: CHR and nametables
 constexpr uint32_t kCpuState = 0x04000000;
 constexpr uint32_t kPpuState = 0x04001000;
 constexpr uint32_t kSysState = 0x04002000;  // the system's own state words
+constexpr uint32_t kApuState = 0x04003000;
 constexpr uint32_t kLineCrcs = 0x05000000;
 constexpr uint32_t kCapture = 0x05001000;
 constexpr uint32_t kSaveBuffer = 0x06000000;
-constexpr size_t kSaveStateBytes = 20920;   // what the save-state controller walks
+constexpr size_t kSaveStateBytes = 21016;   // what the save-state controller walks
 
 constexpr int kWidth = 256, kHeight = 240;
 constexpr int kPpuStateWords = 101;
@@ -56,6 +58,9 @@ enum Reg : uint32_t {
     kVideoShown = 0x48, // 2 bytes, read-only: display frames whose frame started on request
     kVideoLate = 0x4A,  // 2 bytes, read-only: lines that came late to the display
     kVideoOver = 0x4C,  // 2 bytes, read-only: lines overwritten before they were shown
+    kAudioCrc = 0x50,   // 4 bytes, read-only: CRC-32 of the APU's channel levels, every CPU cycle since reset
+    kPcmCrc = 0x54,     // 4 bytes, read-only: CRC-32 of the 48 kHz samples since reset, 2 bytes each, low first
+    kPcmCount = 0x58,   // 4 bytes, read-only: how many samples
 };
 
 enum Status : uint8_t {
@@ -105,6 +110,9 @@ public:
     uint32_t cycles();
     uint32_t frames();
     uint32_t trace_crc();
+    uint32_t audio_crc();
+    // The 48 kHz sound since reset: its samples' CRC and count.
+    std::pair<uint32_t, uint32_t> pcm();
     // The last whole frame's CRC and index; nothing if no frame has ended.
     std::optional<std::pair<uint32_t, uint32_t>> frame_crc();
     std::vector<uint32_t> line_crcs();  // of the last frame; read while stopped
@@ -160,7 +168,8 @@ struct RomCheck {
 // by then the ROM reports success: kBlargg at $6000, kZeroPage at its result
 // address; a kFrame ROM passes if it runs. The result's CRC32 is the CRC of
 // the last frame, which must match the other backend's and MesenCE's for the
-// same frame; its notes carry the ROM's text report, if it has one.
+// same frame; its audio CRC32 (the APU's levels through to that point) must
+// match the other backend's. Its notes carry the ROM's text report, if it has one.
 TestResult rom_test(Link& link, const RomCheck& check, const NesRom& rom, uint32_t frames,
                     std::optional<uint32_t> build_id = std::nullopt);
 
@@ -168,8 +177,8 @@ TestResult rom_test(Link& link, const RomCheck& check, const NesRom& rom, uint32
 // `frames`; then again, saved at the first frame boundary after
 // `save_after` frames while it runs, run on, reset and reloaded, restored from
 // the saved state and run to frame `frames`. Passes when both runs end with
-// the same frame CRC, line CRCs, trace CRC and cycle count. The result's
-// CRC32 is the last frame's.
+// the same frame CRC, line CRCs, trace CRC, audio CRC and cycle count. The
+// result's CRC32 is the last frame's.
 TestResult state_test(Link& link, const NesRom& rom, uint32_t save_after, uint32_t frames,
                       std::optional<uint32_t> build_id = std::nullopt);
 
@@ -188,8 +197,13 @@ struct GoldenRom {
     RomCheck check;
     uint32_t frames = 0;
     uint32_t crc = 0;
-    std::string path;  // under the test-ROM directory's nes-test-roms/
+    std::string path;  // under the test-ROM directory: its source, then its path
 };
 std::vector<GoldenRom> load_golden_roms(const std::string& file);
+
+// harness/golden/nes_audio_crc32.txt: each ROM's audio CRC at its golden
+// frame (id, frames, CRC), from the sim, for the boards to match. There is
+// no MesenCE reference for it: MesenCE catches its APU up lazily.
+std::map<std::string, uint32_t> load_golden_audio(const std::string& file);
 
 } // namespace rig::nes

@@ -19,7 +19,8 @@ cmake --preset default
 cmake --build --preset default    # also builds the boards' bitstreams when nextpnr is found (nextpnr-xilinx for the PYNQ-Z2)
 ctest --preset default
 
-testroms/fetch.py                 # test ROMs into ~/.cache/retro-silicon/testroms
+testroms/fetch.py                 # test ROMs into ~/.cache/retro-silicon/testroms; homebrew is
+                                  #   built from source (needs cc65's ca65 and Python's Pillow)
 tools/mesen/check.py              # check they pass in MesenCE, the reference
 ```
 

@@ -1,14 +1,20 @@
 // SPDX-License-Identifier: Apache-2.0
-// The NES's picture as HDMI at 720p: video/line-scaler takes the PPU's
-// pixels from the NES's clock to the pixel clock, three times their size in
-// the middle of the line; the 2C02's colours make them RGB; video/hdmi times
-// and encodes them. The NES keeps pace with the display: it waits at each
+// The NES's picture and sound as HDMI at 720p: video/line-scaler takes the
+// PPU's pixels from the NES's clock to the pixel clock, three times their size
+// in the middle of the line; the 2C02's colours make them RGB; video/hdmi
+// times and encodes them, with the NES's 48 kHz samples as 2-channel audio
+// (the same on both). A sample crosses to the pixel clock by a toggle: they
+// come hundreds of clocks apart, so the held sample has long settled when the
+// toggle is seen. The NES keeps pace with the display: it waits at each
 // frame's end (`waiting`) for `req`, so each display frame shows one NES
 // frame whole.
 //
 // For the test shell it also takes a CRC of one display frame's TMDS
 // symbols, the whole frame's (1650 x 750 clocks, 30 bits each, bit 0 first:
-// blue's symbol in bits 9-0, green's 19-10, red's 29-20). A toggle of `cap_t`
+// blue's symbol in bits 9-0, green's 19-10, red's 29-20), with the data
+// islands' packet symbols as 0: which line's island carries a sample depends
+// on when it crosses clocks, which differs from board to board by a clock or
+// two, while everything else is the same everywhere. A toggle of `cap_t`
 // asks for the display frame that the next request starts; `crc_t` toggles
 // when its CRC is in `crc`, with `crc_ok` saying whether that frame showed
 // its NES frame whole. Its counts say how the pacing goes: display frames
@@ -31,6 +37,8 @@ module nes_video #(
     input  logic [7:0]  pix_y,  // the scaler takes the line mod 32
     /* verilator lint_on UNUSEDSIGNAL */
     input  logic        waiting,
+    input  logic        a_valid,
+    input  logic [15:0] a_pcm,
     output logic        req,
     input  logic        cap_t,
     output logic [31:0] crc,
@@ -60,6 +68,7 @@ module nes_video #(
     logic [8:0]  spix;
     logic        son, slate, sover, sok, on_q;
     logic [23:0] rgb;
+    logic        packet;
 
     line_scaler #(.X0(X0), .SCALE(SCALE), .REQ_Y(REQ_Y)) u_scaler (
         .s_clk(clk), .s_rst(rst), .s_valid(pix_valid), .s_x(pix_x), .s_y(pix_y[4:0]), .s_pix(pix),
@@ -82,9 +91,35 @@ module nes_video #(
     always_ff @(posedge pclk)
         on_q <= son;
 
-    hdmi #(.LATENCY(LATENCY)) u_hdmi (
+    // ---- Sound ----
+    logic [15:0] a_hold, a_p;
+    logic        a_t, a_seen, a_last, a_new;
+
+    always_ff @(posedge clk)
+        if (rst)
+            a_t <= 1'b0;
+        else if (a_valid) begin
+            a_hold <= a_pcm;
+            a_t    <= !a_t;
+        end
+
+    cdc_sync u_at (.clk(pclk), .d(a_t), .q(a_seen));
+
+    always_ff @(posedge pclk) begin
+        a_last <= a_seen;
+        a_new  <= a_seen != a_last;
+        if (a_seen != a_last)
+            a_p <= a_hold;
+        if (prst) begin
+            a_last <= a_seen;
+            a_new  <= 1'b0;
+        end
+    end
+
+    hdmi #(.LATENCY(LATENCY), .AUDIO(1'b1)) u_hdmi (
         .clk(pclk), .rst(prst), .x(hx), .y(hy), .act(hact), .frame(hframe), .line(hline),
-        .rgb(on_q ? rgb : 24'h000000), .tmds0, .tmds1, .tmds2);
+        .rgb(on_q ? rgb : 24'h000000), .aud_valid(a_new), .aud_l(a_p), .aud_r(a_p),
+        .tmds0, .tmds1, .tmds2, .packet);
 
     // ---- Frame CRC ----
     // `start` is high while a frame's first symbol is out, LATENCY + 2 clocks
@@ -109,7 +144,7 @@ module nes_video #(
 
     always_ff @(posedge pclk) begin
         fd      <= {fd[LATENCY:0], hframe};
-        sym_q   <= {tmds2, tmds1, tmds0};
+        sym_q   <= packet ? '0 : {tmds2, tmds1, tmds0};
         publish <= start && running;
         if (publish) begin
             res    <= vcrc;

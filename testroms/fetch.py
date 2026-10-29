@@ -1,17 +1,23 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: Apache-2.0
-"""Download the test ROMs in manifest.toml and check their SHA-256 sums.
+"""Download or build the test ROMs in manifest.toml and check their SHA-256 sums.
 
 usage: testroms/fetch.py [--dest DIR]
 
 DIR defaults to $RS_TESTROMS, else ~/.cache/retro-silicon/testroms. Files land
 in DIR/<source>/<path>. A file already there with the right sum is kept; a sum
-mismatch is an error. Exit codes: 0 all present, 1 a download or sum failed.
+mismatch is an error. A source with `url` is downloaded; one with `git`,
+`commit` and `build` is cloned at that commit into DIR/<source> and built
+there (homebrew from source; the build needs the tools its README names, such
+as ca65 and Pillow). A ROM whose sha256 is empty is built and its sum printed,
+to put in the manifest, and counts as a failure until it's there. Exit codes:
+0 all present, 1 a download, build or sum failed.
 """
 
 import argparse
 import hashlib
 import os
+import subprocess
 import sys
 import tomllib
 import urllib.request
@@ -36,6 +42,25 @@ def files(manifest):
             yield rom["source"], rom["trace"]["path"], rom["trace"]["sha256"]
 
 
+def build(dest, source, spec):
+    """Checks out a git source at its commit in dest/source and runs its build."""
+    work = dest / source
+
+    def git(*a):
+        return subprocess.run(["git", "-C", str(work), *a], check=True, capture_output=True, text=True).stdout
+
+    if not (work / ".git").exists():
+        work.mkdir(parents=True, exist_ok=True)
+        git("init", "-q")
+        git("remote", "add", "origin", spec["git"])
+    head = subprocess.run(["git", "-C", str(work), "rev-parse", "--verify", "-q", "HEAD"],
+                          capture_output=True, text=True).stdout.strip()
+    if head != spec["commit"]:
+        git("fetch", "-q", "--depth", "1", "origin", spec["commit"])
+        git("checkout", "-q", "--force", spec["commit"])
+    subprocess.run(spec["build"], cwd=work, check=True)
+
+
 def main():
     default = os.environ.get("RS_TESTROMS", Path.home() / ".cache/retro-silicon/testroms")
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
@@ -44,11 +69,30 @@ def main():
 
     manifest = tomllib.loads(MANIFEST.read_text())
     failed = 0
+    built = set()
     for source, path, want in files(manifest):
         out = args.dest / source / path
-        if out.exists() and sha256(out) == want:
+        if want and out.exists() and sha256(out) == want:
             continue
-        url = manifest["sources"][source]["url"] + path
+        spec = manifest["sources"][source]
+        if "git" in spec:
+            if source not in built:
+                built.add(source)
+                try:
+                    build(args.dest, source, spec)
+                except (OSError, subprocess.CalledProcessError) as e:
+                    print(f"fetch: building {source}: {e}", file=sys.stderr)
+                    failed += 1
+                    continue
+            got = sha256(out) if out.exists() else None
+            if got is None or got != want:
+                print(f"fetch: {source}/{path}: built " + (f"SHA-256 {got}" if got else "nothing") +
+                      (f", expected {want}" if want else "; put that sum in the manifest"), file=sys.stderr)
+                failed += 1
+            else:
+                print(f"built {source}/{path}")
+            continue
+        url = spec["url"] + path
         out.parent.mkdir(parents=True, exist_ok=True)
         tmp = out.with_suffix(out.suffix + ".part")
         try:

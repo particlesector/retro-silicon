@@ -1,9 +1,12 @@
 // SPDX-License-Identifier: Apache-2.0
-// The NES, as far as it's built: the 2A03's CPU and OAM DMA, the 2C02 PPU,
+// The NES, as far as it's built: the 2A03's CPU, APU and DMA, the 2C02 PPU,
 // 2 KB of RAM, 8 KB of PRG RAM at $6000, and an NROM cartridge (PRG ROM in the
 // board's memory, 8 KB of CHR ROM or RAM in block RAM, nametable mirroring by
-// a register), under the test shell, with a save-state controller. The APU and
-// controllers come later; their registers read as open bus.
+// a register), under the test shell, with a save-state controller. The
+// controllers come later; their registers read as open bus. The APU's channel
+// levels go into the audio CRC, and through apu_mixer and audio/resampler out
+// as 48 kHz PCM (800 samples per 29,780.5 CPU cycles, the average NES frame:
+// 48 kHz against a 60 Hz display that the NES keeps pace with).
 //
 // The board's memory is a byte port, as memory/sdram's: the board puts SDRAM,
 // block RAM or anything else behind it. memory/arbiter shares it between the
@@ -34,7 +37,7 @@
 //   0x03000000-0x03003FFF  the PPU's: CHR ($0000-$1FFF) and nametables ($2000-$3FFF);
 //                          0x03004000-0x030047FF the nametable RAM as it is, unmirrored
 //   0x04000000-0x0400000F  CPU save state; 0x04001000-0x04001193 PPU save state;
-//                          0x04002000-0x04002013 the system's own
+//                          0x04002000-0x0400202F the system's own; 0x04003000-0x04003043 APU save state
 //   0x05000000-0x050003BF  line CRCs of the last frame; 0x05001000-0x050011FF the captured line
 //   0x06000000-0x06007FFF  the save-state buffer
 // LEDs (active low): led[0] a corrupt command frame, led[1] a stalled one,
@@ -46,6 +49,7 @@ module nes #(
     parameter int          DOT_DEN      = 176,      //   5.369318 MHz from 27 MHz
     parameter int          LEAD_DOTS    = 5,
     parameter bit          PACE         = 1'b0,     // keep pace with a display from reset
+    parameter bit          SAVE_STATE   = 1'b1,     // 0 leaves out save states, for a board short of logic
     parameter logic [31:0] BUILD_ID     = '0
 ) (
     input  logic        clk,
@@ -75,7 +79,11 @@ module nes #(
     input  logic        v_crc_t,
     input  logic [15:0] v_shown,
     input  logic [15:0] v_late,
-    input  logic [15:0] v_overrun
+    input  logic [15:0] v_overrun,
+
+    // The sound: a one-clock pulse with each 48 kHz sample, signed.
+    output logic        a_valid,
+    output logic [15:0] a_pcm
 );
     logic rst;
     por u_por (.clk, .rst);
@@ -95,13 +103,14 @@ module nes #(
         .bus_ack(t_ack), .bus_rdata(t_rdata),
         .crc_error, .timeout);
 
-    // The regions a save state walks, in order: the CPU's, PPU's and system's
-    // state words, RAM, PRG RAM, CHR and the nametable RAM. 20,920 bytes.
-    localparam int SS_REGIONS = 7;
+    // The regions a save state walks, in order: the CPU's, PPU's, system's and
+    // APU's state words, RAM, PRG RAM, CHR and the nametable RAM. 21,016 bytes.
+    localparam int SS_REGIONS = 8;
     localparam logic [SS_REGIONS*32-1:0] SS_BASES = {
-        32'h03004000, 32'h03000000, 32'h02006000, 32'h02000000, 32'h04002000, 32'h04001000, 32'h04000000};
+        32'h03004000, 32'h03000000, 32'h02006000, 32'h02000000,
+        32'h04003000, 32'h04002000, 32'h04001000, 32'h04000000};
     localparam logic [SS_REGIONS*32-1:0] SS_LENS = {
-        32'd2048, 32'd8192, 32'd8192, 32'd2048, 32'd20, 32'd404, 32'd16};
+        32'd2048, 32'd8192, 32'd8192, 32'd2048, 32'd68, 32'd48, 32'd404, 32'd16};
 
     logic [7:0]  ss_cmd, ss_done, ss_hq;
     logic        ss_busy, ss_hold_req, ss_hold_frame, ss_ready, ss_own;
@@ -176,8 +185,8 @@ module nes #(
     clock_enable #(.NUM(DOT_NUM), .DEN(DOT_DEN)) u_dot (
         .clk, .rst(sys_rst), .en(cs == C_RUN || cs == C_END || go), .ce(dot_slot));
 
-    logic        st_we_cpu, st_we_ppu, st_we_sys;  // save-state writes, below
-    logic [2:0]  st_sys_w;
+    logic        st_we_cpu, st_we_ppu, st_we_sys, st_we_apu;  // save-state writes, below
+    logic [3:0]  st_sys_w;
     logic [31:0] st_wdata;
 
     always_ff @(posedge clk) begin
@@ -205,7 +214,7 @@ module nes #(
             default:
                 cs <= C_START;
         endcase
-        if (st_we_sys && st_sys_w == 3'd4) begin
+        if (st_we_sys && st_sys_w == 4'd4) begin
             cs   <= cstate_t'(st_wdata[5:4]);
             lead <= st_wdata[8:6];
         end
@@ -221,7 +230,7 @@ module nes #(
 
     // ---- CPU ----
     logic [15:0] cpu_addr;
-    logic        cpu_we, cpu_sync, cpu_rdy, nmi_n;
+    logic        cpu_we, cpu_sync, cpu_rdy, nmi_n, irq_n;
     logic [7:0]  cpu_dout, cpu_din;
     logic [31:0] cpu_st_rdata;
 
@@ -230,92 +239,187 @@ module nes #(
     logic [7:0]  dbg_a, dbg_x, dbg_y, dbg_s, dbg_p;
     /* verilator lint_on UNUSEDSIGNAL */
 
-    cpu_6502 #(.DECIMAL(0)) u_cpu (
+    cpu_6502 #(.DECIMAL(0), .SAVE_STATE(SAVE_STATE)) u_cpu (
         .clk, .rst(sys_rst), .ce,
         .addr(cpu_addr), .we(cpu_we), .dout(cpu_dout), .din(cpu_din),
-        .rdy(cpu_rdy), .irq_n(1'b1), .nmi_n,
+        .rdy(cpu_rdy), .irq_n, .nmi_n,
         .sync(cpu_sync), .halted,
         .dbg_pc, .dbg_a, .dbg_x, .dbg_y, .dbg_s, .dbg_p,
         .st_addr(s_addr[3:2]), .st_rdata(cpu_st_rdata), .st_we(st_we_cpu), .st_wdata);
 
-    // ---- OAM DMA ----
-    // A write to $4014 halts the CPU on its next read cycle, then copies a
-    // page to $2004 a byte per two cycles: reads on even cycles (counted from
-    // reset), writes on odd, with a dummy cycle to align when needed. The
-    // halt and alignment cycles repeat the CPU's read on the bus.
-    typedef enum logic [1:0] {D_NONE, D_DUMMY, D_GET, D_PUT} dcyc_t;
+    // ---- DMA: the DMC's and OAM's ----
+    // As the 2A03 runs them and MesenCE models it. A request (the DMC's, or a
+    // $4014 write) halts the CPU on its next read cycle. Then, until both are
+    // done, each cycle is one of these. On an even cycle (counted from reset),
+    // the DMC's read once it has had its halt and dummy cycles, or else OAM
+    // DMA's read. On an odd cycle, OAM DMA's write to $2004 if it has a byte.
+    // OAM DMA's cycles count as the DMC's halt and dummy cycles. The halt
+    // cycle and every cycle that moves nothing repeat the CPU's read on the bus.
+    //
+    // The APU's DMC requests and cancels come from its tick for the next CPU
+    // cycle, so they wait in ev_start and ev_stop for that cycle's end. There
+    // they apply after the cycle's own step and before its access, as MesenCE
+    // applies them at the cycle's start.
+    //
+    // Not modelled: MesenCE restarts OAM DMA's count when a DMC request comes
+    // during a DMC read (only with its sample-duplication glitch, off by
+    // default), and its DMA reads of $4000-$401F while the CPU's address is
+    // there.
+    typedef enum logic [2:0] {D_NONE, D_HALT, D_DUMMY, D_DMC, D_GET, D_PUT} dcyc_t;
 
-    logic        dma_req;       // $4014 written, not yet started
-    logic        dma_on;        // the halt cycle is done; transferring
-    logic [7:0]  dma_page, dma_idx, dma_data;
-    logic        dma_have;      // a byte read, waiting to be written
+    logic        need_halt, need_dummy, dmc_run, dmc_abort, spr_on, in_dma;
+    logic        ev_start, ev_stop;
+    logic [7:0]  spr_page, spr_data;
+    logic [8:0]  spr_cnt;        // OAM DMA's reads and writes so far
     dcyc_t       dkind, dkind_q, dk;
-    logic [15:0] bus_addr;
-    logic        bus_we, bus_sync, dma_cycle;
+    logic [15:0] bus_addr, apu_dma_addr;
+    logic        bus_we, bus_sync, dma_cycle, apu_dma_req, apu_dma_cancel;
     logic [7:0]  bus_wdata;
 
     // A cycle's kind comes from the DMA state at its start, and holds: the
     // CPU's own address doesn't change while it's stalled.
     always_comb begin
         dkind = D_NONE;
-        if (dma_on)
-            dkind = cycles[0] == 1'b0 ? D_GET : dma_have ? D_PUT : D_DUMMY;
-        else if (dma_req && !cpu_we)
-            dkind = D_DUMMY;  // the halt cycle
+        if (!in_dma) begin
+            if (need_halt && !cpu_we)
+                dkind = D_HALT;
+        end else if (cycles[0] == 1'b0)
+            dkind = dmc_run && !need_halt && !need_dummy ? D_DMC : spr_on ? D_GET : D_DUMMY;
+        else
+            dkind = spr_on && spr_cnt[0] ? D_PUT : D_DUMMY;
     end
 
     assign dk        = cs == C_RUN || cs == C_END ? dkind_q : dkind;
     assign dma_cycle = dk != D_NONE;
     assign cpu_rdy   = !dma_cycle;
-    assign bus_addr  = dk == D_GET ? {dma_page, dma_idx} : dk == D_PUT ? 16'h2004 : cpu_addr;
+    assign bus_addr  = dk == D_DMC ? apu_dma_addr : dk == D_GET ? {spr_page, spr_cnt[8:1]} :
+                       dk == D_PUT ? 16'h2004 : cpu_addr;
     assign bus_we    = dk == D_PUT || (!dma_cycle && cpu_we);
-    assign bus_wdata = dk == D_PUT ? dma_data : cpu_dout;
+    assign bus_wdata = dk == D_PUT ? spr_data : cpu_dout;
     assign bus_sync  = !dma_cycle && cpu_sync;
+
+    // The DMA state at this cycle's end.
+    logic n_halt, n_dummy, n_run, n_abort, n_spr_on, n_in_dma;
+    always_comb begin
+        n_halt   = need_halt;
+        n_dummy  = need_dummy;
+        n_run    = dmc_run;
+        n_abort  = dmc_abort;
+        n_spr_on = spr_on;
+        // The cycle's own step, before the tick.
+        if (dkind_q == D_HALT)
+            n_halt = 1'b0;
+        else if (dkind_q != D_NONE) begin
+            if (dmc_abort) begin
+                n_run   = 1'b0;
+                n_abort = 1'b0;
+                n_dummy = 1'b0;
+                n_halt  = 1'b0;
+            end else if (need_halt)
+                n_halt = 1'b0;
+            else if (need_dummy)
+                n_dummy = 1'b0;
+        end
+        // The tick: a cancel stops a request whose halt hasn't come, and
+        // aborts one whose has; then a request.
+        if (ev_stop && n_run) begin
+            if (n_halt) begin
+                n_run   = 1'b0;
+                n_dummy = 1'b0;
+                n_halt  = 1'b0;
+            end else
+                n_abort = 1'b1;
+        end
+        if (ev_start) begin
+            n_run   = 1'b1;
+            n_dummy = 1'b1;
+            n_halt  = 1'b1;
+        end
+        // The access.
+        if (dkind_q == D_NONE && bus_we && bus_addr == 16'h4014) begin
+            n_spr_on = 1'b1;
+            n_halt   = 1'b1;
+        end
+        if (dkind_q == D_PUT && spr_cnt == 9'h1FF)
+            n_spr_on = 1'b0;
+        // After the access.
+        n_in_dma = in_dma;
+        case (dkind_q)
+            D_HALT: begin
+                if (n_abort) begin
+                    n_run   = 1'b0;
+                    n_abort = 1'b0;
+                    if (!spr_on)
+                        n_dummy = 1'b0;
+                end
+                n_in_dma = n_run || n_spr_on;
+            end
+            D_DMC: begin
+                n_run    = 1'b0;
+                n_abort  = 1'b0;
+                // A request in this cycle's tick halts the CPU again at once.
+                n_in_dma = !n_halt && n_spr_on;
+            end
+            D_NONE: ;
+            default: n_in_dma = n_run || n_spr_on;
+        endcase
+    end
 
     always_ff @(posedge clk) begin
         if (cyc_start)
             dkind_q <= dkind;
         if (ce) begin
+            need_halt  <= n_halt;
+            need_dummy <= n_dummy;
+            dmc_run    <= n_run;
+            dmc_abort  <= n_abort;
+            spr_on     <= n_spr_on;
+            in_dma     <= n_in_dma;
+            ev_start   <= 1'b0;
+            ev_stop    <= 1'b0;
             case (dkind_q)
                 D_GET: begin
-                    dma_data <= cpu_din;
-                    dma_have <= 1'b1;
+                    spr_data <= cpu_din;
+                    spr_cnt  <= spr_cnt + 9'd1;
                 end
-                D_PUT: begin
-                    dma_have <= 1'b0;
-                    dma_idx  <= dma_idx + 8'd1;
-                    if (dma_idx == 8'hFF)
-                        dma_on <= 1'b0;
-                end
-                D_DUMMY:
-                    if (!dma_on) begin
-                        dma_req <= 1'b0;  // the halt cycle: transfer from the next
-                        dma_on  <= 1'b1;
-                    end
+                D_PUT:
+                    spr_cnt <= spr_cnt + 9'd1;
                 default: ;
             endcase
-            if (bus_we && bus_addr == 16'h4014) begin
-                dma_req  <= 1'b1;
-                dma_page <= bus_wdata;
-                dma_idx  <= '0;
-                dma_have <= 1'b0;
+            if (dkind_q == D_NONE && bus_we && bus_addr == 16'h4014) begin
+                spr_page <= bus_wdata;
+                spr_cnt  <= '0;
             end
         end
-        if (st_we_sys && st_sys_w == 3'd3)
-            {dma_page, dma_idx, dma_data} <= st_wdata[31:8];
-        if (st_we_sys && st_sys_w == 3'd4)
-            {dma_have, dma_on, dma_req} <= st_wdata[2:0];
+        // The APU's pulses come the clock after a ce.
+        if (apu_dma_req)
+            ev_start <= 1'b1;
+        if (apu_dma_cancel)
+            ev_stop <= 1'b1;
+        if (st_we_sys && st_sys_w == 4'd3)
+            {spr_page, spr_cnt[7:0], spr_data} <= st_wdata[31:8];
+        if (st_we_sys && st_sys_w == 4'd4)
+            {spr_cnt[8], ev_stop, ev_start, in_dma, need_dummy, dmc_abort} <= st_wdata[14:9];
+        if (st_we_sys && st_sys_w == 4'd4)
+            {dmc_run, spr_on, need_halt} <= st_wdata[2:0];
         if (sys_rst) begin
-            dma_req  <= 1'b0;
-            dma_on   <= 1'b0;
-            dma_have <= 1'b0;
-            dkind_q  <= D_NONE;
+            need_halt  <= 1'b0;
+            need_dummy <= 1'b0;
+            dmc_run    <= 1'b0;
+            dmc_abort  <= 1'b0;
+            spr_on     <= 1'b0;
+            in_dma     <= 1'b0;
+            ev_start   <= 1'b0;
+            ev_stop    <= 1'b0;
+            dkind_q    <= D_NONE;
         end
     end
 
     // CPU-bus decode.
     wire c_ram  = bus_addr[15:13] == 3'b000;  // $0000-$1FFF, 2 KB mirrored
     wire c_ppu  = bus_addr[15:13] == 3'b001;  // $2000-$3FFF, 8 registers mirrored
+    wire c_apu  = bus_addr[15:5] == 11'h200;  // $4000-$401F
+    wire c_4015 = bus_addr == 16'h4015;
     wire c_wram = bus_addr[15:13] == 3'b011;  // $6000-$7FFF
     wire c_prg  = bus_addr[15];               // $8000-$FFFF
     wire c_vec  = vec_en && bus_addr[15:1] == 15'h7FFE;
@@ -331,7 +435,7 @@ module nes #(
     logic [8:0]  ppu_line, ppu_dot;
     /* verilator lint_on UNUSEDSIGNAL */
 
-    ppu_2c02 u_ppu (
+    ppu_2c02 #(.SAVE_STATE(SAVE_STATE)) u_ppu (
         .clk, .rst(sys_rst), .ce(ppu_ce),
         .reg_ce(reg_ce && c_ppu), .reg_we(bus_we), .reg_addr(bus_addr[2:0]), .reg_wdata(bus_wdata),
         .reg_rdata(ppu_rdata), .nmi_n,
@@ -339,6 +443,39 @@ module nes #(
         .pix_valid, .pix, .pix_x, .pix_y, .frame_end,
         .dbg_line(ppu_line), .dbg_dot(ppu_dot),
         .st_addr(s_addr[8:2]), .st_rdata(ppu_st_rdata), .st_we(st_we_ppu), .st_wdata);
+
+    // ---- APU ----
+    // Its access inputs are the cycle's from its start; it acts on them at
+    // the cycle's end, and irq_n follows them for the CPU's sample there.
+    //
+    // MesenCE runs 8 CPU cycles from reset to the first opcode fetch, where
+    // this CPU runs 7, and LEAD_DOTS lines the fetches up: so MesenCE's cycle
+    // count is ours + 1. Its parity is the APU's `odd`, and the APU gets one
+    // more tick, with no access, two clocks after reset (after its own first
+    // cycle's tick, before the CPU's first cycle), for the cycle this CPU
+    // doesn't run.
+    logic [7:0]  apu_status;
+    logic [31:0] apu_st_rdata;
+    logic [3:0]  a_pulse1, a_pulse2, a_triangle, a_noise;
+    logic [6:0]  a_dmc;
+    logic [1:0]  apu_pre;
+    wire         apu_extra = apu_pre == 2'd1;
+
+    always_ff @(posedge clk)
+        if (sys_rst)
+            apu_pre <= 2'd2;
+        else if (apu_pre != '0)
+            apu_pre <= apu_pre - 2'd1;
+
+    apu_2a03 #(.SAVE_STATE(SAVE_STATE)) u_apu (
+        .clk, .rst(sys_rst), .ce(ce || apu_extra), .odd(!cycles[0]),
+        .wr(bus_we && c_apu && !apu_extra), .rd_status(!bus_we && c_4015 && !apu_extra),
+        .addr(bus_addr[4:0]), .wdata(bus_wdata),
+        .status(apu_status), .irq_n,
+        .dma_req(apu_dma_req), .dma_cancel(apu_dma_cancel), .dma_addr(apu_dma_addr),
+        .dma_done(dkind_q == D_DMC && !apu_extra), .dma_data(cpu_din),
+        .pulse1(a_pulse1), .pulse2(a_pulse2), .triangle(a_triangle), .noise(a_noise), .dmc(a_dmc),
+        .st_addr(s_addr[6:2]), .st_rdata(apu_st_rdata), .st_we(st_we_apu), .st_wdata);
 
     // ---- CHR and nametables, shared with the shell ----
     // The PPU has the port on each dot_slot and v_hold clock, reading on both
@@ -510,8 +647,10 @@ module nes #(
             cpu_din = cpu_mem_data;
         else if (c_ppu)
             cpu_din = ppu_rdata;
+        else if (c_4015)
+            cpu_din = apu_status | (open_bus & 8'h20);  // bit 5 is open bus
         else
-            cpu_din = open_bus;  // APU and I/O registers, and $4020-$5FFF, until they exist
+            cpu_din = open_bus;  // the other APU and I/O registers, and $4020-$5FFF
 
     // Each CPU cycle goes into the trace CRC as 4 bytes: address low, address
     // high, data (read or written), flags (bit 0 write, bit 1 opcode fetch).
@@ -519,7 +658,73 @@ module nes #(
     logic [2:0]  tr_n;
 
     crc32 u_trace (.clk, .rst(sys_rst), .en(tr_n != '0), .data(tr[7:0]), .crc(trace_crc),
-                   .st_we(st_we_sys && st_sys_w == 3'd2), .st_wdata);
+                   .st_we(st_we_sys && st_sys_w == 4'd2), .st_wdata);
+
+    // The audio CRC: each CPU cycle's channel levels as 3 bytes, {pulse 2,
+    // pulse 1}, {noise, triangle}, DMC.
+    logic [31:0] audio_crc;
+    logic [23:0] au;
+    logic [1:0]  au_n;
+
+    crc32 u_audio (.clk, .rst(sys_rst), .en(au_n != '0), .data(au[7:0]), .crc(audio_crc),
+                   .st_we(st_we_sys && st_sys_w == 4'd5), .st_wdata);
+
+    always_ff @(posedge clk) begin
+        if (au_n != '0) begin
+            au   <= au >> 8;
+            au_n <= au_n - 1'b1;
+        end
+        if (ce) begin
+            au   <= {1'b0, a_dmc, a_noise, a_triangle, a_pulse2, a_pulse1};
+            au_n <= 2'd3;
+        end
+        if (sys_rst)
+            au_n <= '0;
+    end
+
+    // ---- Sound: the mix, at 48 kHz ----
+    // The mixer's sum follows the levels by up to two clocks (its tables
+    // are block RAM), so the resampler takes it two clocks after the ce. The PCM CRC covers every sample since reset, 2
+    // bytes each, low first; pcm_n counts them.
+    logic [15:0] mix;
+    logic        ce_q, ce_qq, pcm_v;
+    logic [31:0] rs_st_rdata, pcm_crc, pcm_n;
+    logic [15:0] pcm_b;
+    logic [1:0]  pcm_bn;
+
+    apu_mixer u_mix (.clk, .pulse1(a_pulse1), .pulse2(a_pulse2), .triangle(a_triangle), .noise(a_noise),
+                     .dmc(a_dmc), .out(mix));
+
+    resampler #(.SAVE_STATE(SAVE_STATE)) u_rs (.clk, .rst(sys_rst), .ce(ce_qq), .in(mix), .valid(pcm_v), .out(a_pcm),
+                    .st_addr(2'(st_sys_w - 4'd6)), .st_rdata(rs_st_rdata),
+                    .st_we(st_we_sys && st_sys_w >= 4'd6 && st_sys_w <= 4'd9), .st_wdata);
+
+    crc32 u_pcm (.clk, .rst(sys_rst), .en(pcm_bn != '0), .data(pcm_b[7:0]), .crc(pcm_crc),
+                 .st_we(st_we_sys && st_sys_w == 4'd10), .st_wdata);
+
+    assign a_valid = pcm_v;
+
+    always_ff @(posedge clk) begin
+        ce_q  <= ce;
+        ce_qq <= ce_q;
+        if (pcm_bn != '0) begin
+            pcm_b  <= pcm_b >> 8;
+            pcm_bn <= pcm_bn - 1'b1;
+        end
+        if (pcm_v) begin
+            pcm_b  <= a_pcm;
+            pcm_bn <= 2'd2;
+            pcm_n  <= pcm_n + 1'b1;
+        end
+        if (st_we_sys && st_sys_w == 4'd11)
+            pcm_n <= st_wdata;
+        if (sys_rst) begin
+            ce_q   <= 1'b0;
+            ce_qq  <= 1'b0;
+            pcm_bn <= '0;
+            pcm_n  <= '0;
+        end
+    end
 
     always_ff @(posedge clk) begin
         if (tr_n != '0) begin
@@ -527,7 +732,9 @@ module nes #(
             tr_n <= tr_n - 1'b1;
         end
         if (ce) begin
-            open_bus <= bus_we ? bus_wdata : cpu_din;
+            // $4015 is read inside the 2A03: it leaves the data bus alone.
+            if (bus_we || !c_4015)
+                open_bus <= bus_we ? bus_wdata : cpu_din;
             tr       <= {6'b0, bus_sync, bus_we, bus_we ? bus_wdata : cpu_din, bus_addr};
             tr_n     <= 3'd4;
             cycles   <= cycles + 1'b1;
@@ -538,10 +745,10 @@ module nes #(
             frames <= frames + 1'b1;
         if (st_we_sys)
             case (st_sys_w)
-                3'd0: cycles   <= st_wdata;
-                3'd1: frames   <= st_wdata;
-                3'd3: open_bus <= st_wdata[7:0];
-                3'd4: late     <= st_wdata[3];
+                4'd0: cycles   <= st_wdata;
+                4'd1: frames   <= st_wdata;
+                4'd3: open_bus <= st_wdata[7:0];
+                4'd4: late     <= st_wdata[3];
                 default: ;
             endcase
         if (sys_rst) begin
@@ -625,8 +832,11 @@ module nes #(
     //
     // The system's own state words (0x04002000):
     //   0 CPU cycles, 1 frames, 2 the trace CRC,
-    //   3 {DMA page, DMA index, DMA byte, open bus},
-    //   4 {lead dots [8:6], cycle state [5:4], late, DMA byte held, DMA on, DMA requested}.
+    //   3 {OAM DMA page, OAM DMA count [7:0], OAM DMA byte, open bus},
+    //   4 {OAM DMA count [8] [14], DMC cancel and request waiting [13:12], in DMA,
+    //      DMC dummy cycle needed, DMC abort [10:9], lead dots [8:6],
+    //      cycle state [5:4], late, DMC DMA on, OAM DMA on, halt needed},
+    //   5 the audio CRC, 6-9 the resampler's words, 10 the PCM CRC, 11 the PCM sample count.
     // Pipelines that drain within a few clocks of a stop (the trace CRC's
     // bytes) have drained before a save state's walk starts.
     logic [23:0] st_stage;
@@ -636,23 +846,29 @@ module nes #(
     logic [31:0] sys_st, st_q;
     wire         sp_issue = s_new && (sel_state || sel_probe || sel_ssbuf) && sp_wait == '0 && !sp_ack;
     wire         paused   = ctrl_reset || ((cs == C_START || cs == C_LEAD) && !go);
-    wire  [1:0]  st_sel   = s_addr[13:12];  // CPU, PPU, the system's
+    wire  [1:0]  st_sel   = s_addr[13:12];  // CPU, PPU, the system's, APU
     wire         st_commit = sp_issue && sel_state && s_we && paused && s_addr[1:0] == 2'd3;
 
     assign st_wdata  = {s_wdata, st_stage};
     assign st_we_cpu = st_commit && st_sel == 2'd0 && s_addr[11:4] == '0;
     assign st_we_ppu = st_commit && st_sel == 2'd1 && s_addr[11:9] == '0;
-    assign st_we_sys = st_commit && st_sel == 2'd2 && s_addr[11:5] == '0 && s_addr[4:2] <= 3'd4;
-    assign st_sys_w  = s_addr[4:2];
+    assign st_we_sys = st_commit && st_sel == 2'd2 && s_addr[11:6] == '0 && s_addr[5:2] <= 4'd11;
+    assign st_we_apu = st_commit && st_sel == 2'd3 && s_addr[11:7] == '0;
+    assign st_sys_w  = s_addr[5:2];
     assign ss_hwe    = sp_issue && sel_ssbuf && s_we && !ss_busy;
 
     always_comb
-        case (s_addr[4:2])
-            3'd0:    sys_st = cycles;
-            3'd1:    sys_st = frames;
-            3'd2:    sys_st = trace_crc;
-            3'd3:    sys_st = {dma_page, dma_idx, dma_data, open_bus};
-            3'd4:    sys_st = {23'b0, lead, cs, late, dma_have, dma_on, dma_req};
+        case (s_addr[5:2])
+            4'd0:    sys_st = cycles;
+            4'd1:    sys_st = frames;
+            4'd2:    sys_st = trace_crc;
+            4'd3:    sys_st = {spr_page, spr_cnt[7:0], spr_data, open_bus};
+            4'd4:    sys_st = {17'b0, spr_cnt[8], ev_stop, ev_start, in_dma, need_dummy, dmc_abort,
+                               lead, cs, late, dmc_run, spr_on, need_halt};
+            4'd5:    sys_st = audio_crc;
+            4'd6, 4'd7, 4'd8, 4'd9: sys_st = rs_st_rdata;
+            4'd10:   sys_st = pcm_crc;
+            4'd11:   sys_st = pcm_n;
             default: sys_st = '0;
         endcase
 
@@ -664,7 +880,8 @@ module nes #(
         else if (!ss_hold_frame || frame_end || paused)
             ss_hold <= 1'b1;
 
-    assign ss_ready = ss_hold && paused && !ctrl_reset && tr_n == '0;
+    assign ss_ready = ss_hold && paused && !ctrl_reset && tr_n == '0 && au_n == '0
+                      && !ce_q && !ce_qq && !pcm_v && pcm_bn == '0;
 
     always_ff @(posedge clk) begin
         sp_ack <= sp_wait == 2'd1 && !rst;
@@ -683,8 +900,8 @@ module nes #(
             case (st_sel)
                 2'd0:    st_q <= s_addr[11:4] == '0 ? cpu_st_rdata : '0;
                 2'd1:    st_q <= s_addr[11:9] == '0 ? ppu_st_rdata : '0;
-                2'd2:    st_q <= s_addr[11:5] == '0 ? sys_st : '0;
-                default: st_q <= '0;
+                2'd2:    st_q <= s_addr[11:6] == '0 ? sys_st : '0;
+                default: st_q <= s_addr[11:7] == '0 ? apu_st_rdata : '0;
             endcase
         if (sp_wait == 2'd1) begin
             if (sel_ssbuf)
@@ -806,6 +1023,18 @@ module nes #(
             8'h4B:   reg_q <= v_late[15:8];
             8'h4C:   reg_q <= v_overrun[7:0];
             8'h4D:   reg_q <= v_overrun[15:8];
+            8'h50:   reg_q <= audio_crc[7:0];
+            8'h51:   reg_q <= audio_crc[15:8];
+            8'h52:   reg_q <= audio_crc[23:16];
+            8'h53:   reg_q <= audio_crc[31:24];
+            8'h54:   reg_q <= pcm_crc[7:0];
+            8'h55:   reg_q <= pcm_crc[15:8];
+            8'h56:   reg_q <= pcm_crc[23:16];
+            8'h57:   reg_q <= pcm_crc[31:24];
+            8'h58:   reg_q <= pcm_n[7:0];
+            8'h59:   reg_q <= pcm_n[15:8];
+            8'h5A:   reg_q <= pcm_n[23:16];
+            8'h5B:   reg_q <= pcm_n[31:24];
             default: reg_q <= '0;
         endcase
         if (rst) begin
