@@ -34,6 +34,7 @@ Module `cpu_6502` (the folder name can't start a module name).
 | Parameter | Default | Meaning |
 | --- | --- | --- |
 | `DECIMAL` | 1 | NMOS decimal mode, including its flag quirks (ADC: N and V from an intermediate result, Z from the binary sum; SBC: binary flags). 0 for the NES's 2A03, where ADC and SBC are binary whatever D says |
+| `SAVE_STATE` | 1 | 0 leaves out the save-state port's logic: writes do nothing and reads give 0. For a board short of logic |
 
 ## Save state
 

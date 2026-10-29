@@ -10,6 +10,7 @@ module nes_sdram #(
     parameter int          DOT_NUM      = 35,
     parameter int          DOT_DEN      = 176,
     parameter bit          PACE         = 1'b0,
+    parameter bit          SAVE_STATE   = 1'b1,
     parameter logic [31:0] BUILD_ID     = '0
 ) (
     input  logic        clk,
@@ -51,7 +52,7 @@ module nes_sdram #(
     por u_por (.clk, .rst);
 
     nes #(.CLKS_PER_BIT(CLKS_PER_BIT), .IDLE_CLKS(IDLE_CLKS), .DOT_NUM(DOT_NUM), .DOT_DEN(DOT_DEN),
-          .PACE(PACE), .BUILD_ID(BUILD_ID)) u_nes (
+          .PACE(PACE), .SAVE_STATE(SAVE_STATE), .BUILD_ID(BUILD_ID)) u_nes (
         .clk, .uart_rx, .uart_tx, .led,
         .mem_req(req), .mem_we(we), .mem_addr(addr), .mem_wdata(wdata),
         .mem_ack(ack), .mem_rdata(rdata), .mem_ready(ready),

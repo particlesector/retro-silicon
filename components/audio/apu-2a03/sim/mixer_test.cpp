@@ -14,10 +14,12 @@ TEST_CASE("apu_mixer gives the NESdev wiki's nonlinear mix for every level") {
         m.triangle = t;
         m.noise = n;
         m.dmc = d;
-        m.clk = 0;
-        m.eval();
-        m.clk = 1;
-        m.eval();
+        for (int i = 0; i < 2; i++) {  // the address on a falling edge, the read on the rising one
+            m.clk = 0;
+            m.eval();
+            m.clk = 1;
+            m.eval();
+        }
         return int(m.out);
     };
     // The formulas, scaled as the generator scales them.

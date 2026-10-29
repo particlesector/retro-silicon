@@ -10,20 +10,23 @@
 
 namespace {
 
-constexpr int kNum = 1600, kDen = 59561, kLpf = 4, kHpf = 9;
+constexpr int kNum = 1600, kDen = 59561, kHpf = 9;
 
 // The filters as the README states them, in plain integers.
 struct Model {
-    int64_t s1 = 0, s2 = 0, y = 0;
+    int64_t sum = 0, n = 0, y = 0;
     int64_t acc = 0, v_prev = 0;
     // One input; returns true and sets out when it makes a sample.
     bool step(uint16_t x, int16_t& out) {
-        s1 += ((int64_t(x) << 8) - s1) >> kLpf;
-        s2 += (s1 - s2) >> kLpf;
+        sum += x;
+        n++;
         acc += kNum;
         if (acc < kDen) return false;
         acc -= kDen;
-        int64_t v = s2 >> 9;
+        int64_t recip = 65536 / n;            // 2^16 / n, rounded down
+        int64_t v = (sum * recip) >> 17;      // the average, halved
+        sum = 0;
+        n = 0;
         y = (v - v_prev) * 32768 + y - (y >> kHpf);
         v_prev = v;
         int64_t whole = y >> 15;

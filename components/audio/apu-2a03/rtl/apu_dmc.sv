@@ -33,7 +33,7 @@ module apu_dmc (
     output logic [6:0]  out,
     // Save state: 4 words
     input  logic [1:0]  st_addr,
-    output logic [31:0] st_rdata,
+    output logic [127:0] st_words,  // all its save-state words, word 0 in bits 31-0
     input  logic        st_we,
     input  logic [31:0] st_wdata
 );
@@ -59,13 +59,7 @@ module apu_dmc (
     assign active   = remain != '0;
     assign out      = level;
 
-    always_comb
-        case (st_addr)
-            2'd0:    st_rdata = {3'b0, irq_en, loop, buf_empty, silence, irq, period, level, addr_reg};
-            2'd1:    st_rdata = {len_reg, rbuf, shift, bits, start_wait, stop_wait};
-            2'd2:    st_rdata = {cur, remain, 4'b0};
-            default: st_rdata = {23'b0, timer};
-        endcase
+    assign st_words = {{23'b0, timer}, {cur, remain, 4'b0}, {len_reg, rbuf, shift, bits, start_wait, stop_wait}, {3'b0, irq_en, loop, buf_empty, silence, irq, period, level, addr_reg}};
 
     // Writes (registers, $4015, the DMA's byte), then the tick.
     logic        w_irq_en, w_loop, w_irq, w_buf_empty, w_silence;

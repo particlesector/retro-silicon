@@ -158,6 +158,7 @@ The limits are levels: raising one lets the system run on from where it stopped.
 | `DOT_NUM`, `DOT_DEN` | 35, 176 | PPU dots per clocks: 189, 1760 at 50 MHz. Dots must come at least 5 clocks apart, so a CPU cycle leaves SDRAM its 10 |
 | `LEAD_DOTS` | 5 | PPU dots after reset before the CPU's first cycle |
 | `PACE` | 0 | Keep pace with the display from power-up (register `3C` bit 0) |
+| `SAVE_STATE` | 1 | 0 builds the system without save states (the CPU's, PPU's, APU's and resampler's ports do nothing; OAM can still be cleared): the Tang Nano 20K's NES, which fits only so with the APU and HDMI audio |
 | `BUILD_ID` | 0 | Reported by INFO; the CMake build sets it from the RTL's SHA-256 |
 
 ## Status

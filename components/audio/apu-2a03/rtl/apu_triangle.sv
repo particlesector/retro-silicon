@@ -13,13 +13,14 @@ module apu_triangle (
     input  logic [7:0] wdata,
     input  logic       wr_en,    // $4015 written
     input  logic       en_val,
+    input  logic [7:0]  load_val,  // the length table's value for this cycle's write
     input  logic       quarter,
     input  logic       half,
     output logic       active,
     output logic [3:0] out,
     // Save state: 3 words
     input  logic [1:0]  st_addr,
-    output logic [31:0] st_rdata,
+    output logic [95:0] st_words,  // all its save-state words, word 0 in bits 31-0
     input  logic        st_we,
     input  logic [31:0] st_wdata
 );
@@ -38,18 +39,13 @@ module apu_triangle (
     apu_length u_len (
         .clk, .rst, .ce,
         .wr_halt(wr && wreg == 2'd0), .halt_val(wdata[7]),
-        .wr_load(wr && wreg == 2'd3), .load_idx(wdata[7:3]),
+        .wr_load(wr && wreg == 2'd3), .load_val,
         .wr_en, .en_val, .half, .active(len_active), .active_next(len_next), .halt,
         .st(len_st), .st_we(st_we && st_addr == 2'd2), .st_wdata(st_wdata[26:0]));
 
     assign active   = len_active;
     assign out      = pos[4] ? pos[3:0] : ~pos[3:0];
-    always_comb
-        case (st_addr)
-            2'd0:    st_rdata = {period, timer, pos, lin_reload, control, 3'b0};
-            2'd1:    st_rdata = {lin, lin_load, 18'b0};
-            default: st_rdata = {5'b0, len_st};
-        endcase
+    assign st_words = {{5'b0, len_st}, {lin, lin_load, 18'b0}, {period, timer, pos, lin_reload, control, 3'b0}};
 
     logic [10:0] w_period, n_timer;
     logic [6:0]  w_lin_load, n_lin;

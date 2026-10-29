@@ -13,14 +13,15 @@ module apu_pulse #(
     input  logic [1:0] wreg,     // which: $4000-$4003 (or $4004-$4007)
     input  logic [7:0] wdata,
     input  logic       wr_en,    // $4015 written
-    input  logic       en_val,   // its bit for this channel
+    input  logic       en_val,
+    input  logic [7:0]  load_val,  // the length table's value for this cycle's write   // its bit for this channel
     input  logic       quarter,
     input  logic       half,
     output logic       active,   // length counter nonzero
     output logic [3:0] out,
     // Save state: 3 words
     input  logic [1:0]  st_addr,
-    output logic [31:0] st_rdata,
+    output logic [95:0] st_words,  // all its save-state words, word 0 in bits 31-0
     input  logic        st_we,
     input  logic [31:0] st_wdata
 );
@@ -46,7 +47,7 @@ module apu_pulse #(
     apu_length u_len (
         .clk, .rst, .ce,
         .wr_halt(wr && wreg == 2'd0), .halt_val(wdata[5]),
-        .wr_load(wr && wreg == 2'd3), .load_idx(wdata[7:3]),
+        .wr_load(wr && wreg == 2'd3), .load_val,
         .wr_en, .en_val, .half, .active(len_active), .active_next(len_next), .halt,
         .st(len_st), .st_we(st_we && st_addr == 2'd2), .st_wdata(st_wdata[26:0]));
 
@@ -82,12 +83,7 @@ module apu_pulse #(
     assign active   = len_active;
     assign out      = (!muted && len_active && duty_bit(duty, pos)) ? level : 4'd0;
 
-    always_comb
-        case (st_addr)
-            2'd0:    st_rdata = {duty, pos, period, sw_en, sw_neg, sw_reload, sw_shift, sw_per, sw_div[3:0], pset, 1'b0};
-            2'd1:    st_rdata = {sw_div[7:4], timer, 2'b0, env_st};
-            default: st_rdata = {5'b0, len_st};
-        endcase
+    assign st_words = {{5'b0, len_st}, {sw_div[7:4], timer, 2'b0, env_st}, {duty, pos, period, sw_en, sw_neg, sw_reload, sw_shift, sw_per, sw_div[3:0], pset, 1'b0}};
 
     // Writes, then the tick.
     logic [1:0]  w_duty;

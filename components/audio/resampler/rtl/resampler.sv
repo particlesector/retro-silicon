@@ -1,20 +1,22 @@
 // SPDX-License-Identifier: Apache-2.0
 // Takes an unsigned audio level at one rate (one sample per `ce`) to signed
-// PCM at a lower one: two one-pole low-pass filters at the input rate, a
-// sample every DEN/NUM inputs on average, then a one-pole DC-blocking
-// high-pass at the output rate. Integer arithmetic throughout, so the output
-// depends only on the inputs: the same in the sim and on any board.
+// PCM at a lower one: each output sample is the average of the inputs since
+// the last (a box filter, the inputs being held levels), taken every DEN/NUM
+// inputs on average, then a one-pole DC-blocking high-pass at the output
+// rate. Integer arithmetic throughout, so the output depends only on the
+// inputs: the same in the sim and on any board.
 //
-// Low-pass: s += (x - s) / 2^LPF, twice, each with its corner near
-// fs / (2 pi 2^LPF). Decimation: an accumulator adds NUM each input and takes
-// a sample when it reaches DEN. High-pass: y = v - v' + y' - y' / 2^HPF, its
-// corner near fs_out / (2 pi 2^HPF), with v the low-passed level halved. The
-// output is y saturated to 16 bits signed: a full-scale step reaches +-32767.
+// Decimation: an accumulator adds NUM each input and takes a sample when it
+// reaches DEN, so DEN/NUM rounded down or up inputs make each sample. Their
+// sum times 2^16 / count, rounded down (a multiplier), is the average. High-pass:
+// y = v - v' + y' - y' / 2^HPF, its corner near fs_out / (2 pi 2^HPF), with v
+// the average halved. The output is y saturated to 16 bits signed: a
+// full-scale step reaches +-32767.
 module resampler #(
     parameter int NUM = 1600,   // output samples per DEN inputs
     parameter int DEN = 59561,
-    parameter int LPF = 4,
-    parameter int HPF = 9
+    parameter int HPF = 9,
+    parameter bit SAVE_STATE = 1'b1  // 0 leaves out the save-state port's logic: writes do nothing, reads give 0
 ) (
     input  logic        clk,
     input  logic        rst,
@@ -28,26 +30,29 @@ module resampler #(
     input  logic        st_we,
     input  logic [31:0] st_wdata
 );
-    logic [23:0]        s1, s2;   // 16.8 unsigned
+    localparam int LO   = DEN / NUM;                 // inputs a sample: LO or LO + 1
+    localparam int R_LO = 65536 / LO;                // 2^16 / count, rounded down so a
+    localparam int R_HI = 65536 / (LO + 1);          //   full-scale average stays under 2^16
+
+    logic [21:0]        sum;      // the inputs since the last sample
+    logic [5:0]         n;        // how many
     logic [15:0]        acc;
     logic [14:0]        v_prev;
     logic signed [31:0] y;        // 17.15 signed
 
     always_comb
-        case (st_addr)
-            2'd0:    st_rdata = {8'b0, s1};
-            2'd1:    st_rdata = {8'b0, s2};
-            2'd2:    st_rdata = {1'b0, v_prev, acc};
-            default: st_rdata = y;
+        case (SAVE_STATE ? st_addr : 2'd3)
+            2'd0:    st_rdata = {n, 4'b0, sum};
+            2'd1:    st_rdata = {1'b0, v_prev, acc};
+            2'd2:    st_rdata = y;
+            default: st_rdata = '0;
         endcase
 
-    wire signed [25:0] d1   = $signed({2'b0, in, 8'b0}) - $signed({2'b0, s1});
-    wire        [23:0] n1   = s1 + 24'(d1 >>> LPF);
-    wire signed [25:0] d2   = $signed({2'b0, n1}) - $signed({2'b0, s2});
-    wire        [23:0] n2   = s2 + 24'(d2 >>> LPF);
+    wire        [21:0] s    = sum + 22'(in);
+    wire        [5:0]  c    = n + 1'b1;
     wire        [16:0] a    = 17'(acc) + 17'(NUM);
     wire               take = a >= 17'(DEN);
-    wire        [14:0] v    = n2[23:9];
+    wire        [14:0] v    = 15'((39'(s) * 39'(c == 6'(LO) ? R_LO : R_HI)) >> 17);  // the average, halved
     // y is v less a weighted average of earlier v, all under 2^15, so
     // |y| < 2^16 (2^31 in 17.15) and ny fits.
     wire signed [31:0] ny    = ($signed({17'b0, v}) - $signed({17'b0, v_prev})) * 32'sd32768
@@ -59,31 +64,34 @@ module resampler #(
     always_ff @(posedge clk) begin
         valid <= 1'b0;
         if (rst) begin
-            s1     <= '0;
-            s2     <= '0;
+            sum    <= '0;
+            n      <= '0;
             acc    <= '0;
             v_prev <= '0;
             y      <= '0;
-        end else if (st_we)
+        end else if (SAVE_STATE && st_we)
             case (st_addr)
-                2'd0:    s1 <= st_wdata[23:0];
-                2'd1:    s2 <= st_wdata[23:0];
-                2'd2:    {v_prev, acc} <= st_wdata[30:0];
-                default: y <= st_wdata;
+                2'd0:    {n, sum} <= {st_wdata[31:26], st_wdata[21:0]};
+                2'd1:    {v_prev, acc} <= st_wdata[30:0];
+                2'd2:    y <= st_wdata;
+                default: ;
             endcase
         else if (ce) begin
-            s1  <= n1;
-            s2  <= n2;
             acc <= take ? 16'(a - 17'(DEN)) : 16'(a);
             if (take) begin
+                sum    <= '0;
+                n      <= '0;
                 v_prev <= v;
                 y      <= ny;
                 valid  <= 1'b1;
+            end else begin
+                sum <= s;
+                n   <= c;
             end
         end
     end
 
     initial
-        if (DEN >= 65536 || NUM >= DEN)
-            $error("resampler: needs NUM < DEN < 65536");
+        if (DEN >= 65536 || NUM >= DEN || DEN / NUM > 60)
+            $error("resampler: needs NUM < DEN < 65536 and DEN / NUM <= 60");
 endmodule

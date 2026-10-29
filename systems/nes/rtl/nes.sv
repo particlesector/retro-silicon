@@ -49,6 +49,7 @@ module nes #(
     parameter int          DOT_DEN      = 176,      //   5.369318 MHz from 27 MHz
     parameter int          LEAD_DOTS    = 5,
     parameter bit          PACE         = 1'b0,     // keep pace with a display from reset
+    parameter bit          SAVE_STATE   = 1'b1,     // 0 leaves out save states, for a board short of logic
     parameter logic [31:0] BUILD_ID     = '0
 ) (
     input  logic        clk,
@@ -238,7 +239,7 @@ module nes #(
     logic [7:0]  dbg_a, dbg_x, dbg_y, dbg_s, dbg_p;
     /* verilator lint_on UNUSEDSIGNAL */
 
-    cpu_6502 #(.DECIMAL(0)) u_cpu (
+    cpu_6502 #(.DECIMAL(0), .SAVE_STATE(SAVE_STATE)) u_cpu (
         .clk, .rst(sys_rst), .ce,
         .addr(cpu_addr), .we(cpu_we), .dout(cpu_dout), .din(cpu_din),
         .rdy(cpu_rdy), .irq_n, .nmi_n,
@@ -434,7 +435,7 @@ module nes #(
     logic [8:0]  ppu_line, ppu_dot;
     /* verilator lint_on UNUSEDSIGNAL */
 
-    ppu_2c02 u_ppu (
+    ppu_2c02 #(.SAVE_STATE(SAVE_STATE)) u_ppu (
         .clk, .rst(sys_rst), .ce(ppu_ce),
         .reg_ce(reg_ce && c_ppu), .reg_we(bus_we), .reg_addr(bus_addr[2:0]), .reg_wdata(bus_wdata),
         .reg_rdata(ppu_rdata), .nmi_n,
@@ -466,7 +467,7 @@ module nes #(
         else if (apu_pre != '0)
             apu_pre <= apu_pre - 2'd1;
 
-    apu_2a03 u_apu (
+    apu_2a03 #(.SAVE_STATE(SAVE_STATE)) u_apu (
         .clk, .rst(sys_rst), .ce(ce || apu_extra), .odd(!cycles[0]),
         .wr(bus_we && c_apu && !apu_extra), .rd_status(!bus_we && c_4015 && !apu_extra),
         .addr(bus_addr[4:0]), .wdata(bus_wdata),
@@ -682,11 +683,11 @@ module nes #(
     end
 
     // ---- Sound: the mix, at 48 kHz ----
-    // The mixer registers the cycle's levels on its ce, the resampler takes
-    // them the clock after. The PCM CRC covers every sample since reset, 2
+    // The mixer's sum follows the levels by up to two clocks (its tables
+    // are block RAM), so the resampler takes it two clocks after the ce. The PCM CRC covers every sample since reset, 2
     // bytes each, low first; pcm_n counts them.
     logic [15:0] mix;
-    logic        ce_q, pcm_v;
+    logic        ce_q, ce_qq, pcm_v;
     logic [31:0] rs_st_rdata, pcm_crc, pcm_n;
     logic [15:0] pcm_b;
     logic [1:0]  pcm_bn;
@@ -694,7 +695,7 @@ module nes #(
     apu_mixer u_mix (.clk, .pulse1(a_pulse1), .pulse2(a_pulse2), .triangle(a_triangle), .noise(a_noise),
                      .dmc(a_dmc), .out(mix));
 
-    resampler u_rs (.clk, .rst(sys_rst), .ce(ce_q), .in(mix), .valid(pcm_v), .out(a_pcm),
+    resampler #(.SAVE_STATE(SAVE_STATE)) u_rs (.clk, .rst(sys_rst), .ce(ce_qq), .in(mix), .valid(pcm_v), .out(a_pcm),
                     .st_addr(2'(st_sys_w - 4'd6)), .st_rdata(rs_st_rdata),
                     .st_we(st_we_sys && st_sys_w >= 4'd6 && st_sys_w <= 4'd9), .st_wdata);
 
@@ -704,7 +705,8 @@ module nes #(
     assign a_valid = pcm_v;
 
     always_ff @(posedge clk) begin
-        ce_q <= ce;
+        ce_q  <= ce;
+        ce_qq <= ce_q;
         if (pcm_bn != '0) begin
             pcm_b  <= pcm_b >> 8;
             pcm_bn <= pcm_bn - 1'b1;
@@ -718,6 +720,7 @@ module nes #(
             pcm_n <= st_wdata;
         if (sys_rst) begin
             ce_q   <= 1'b0;
+            ce_qq  <= 1'b0;
             pcm_bn <= '0;
             pcm_n  <= '0;
         end
@@ -877,7 +880,8 @@ module nes #(
         else if (!ss_hold_frame || frame_end || paused)
             ss_hold <= 1'b1;
 
-    assign ss_ready = ss_hold && paused && !ctrl_reset && tr_n == '0 && au_n == '0 && pcm_bn == '0;
+    assign ss_ready = ss_hold && paused && !ctrl_reset && tr_n == '0 && au_n == '0
+                      && !ce_q && !ce_qq && !pcm_v && pcm_bn == '0;
 
     always_ff @(posedge clk) begin
         sp_ack <= sp_wait == 2'd1 && !rst;

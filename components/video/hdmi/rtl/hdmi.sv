@@ -64,8 +64,8 @@ module hdmi #(
     localparam int V_TOTAL = V_ACTIVE + V_FRONT + V_SYNC + V_BACK;
     localparam int HS_ON   = H_ACTIVE + H_FRONT;
     localparam int VS_ON   = V_ACTIVE + V_FRONT;
-    // The data island, from the end of the picture.
-    localparam int I_PRE   = H_ACTIVE + 4;   // preamble, 8 clocks
+    // The data island, in clocks from the end of the picture (`ic`).
+    localparam int I_PRE   = 4;              // preamble, 8 clocks
     localparam int I_GB    = I_PRE + 8;      // guard band, 2
     localparam int I_PK    = I_GB + 2;       // two packets, 32 each
     localparam int I_GB2   = I_PK + 64;      // guard band, 2
@@ -98,25 +98,46 @@ module hdmi #(
     // ---- What each clock sends, by position ----
     typedef enum logic [2:0] {K_CTL, K_VPRE, K_DPRE, K_VGB, K_DGB, K_DATA, K_VID} kind_t;
 
-    kind_t kind;
-    wire   next_act = vc + 1'b1 < 12'(V_ACTIVE) || vc == 12'(V_TOTAL - 1);
+    // Where the line stands after its picture: `ic` counts from the picture's
+    // end through the island, and `vpre` covers the video preamble and guard
+    // band before a picture line. Set on equalities, as counters compare
+    // cheaper than positions.
+    kind_t      kind;
+    logic [6:0] ic;
+    logic       in_isl, vpre;
+
+    always_ff @(posedge clk) begin
+        if (hc == 12'(H_ACTIVE - 1)) begin
+            ic     <= '0;
+            in_isl <= AUDIO;
+        end else if (in_isl) begin
+            ic <= ic + 1'b1;
+            if (ic == 7'(I_END - 1))
+                in_isl <= 1'b0;
+        end
+        if (hc == 12'(V_PRE - 1))
+            vpre <= AUDIO && (vc < 12'(V_ACTIVE - 1) || vc == 12'(V_TOTAL - 1));
+        else if (hc == 12'(H_TOTAL - 1))
+            vpre <= 1'b0;
+        if (rst) begin
+            in_isl <= 1'b0;
+            vpre   <= 1'b0;
+        end
+    end
 
     always_comb begin
         kind = K_CTL;
         if (act)
             kind = K_VID;
-        else if (AUDIO) begin
-            if (hc >= 12'(I_PRE) && hc < 12'(I_GB))
+        else if (in_isl && ic >= 7'(I_PRE)) begin
+            if (ic < 7'(I_GB))
                 kind = K_DPRE;
-            else if ((hc >= 12'(I_GB) && hc < 12'(I_PK)) || (hc >= 12'(I_GB2) && hc < 12'(I_END)))
+            else if (ic < 7'(I_PK) || ic >= 7'(I_GB2))
                 kind = K_DGB;
-            else if (hc >= 12'(I_PK) && hc < 12'(I_GB2))
+            else
                 kind = K_DATA;
-            else if (next_act && hc >= 12'(V_PRE) && hc < 12'(H_TOTAL - 2))
-                kind = K_VPRE;
-            else if (next_act && hc >= 12'(H_TOTAL - 2))
-                kind = K_VGB;
-        end
+        end else if (vpre)
+            kind = hc >= 12'(H_TOTAL - 2) ? K_VGB : K_VPRE;
     end
 
     // ---- Audio samples ----
@@ -128,7 +149,7 @@ module hdmi #(
     logic [7:0]  iec;      // the IEC 60958 frame of the next sample, 0-191
     logic        pop;
 
-    assign pop = AUDIO && hc >= 12'(H_ACTIVE) && hc < 12'(H_ACTIVE + 4) && aq_n != '0;
+    assign pop = in_isl && ic < 7'(I_PRE) && aq_n != '0;
 
     always_ff @(posedge clk) begin
         if (aud_valid && aq_n != 5'd16) begin
@@ -220,7 +241,7 @@ module hdmi #(
     logic         hbit;
     logic [3:0]   n1, n2;   // channel 1's and 2's nibbles
 
-    wire load = hc == 12'(I_PK - 1) || hc == 12'(I_PK + 31);
+    wire load = in_isl && (ic == 7'(I_PK - 1) || ic == 7'(I_PK + 31));
 
     always_comb begin
         hbit = pp < 5'd24 ? hsr[0] : hecc[0];
@@ -232,8 +253,8 @@ module hdmi #(
 
     always_ff @(posedge clk) begin
         if (load) begin
-            hsr  <= hc == 12'(I_PK - 1) ? hdr0 : hdr1;
-            ssr  <= hc == 12'(I_PK - 1) ? sub0 : sub1;
+            hsr  <= ic == 7'(I_PK - 1) ? hdr0 : hdr1;
+            ssr  <= ic == 7'(I_PK - 1) ? sub0 : sub1;
             hecc <= '0;
             for (int k = 0; k < 4; k++)
                 secc[k] <= '0;
@@ -253,12 +274,12 @@ module hdmi #(
                     secc[k] <= secc[k] >> 2;
         end
         // The samples sent go out of the queue's count of IEC frames.
-        if (hc == 12'(I_PK - 1))
+        if (in_isl && ic == 7'(I_PK - 1))
             iec <= frame_plus(iec, smp_n);
         if (rst)
             iec <= '0;
     end
-    assign first = hc == 12'(I_PK);
+    assign first = in_isl && ic == 7'(I_PK);
 
     // ---- The delay to meet the pixel source ----
     // {kind, first, header bit, ch1, ch2 nibbles, vsync, hsync}, from blanking
@@ -341,7 +362,7 @@ module hdmi #(
             $error("hdmi: LATENCY must be 1 or more");
         if (H_TOTAL > 4096 || V_TOTAL > 4096)
             $error("hdmi: a line or frame longer than 4096");
-        if (AUDIO && I_END + 4 > V_PRE)
+        if (AUDIO && H_ACTIVE + I_END + 4 > V_PRE)
             $error("hdmi: the horizontal blanking is too short for a data island");
     end
 endmodule

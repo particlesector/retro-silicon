@@ -17,7 +17,9 @@
 // The clock after reset runs the first CPU cycle's tick, with no access, as
 // MesenCE ticks the APU at the start of each cycle: so `ce` mustn't come on
 // that clock.
-module apu_2a03 (
+module apu_2a03 #(
+    parameter bit SAVE_STATE = 1'b1  // 0 leaves out the save-state port's logic: writes do nothing, reads give 0
+) (
     input  logic        clk,
     input  logic        rst,
     input  logic        ce,        // one CPU cycle
@@ -52,7 +54,26 @@ module apu_2a03 (
     logic frame_irq;  // the registered line: irq_n takes it after the access
     /* verilator lint_on UNUSEDSIGNAL */
     logic a1, a2, at, an, ad;
-    logic [31:0] st_frame, st_p1, st_p2, st_tri, st_noise, st_dmc;
+    logic [31:0]  st_frame;
+    logic [95:0]  st_p1, st_p2, st_tri, st_noise;
+    logic [127:0] st_dmc;
+    logic [7:0]   load_val;
+
+    // The length counters' table, for this cycle's write to whichever
+    // channel's length register.
+    always_comb
+        case (wdata[7:3])
+            5'h00: load_val = 8'd10;  5'h01: load_val = 8'd254; 5'h02: load_val = 8'd20;  5'h03: load_val = 8'd2;
+            5'h04: load_val = 8'd40;  5'h05: load_val = 8'd4;   5'h06: load_val = 8'd80;  5'h07: load_val = 8'd6;
+            5'h08: load_val = 8'd160; 5'h09: load_val = 8'd8;   5'h0A: load_val = 8'd60;  5'h0B: load_val = 8'd10;
+            5'h0C: load_val = 8'd14;  5'h0D: load_val = 8'd12;  5'h0E: load_val = 8'd26;  5'h0F: load_val = 8'd14;
+            5'h10: load_val = 8'd12;  5'h11: load_val = 8'd16;  5'h12: load_val = 8'd24;  5'h13: load_val = 8'd18;
+            5'h14: load_val = 8'd48;  5'h15: load_val = 8'd20;  5'h16: load_val = 8'd96;  5'h17: load_val = 8'd22;
+            5'h18: load_val = 8'd192; 5'h19: load_val = 8'd24;  5'h1A: load_val = 8'd72;  5'h1B: load_val = 8'd26;
+            5'h1C: load_val = 8'd16;  5'h1D: load_val = 8'd28;  5'h1E: load_val = 8'd32;  default: load_val = 8'd30;
+        endcase
+
+    wire st_wr = SAVE_STATE && st_we;
 
     // The first cycle's tick, on the clock after reset.
     logic t0, tick, w, rd, done;
@@ -68,55 +89,46 @@ module apu_2a03 (
     apu_frame u_frame (
         .clk, .rst, .ce(tick), .odd, .wr(w && addr == 5'h17), .wdata(wdata[7:6]), .rd_status(rd),
         .quarter, .half, .irq_flag(frame_irq_flag), .irq(frame_irq), .irq_now(frame_irq_now),
-        .st(st_frame), .st_we(st_we && st_addr == 5'd0), .st_wdata);
+        .st(st_frame), .st_we(st_wr && st_addr == 5'd0), .st_wdata);
 
     apu_pulse #(.CH1(1'b1)) u_pulse1 (
         .clk, .rst, .ce(tick), .wr(w && addr[4:2] == 3'd0), .wreg(addr[1:0]), .wdata,
-        .wr_en, .en_val(wdata[0]), .quarter, .half, .active(a1), .out(pulse1),
-        .st_addr(st_addr[1:0] - 2'd1), .st_rdata(st_p1),
-        .st_we(st_we && st_addr >= 5'd1 && st_addr <= 5'd3), .st_wdata);
+        .wr_en, .en_val(wdata[0]), .load_val, .quarter, .half, .active(a1), .out(pulse1),
+        .st_addr(st_addr[1:0] - 2'd1), .st_words(st_p1),
+        .st_we(st_wr && st_addr >= 5'd1 && st_addr <= 5'd3), .st_wdata);
 
     apu_pulse #(.CH1(1'b0)) u_pulse2 (
         .clk, .rst, .ce(tick), .wr(w && addr[4:2] == 3'd1), .wreg(addr[1:0]), .wdata,
-        .wr_en, .en_val(wdata[1]), .quarter, .half, .active(a2), .out(pulse2),
-        .st_addr(2'(st_addr - 5'd4)), .st_rdata(st_p2),
-        .st_we(st_we && st_addr >= 5'd4 && st_addr <= 5'd6), .st_wdata);
+        .wr_en, .en_val(wdata[1]), .load_val, .quarter, .half, .active(a2), .out(pulse2),
+        .st_addr(2'(st_addr - 5'd4)), .st_words(st_p2),
+        .st_we(st_wr && st_addr >= 5'd4 && st_addr <= 5'd6), .st_wdata);
 
     apu_triangle u_triangle (
         .clk, .rst, .ce(tick), .wr(w && addr[4:2] == 3'd2), .wreg(addr[1:0]), .wdata,
-        .wr_en, .en_val(wdata[2]), .quarter, .half, .active(at), .out(triangle),
-        .st_addr(2'(st_addr - 5'd7)), .st_rdata(st_tri),
-        .st_we(st_we && st_addr >= 5'd7 && st_addr <= 5'd9), .st_wdata);
+        .wr_en, .en_val(wdata[2]), .load_val, .quarter, .half, .active(at), .out(triangle),
+        .st_addr(2'(st_addr - 5'd7)), .st_words(st_tri),
+        .st_we(st_wr && st_addr >= 5'd7 && st_addr <= 5'd9), .st_wdata);
 
     apu_noise u_noise (
         .clk, .rst, .ce(tick), .wr(w && addr[4:2] == 3'd3), .wreg(addr[1:0]), .wdata,
-        .wr_en, .en_val(wdata[3]), .quarter, .half, .active(an), .out(noise),
-        .st_addr(2'(st_addr - 5'd10)), .st_rdata(st_noise),
-        .st_we(st_we && st_addr >= 5'd10 && st_addr <= 5'd12), .st_wdata);
+        .wr_en, .en_val(wdata[3]), .load_val, .quarter, .half, .active(an), .out(noise),
+        .st_addr(2'(st_addr - 5'd10)), .st_words(st_noise),
+        .st_we(st_wr && st_addr >= 5'd10 && st_addr <= 5'd12), .st_wdata);
 
     apu_dmc u_dmc (
         .clk, .rst, .ce(tick), .odd, .wr(w && addr[4:2] == 3'd4), .wreg(addr[1:0]), .wdata,
         .wr_en, .en_val(wdata[4]), .dma_done(done), .dma_data, .dma_req, .dma_cancel, .dma_addr,
         .active(ad), .irq(dmc_irq), .irq_now(dmc_irq_now), .out(dmc),
-        .st_addr(2'(st_addr - 5'd13)), .st_rdata(st_dmc),
-        .st_we(st_we && st_addr >= 5'd13 && st_addr <= 5'd16), .st_wdata);
+        .st_addr(2'(st_addr - 5'd13)), .st_words(st_dmc),
+        .st_we(st_wr && st_addr >= 5'd13 && st_addr <= 5'd16), .st_wdata);
 
     assign status = {dmc_irq, frame_irq_flag, 1'b0, ad, an, at, a2, a1};
     assign irq_n  = !(frame_irq_now || dmc_irq_now);
 
+    // Save-state reads: one registered select of the 17 words.
+    logic [17*32-1:0] words;
+    assign words = {st_dmc, st_noise, st_tri, st_p2, st_p1, st_frame};
+
     always_ff @(posedge clk)
-        if (st_addr == 5'd0)
-            st_rdata <= st_frame;
-        else if (st_addr <= 5'd3)
-            st_rdata <= st_p1;
-        else if (st_addr <= 5'd6)
-            st_rdata <= st_p2;
-        else if (st_addr <= 5'd9)
-            st_rdata <= st_tri;
-        else if (st_addr <= 5'd12)
-            st_rdata <= st_noise;
-        else if (st_addr <= 5'd16)
-            st_rdata <= st_dmc;
-        else
-            st_rdata <= '0;
+        st_rdata <= SAVE_STATE && st_addr <= 5'd16 ? words[32*st_addr +: 32] : '0;
 endmodule

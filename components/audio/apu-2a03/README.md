@@ -4,7 +4,7 @@ The NES's 2A03 audio processing unit (NTSC), cycle-exact: two pulse channels wit
 
 Module `apu_2a03` (the folder name can't start a module name), built from `apu_frame`, `apu_pulse`, `apu_triangle`, `apu_noise`, `apu_dmc`, `apu_length` and `apu_envelope`.
 
-Module `apu_mixer` mixes the levels as the 2A03's output does, nonlinearly, with the NESdev wiki's formulas: `95.52 / (8128 / (p1 + p2) + 100)` for the pulses and `163.67 / (24329 / (3t + 2n + d) + 100)` for the rest. It's two tables that `tools/gen_mixer.py` generates, and gives a registered 16-bit unsigned sum, 0 for silence and 65,518 at most. A test checks the RTL is the script's, and another checks it against the formulas, computed separately, to within 1.
+Module `apu_mixer` mixes the levels as the 2A03's output does, nonlinearly, with the NESdev wiki's formulas: `95.52 / (8128 / (p1 + p2) + 100)` for the pulses and `163.67 / (24329 / (3t + 2n + d) + 100)` for the rest. It's two tables that `tools/gen_mixer.py` generates, as block RAM ROMs whose addresses are taken on the falling edge (on the GW2AR-18 a block RAM's address needs more hold than a short path from a register gives). The 16-bit unsigned sum, 0 for silence and 65,518 at most, follows the levels by one to two clocks. A test checks the RTL is the script's, and another checks it against the formulas, computed separately, to within 1.
 
 ## Timing
 
@@ -32,6 +32,12 @@ Module `apu_mixer` mixes the levels as the 2A03's output does, nonlinearly, with
 | `pulse1`, `pulse2`, `triangle`, `noise` | out | 4 | Channel levels, 0-15 |
 | `dmc` | out | 7 | The DMC's level, 0-127 |
 | `st_addr`, `st_rdata`, `st_we`, `st_wdata` | | 5, 32, 1, 32 | Save-state port (below) |
+
+## Parameters
+
+| Parameter | Default | Meaning |
+| --- | --- | --- |
+| `SAVE_STATE` | 1 | 0 leaves out the save-state port's logic: writes do nothing and reads give 0. For a board short of logic: the port costs about 800 LUTs on a GW2A |
 
 ## Save state
 

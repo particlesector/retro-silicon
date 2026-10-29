@@ -35,6 +35,7 @@ Every component with state has a save-state port, so a system can save and resto
 - A component's state covers every register and internal memory that affects its behaviour, mid-operation included (the CPU saves mid-instruction). Memories outside it, such as a console's RAM, belong to the system that owns them.
 - Unused bits read 0. Each component's README lists its words.
 - Registered reads keep the port on block RAM, so a memory can be part of the state.
+- A component may take a `SAVE_STATE` parameter, 1 by default: 0 leaves out the port's logic (writes do nothing, reads give 0), for a board short of logic. The port's cost is mostly a multiplexer in front of every state bit and the read selection: on a GW2A, about 35-42% of the PPU's and APU's LUTs.
 
 ## Parameters
 

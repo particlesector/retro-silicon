@@ -23,7 +23,8 @@
 //   3: bits 1-0 phase, 4-2 cycle, 6-5 interrupt source, then interrupt go and
 //      snapshot, IRQ and NMI samples, NMI pending, NMI vector
 module cpu_6502 #(
-    parameter bit DECIMAL = 1'b1  // 0 for the NES's 2A03
+    parameter bit DECIMAL    = 1'b1,  // 0 for the NES's 2A03
+    parameter bit SAVE_STATE = 1'b1   // 0 leaves out the save-state port's logic: writes do nothing, reads give 0
 ) (
     input  logic        clk,
     input  logic        rst,      // synchronous; the CPU runs its reset sequence after it falls
@@ -787,7 +788,7 @@ module cpu_6502 #(
             end
         end
 
-        if (st_we)
+        if (SAVE_STATE && st_we)
             case (st_addr)
                 2'd0: {a, x, y, s} <= st_wdata;
                 2'd1: {pc, ad} <= st_wdata;
@@ -819,11 +820,14 @@ module cpu_6502 #(
         end
     end
 
-    always_ff @(posedge clk)
+    always_ff @(posedge clk) begin
         case (st_addr)
             2'd0:    st_rdata <= {a, x, y, s};
             2'd1:    st_rdata <= {pc, ad};
             2'd2:    st_rdata <= {ir, dl, bal, fn, fv, fd, fi, fz, fc, page_x, rc};
             default: st_rdata <= {19'b0, nmi_vec, nmi_pend, nmi_r, irq_r, int_snap, int_go, int_src, t, phase};
         endcase
+        if (!SAVE_STATE)
+            st_rdata <= '0;
+    end
 endmodule

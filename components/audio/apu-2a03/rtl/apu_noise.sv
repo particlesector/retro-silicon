@@ -10,16 +10,19 @@ module apu_noise (
     input  logic       ce,
     input  logic       wr,       // a write to $400C-$400F this cycle
     input  logic [1:0] wreg,
-    input  logic [7:0] wdata,
+    /* verilator lint_off UNUSEDSIGNAL */
+    input  logic [7:0] wdata,    // bit 6 is in none of its registers
+    /* verilator lint_on UNUSEDSIGNAL */
     input  logic       wr_en,    // $4015 written
     input  logic       en_val,
+    input  logic [7:0]  load_val,  // the length table's value for this cycle's write
     input  logic       quarter,
     input  logic       half,
     output logic       active,
     output logic [3:0] out,
     // Save state: 3 words
     input  logic [1:0]  st_addr,
-    output logic [31:0] st_rdata,
+    output logic [95:0] st_words,  // all its save-state words, word 0 in bits 31-0
     input  logic        st_we,
     input  logic [31:0] st_wdata
 );
@@ -38,7 +41,7 @@ module apu_noise (
     apu_length u_len (
         .clk, .rst, .ce,
         .wr_halt(wr && wreg == 2'd0), .halt_val(wdata[5]),
-        .wr_load(wr && wreg == 2'd3), .load_idx(wdata[7:3]),
+        .wr_load(wr && wreg == 2'd3), .load_val,
         .wr_en, .en_val, .half, .active(len_active), .active_next(len_next), .halt,
         .st(len_st), .st_we(st_we && st_addr == 2'd2), .st_wdata(st_wdata[26:0]));
 
@@ -60,12 +63,7 @@ module apu_noise (
     assign active = len_active;
     assign out    = (!lfsr[0] && len_active) ? level : 4'd0;
 
-    always_comb
-        case (st_addr)
-            2'd0:    st_rdata = {lfsr, mode, period[11:0], 4'b0};
-            2'd1:    st_rdata = {timer, 6'b0, env_st};
-            default: st_rdata = {5'b0, len_st};
-        endcase
+    assign st_words = {{5'b0, len_st}, {timer, 6'b0, env_st}, {lfsr, mode, period[11:0], 4'b0}};
 
     logic [11:0] w_period, n_timer;
     logic        w_mode;
