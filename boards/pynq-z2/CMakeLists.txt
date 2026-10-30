@@ -3,6 +3,10 @@
 # Board tops: a system plus this board's pins. Linted with or without the tools.
 rs_component(pynq_echo_top RTL rtl/pynq_echo_top.sv DEPENDS uart_echo)
 rs_component(pynq_shell_ram_top RTL rtl/pynq_shell_ram_top.sv DEPENDS shell_ram)
+rs_component(ps7_hp0 RTL ../xilinx/rtl/ps7_hp0.sv
+             LINT ${PROJECT_SOURCE_DIR}/boards/xilinx/lint/xilinx_prims.sv)
+rs_component(pynq_shell_ddr_top RTL rtl/pynq_shell_ddr_top.sv DEPENDS shell_axi ps7_hp0
+             LINT ${PROJECT_SOURCE_DIR}/boards/xilinx/lint/xilinx_prims.sv)
 rs_component(tmds_phy_xc7 RTL ../xilinx/rtl/tmds_phy_xc7.sv
              LINT ${PROJECT_SOURCE_DIR}/boards/xilinx/lint/xilinx_prims.sv)
 rs_component(pynq_nes_top RTL rtl/pynq_nes_top.sv DEPENDS nes_bram tmds_phy_xc7
@@ -19,6 +23,10 @@ rs_board_bitstream(pynq_uart_echo BUILD ${build} VENDOR xilinx COMPONENT pynq_ec
 get_property(shell_ram_id GLOBAL PROPERTY RS_SHELL_RAM_BUILD_ID)
 rs_board_bitstream(pynq_shell_ram BUILD ${build} VENDOR xilinx COMPONENT pynq_shell_ram_top CST pins.xdc
                    PARAMS BUILD_ID=${shell_ram_id})
+get_property(shell_axi_id GLOBAL PROPERTY RS_SHELL_AXI_BUILD_ID)
+# The DDR3 through HP0: the DDR must be set up over JTAG first (rig-run does).
+rs_board_bitstream(pynq_shell_ddr BUILD ${build} VENDOR xilinx COMPONENT pynq_shell_ddr_top CST pins.xdc
+                   PARAMS BUILD_ID=${shell_axi_id})
 get_property(nes_bram_id GLOBAL PROPERTY RS_NES_BRAM_BUILD_ID)
 # The NES makes its own clocks (rtl/pynq_nes_top.sv): 37.125 MHz for the
 # system, 74.25 MHz for the HDMI pixels and 371.25 MHz for their serializers.

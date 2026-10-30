@@ -18,8 +18,12 @@ settings, the PHY's command-slave ratio, the controller's queue tuning) are as
 those tools set them for DDR3 on comparable boards: they're marked "as AMD's
 tools set it" below.
 
---tcl writes an OpenOCD script (procs ps7_ddr3_init and ps7_ddr3_check) to
-run with the core halted; --list prints the writes. --compare decodes another
+--tcl writes an OpenOCD script (procs ps7_ddr3_init and ps7_ddr3_check) for
+a target with access to the system bus: the DAP's AHB access port (a mem_ap
+target, so the cores can be left alone) or a halted core. ps7_ddr3_init
+leaves DDR that's already running alone (changing its clock under a running
+controller hangs the bus) and only redoes the fabric's part; --list prints
+the writes. --compare decodes another
 init file's DDR table (one of AMD's generated ps7_init files, for a board with
 the same parameters) and prints where it differs, as a check of this code:
 it's read, never copied.
@@ -72,6 +76,9 @@ class Seq:
     def wait_us(self, us, note=""):
         self.ops.append(("wait", 0, 0, us, note))
 
+    def section(self, name):
+        self.ops.append(("section", 0, 0, 0, name))
+
 
 def build(b):
     d, brd = b["dram"], b["board"]
@@ -86,6 +93,7 @@ def build(b):
     lanes = 2 if half else 4
     t_wr = ck(d["t_wr_ns"])
     s = Seq()
+    s.section("ddr")
     s.write(SLCR + 0x008, 0xDF0D, 0xFFFF, "SLCR_UNLOCK")
 
     # ---- The DDR clock (UG585: Clock Operating Frequencies, PLLs) ----
@@ -274,6 +282,8 @@ def build(b):
     s.poll(DDRC + 0x054, 0x7, "mode_sts_reg: normal operation")
 
     # ---- The fabric: level shifters both ways, resets released ----
+    s.section("fabric")
+    s.write(SLCR + 0x008, 0xDF0D, 0xFFFF, "SLCR_UNLOCK")
     s.reg(SLCR + 0x900, "LVL_SHFTR_EN: all", (0xF, 3, 0))
     s.write(SLCR + 0x240, 0x0, note="FPGA_RST_CTRL: released")
     s.write(SLCR + 0x004, 0x767B, 0xFFFF, "SLCR_LOCK")
@@ -295,16 +305,25 @@ def tcl(seq, f_mhz, source):
            "    }",
            "    error \"ps7: timed out waiting for $what\"",
            "}", "",
-           "proc ps7_ddr3_init {} {"]
+           ]
     for op, addr, mask, value, note in seq.ops:
-        if op == "write":
+        if op == "section":
+            if out[-1] != "":
+                out += ["}", ""]
+            out.append(f"proc ps7_{note} {{}} {{")
+        elif op == "write":
             out.append(f"    ps7_mask_write 0x{addr:08X} 0x{mask:08X} 0x{value:08X} ;# {note}")
         elif op == "poll":
             out.append(f"    ps7_mask_poll 0x{addr:08X} 0x{mask:08X} {{{note}}}")
         else:
             out.append(f"    sleep {max(1, value // 1000)} ;# {note}")
     out += ["}", "",
-            "# A quick check from the core: a pattern written across the DDR reads back.",
+            "# The DDR, unless it's already running (mode_sts normal), then the fabric's way to it.",
+            "proc ps7_ddr3_init {} {",
+            "    if {([read_memory 0xF8006054 32 1] & 7) != 1} { ps7_ddr }",
+            "    ps7_fabric",
+            "}", "",
+            "# A quick check: a pattern written across the DDR reads back.",
             "proc ps7_ddr3_check {} {",
             "    set bad 0",
             "    foreach a {0x00100000 0x01000000 0x08000000 0x10000000 0x1FFFFF00} {",

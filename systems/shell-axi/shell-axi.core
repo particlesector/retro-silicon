@@ -1,0 +1,35 @@
+CAPI=2:
+# SPDX-License-Identifier: Apache-2.0
+name: retro-silicon:system:shell-axi:0.1.0
+description: Test shell with an 8 MB window of an AXI slave's memory on its bus, for testing memory behind a processor
+
+filesets:
+  rtl:
+    files:
+      - rtl/shell_axi.sv
+    file_type: systemVerilogSource
+    depend:
+      - retro-silicon:common:por
+      - retro-silicon:debug:test-shell
+      - retro-silicon:memory:axi-bridge
+
+targets:
+  # Parameters go on lint only, as in every component core.
+  default: &default
+    filesets: [rtl]
+    toplevel: shell_axi
+  lint:
+    <<: *default
+    parameters: [CLKS_PER_BIT]
+    default_tool: verilator
+    tools:
+      verilator:
+        mode: lint-only
+        verilator_options: [-Wall]
+
+parameters:
+  CLKS_PER_BIT:
+    datatype: int
+    default: 18
+    paramtype: vlogparam
+    description: Clock frequency divided by the baud rate

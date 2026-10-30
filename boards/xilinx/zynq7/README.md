@@ -17,7 +17,7 @@ boards/xilinx/zynq7/ps7_ddr3.py boards/pynq-z2/ps/ddr3.toml --tcl ddr3.tcl   # a
 boards/xilinx/zynq7/ps7_ddr3.py boards/pynq-z2/ps/ddr3.toml --list           # the writes, annotated
 ```
 
-The OpenOCD script has `ps7_ddr3_init` and `ps7_ddr3_check` (a pattern across the DDR, from the core); run them with the core halted, as JTAG boot leaves it.
+The OpenOCD script has `ps7_ddr3_init` and `ps7_ddr3_check` (a pattern across the DDR). Run them on a target that reaches the system bus: best the DAP's AHB access port (a `mem_ap` target on AP 0), which leaves the cores alone, or a halted core. `ps7_ddr3_init` leaves DDR that's already running alone and only redoes the fabric's part: changing the DDR clock under a running controller hangs the bus, and a core waiting on it then can't be debugged until the PS is reset (the SLCR's `PSS_RST_CTRL`, written through the AHB port, recovers it).
 
 A few values the manual leaves to AMD's tools (the I/O drive and slew settings, which it says only those tools compute, the PHY's command slave ratio, the controller's queue tuning and ODT) are as AMD's tools set them for DDR3 on comparable boards, read from their generated files for facts. `--compare` decodes such a file and lists where this code differs: for the Zybo's DDR3 at the same speed, every timing, mode, address-map, PHY and clock register matches, and only the board-delay-dependent training values (and the power-saving I/O modes those tools set after training) differ.
 
@@ -25,4 +25,4 @@ Silicon revision 3 (the PYNQ-Z2's: `PS_VERSION` 3), DDR3 at 1.5 V.
 
 ## Status
 
-On the PYNQ-Z2 (Oct 30), over JTAG with OpenOCD: the controller reaches normal operation, all three training steps finish without a timeout, and a pattern written at five places across the 512 MB reads back from the core.
+On the PYNQ-Z2 (Oct 30), over JTAG with OpenOCD: the controller reaches normal operation, all three training steps finish without a timeout, and a pattern written at five places across the 512 MB reads back. From the fabric, through HP0 (`systems/shell-axi`), the harness's SDRAM test passes on 8 MB with the same CRC as the Tang Nano 20K's SDRAM.

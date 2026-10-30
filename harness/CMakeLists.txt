@@ -13,6 +13,8 @@ get_property(shell_ram_id GLOBAL PROPERTY RS_SHELL_RAM_BUILD_ID)
 string(REPLACE "32'h" "0x" shell_ram_id_c ${shell_ram_id})
 get_property(shell_sdram_id GLOBAL PROPERTY RS_SHELL_SDRAM_BUILD_ID)
 string(REPLACE "32'h" "0x" shell_sdram_id_c ${shell_sdram_id})
+get_property(shell_axi_id GLOBAL PROPERTY RS_SHELL_AXI_BUILD_ID)
+string(REPLACE "32'h" "0x" shell_axi_id_c ${shell_axi_id})
 get_property(nes_id GLOBAL PROPERTY RS_NES_BUILD_ID)
 string(REPLACE "32'h" "0x" nes_id_c ${nes_id})
 get_property(nes_bram_id GLOBAL PROPERTY RS_NES_BRAM_BUILD_ID)
@@ -23,6 +25,7 @@ target_link_libraries(rs_sim_link PUBLIC rs_harness)
 rs_verilate(rs_sim_link COMPONENT uart_echo PREFIX Vuart_echo_sim PARAMS CLKS_PER_BIT=18)
 rs_verilate(rs_sim_link COMPONENT shell_ram PREFIX Vshell_ram_sim PARAMS CLKS_PER_BIT=18 BUILD_ID=${shell_ram_id})
 rs_verilate(rs_sim_link COMPONENT shell_sdram PREFIX Vshell_sdram_sim PARAMS CLKS_PER_BIT=18 BUILD_ID=${shell_sdram_id})
+rs_verilate(rs_sim_link COMPONENT shell_axi PREFIX Vshell_axi_sim PARAMS CLKS_PER_BIT=18 BUILD_ID=${shell_axi_id})
 rs_verilate(rs_sim_link COMPONENT nes_sdram PREFIX Vnes_sim PARAMS CLKS_PER_BIT=18 BUILD_ID=${nes_id})
 # The NES as the Tang Console 138K runs it: block RAM, and a 50 MHz clock's
 # rates (1.515 Mbaud, and the dot rate at 189/1760 of the clock).
@@ -35,10 +38,12 @@ rs_verilate(rs_sim_link COMPONENT nes_sdram PREFIX Vnes_hdmi_sim
 # The same without the display, for running ROMs whose CHR ROM is in the SDRAM.
 rs_verilate(rs_sim_link COMPONENT nes_sdram PREFIX Vnes_ext_sim
             PARAMS CLKS_PER_BIT=31 IDLE_CLKS=464063 FREQ_MHZ=47 DOT_NUM=14 DOT_DEN=121 CHR_EXT=1 BUILD_ID=${nes_id})
-target_include_directories(rs_sim_link PRIVATE ${PROJECT_SOURCE_DIR}/components/memory/sdram/sim)
+target_include_directories(rs_sim_link PRIVATE ${PROJECT_SOURCE_DIR}/components/memory/sdram/sim
+                                               ${PROJECT_SOURCE_DIR}/components/memory/axi-bridge/sim)
 # The build IDs the models and bitstreams report, for runners to check.
 target_compile_definitions(rs_sim_link PUBLIC RS_SHELL_RAM_BUILD_ID=${shell_ram_id_c}
                                               RS_SHELL_SDRAM_BUILD_ID=${shell_sdram_id_c}
+                                              RS_SHELL_AXI_BUILD_ID=${shell_axi_id_c}
                                               RS_NES_BUILD_ID=${nes_id_c}
                                               RS_NES_BRAM_BUILD_ID=${nes_bram_id_c})
 

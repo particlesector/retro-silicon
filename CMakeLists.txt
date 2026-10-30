@@ -44,6 +44,7 @@ add_subdirectory(components/video/ppu-2c02)
 add_subdirectory(systems/uart-echo)
 add_subdirectory(systems/shell-ram)
 add_subdirectory(systems/shell-sdram)
+add_subdirectory(systems/shell-axi)
 add_subdirectory(systems/nes)
 rs_write_components(${CMAKE_BINARY_DIR}/components.json)
 add_subdirectory(boards/tang-nano-20k)
@@ -55,7 +56,7 @@ find_program(RS_FUSESOC fusesoc)
 if(RS_FUSESOC)
     # Checks every .core parses and its dependencies resolve, then lints the
     # system through FuseSoC the way a library user would.
-    foreach(system uart-echo shell-ram shell-sdram nes)
+    foreach(system uart-echo shell-ram shell-sdram shell-axi nes)
         add_test(NAME "fusesoc lint ${system}"
                  COMMAND ${RS_FUSESOC} --cores-root ${PROJECT_SOURCE_DIR} run
                          --build-root ${CMAKE_CURRENT_BINARY_DIR}/fusesoc --target lint

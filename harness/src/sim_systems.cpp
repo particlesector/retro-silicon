@@ -6,7 +6,9 @@
 #include "Vnes_ext_sim.h"
 #include "Vnes_hdmi_sim.h"
 #include "Vnes_sim.h"
+#include "Vshell_axi_sim.h"
 #include "Vshell_sdram_sim.h"
+#include "axi_memory_model.hpp"
 #include "sdram_model.hpp"
 #include "Vuart_echo_sim.h"
 
@@ -51,6 +53,28 @@ public:
 private:
     V m_;
     SdramModel sdram_;
+};
+
+// A system with an AXI master's ports (memory/axi-bridge's), with the AXI
+// memory model on them: 8 MB from 0x10000000, as shell_axi's window.
+template <class V> class WithAxiMemory : public SimModel {
+public:
+    bool tick(bool rx) override {
+        m_.uart_rx = rx;
+        m_.axi_ready = 1;
+        mem_.drive(m_);
+        m_.clk = 0;
+        m_.eval();
+        mem_.sample(m_);
+        m_.clk = 1;
+        m_.eval();
+        mem_.after_edge();
+        return m_.uart_tx;
+    }
+
+private:
+    V m_;
+    rs::AxiMemoryModel mem_{0x10000000, 8 << 20, 1};
 };
 
 // The NES as the Tang Nano 20K runs it with HDMI: the system at 46.40625 MHz
@@ -111,6 +135,10 @@ std::unique_ptr<SimLink> make_shell_ram_sim() {
 
 std::unique_ptr<SimLink> make_shell_sdram_sim() {
     return std::make_unique<SimLink>(std::make_unique<WithSdram<Vshell_sdram_sim>>(), SimLink::kClksPerBit, 64);
+}
+
+std::unique_ptr<SimLink> make_shell_axi_sim() {
+    return std::make_unique<SimLink>(std::make_unique<WithAxiMemory<Vshell_axi_sim>>(), SimLink::kClksPerBit, 64);
 }
 
 std::unique_ptr<SimLink> make_nes_sim() { return std::make_unique<SimLink>(std::make_unique<WithSdram<Vnes_sim>>(), SimLink::kClksPerBit, 64); }
