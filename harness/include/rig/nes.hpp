@@ -28,7 +28,12 @@ constexpr uint32_t kLineCrcs = 0x05000000;
 constexpr uint32_t kCapture = 0x05001000;
 constexpr uint32_t kSaveBuffer = 0x06000000;
 constexpr uint32_t kInputScript = 0x07000000;  // the input player's script, 512 entries of 4 bytes
-constexpr size_t kSaveStateBytes = 21024;   // what the save-state controller walks
+constexpr uint32_t kChr = 0x08000000;    // all of CHR in block RAM, unbanked
+// CHR ROM too big for CHR's block RAM, on a board that can (kChrExt): in the
+// board's memory from here, up to 256 KB, laid out by chr_ext_offset.
+constexpr size_t kChrExtBase = 0x400000;
+constexpr size_t kChrExtMax = 0x40000;
+constexpr size_t kSaveStateBytes = 21052;   // what the save-state controller walks
 
 constexpr int kWidth = 256, kHeight = 240;
 constexpr int kPpuStateWords = 101;
@@ -46,7 +51,9 @@ enum Reg : uint32_t {
     kFrames = 0x20,     // 4 bytes, read-only: frames ended since reset
     kFrameCrc = 0x24,   // 4 bytes, read-only: CRC-32 of the last whole frame
     kCrcFrame = 0x28,   // 4 bytes, read-only: ...and its index
-    kCart = 0x2C,       // bit 0 vertical mirroring, bit 1 CHR is RAM
+    kCart = 0x2C,       // bit 0 vertical mirroring, bit 1 CHR is RAM, bit 2 there's PRG RAM,
+                        // bit 3 CHR ROM is in the board's memory
+    kMapper = 0x2D,     // the iNES mapper number
     kCapFrame = 0x30,   // 4 bytes: the frame to capture
     kCapLine = 0x34,    // the line to capture
     kCapEn = 0x35,      // bit 0: capture
@@ -67,6 +74,10 @@ enum Reg : uint32_t {
     kLive1 = 0x64,      // controller 1's buttons when the player is off
     kLive2 = 0x65,      // controller 2's
     kPads = 0x68,       // 2 bytes, read-only: the buttons the console sees
+    kChrMask = 0x70,    // 3 bytes: CHR address mask (CHR size - 1)
+    kChrBits = 0x74,    // read-only: CHR holds 2^this bytes
+    kMemBits = 0x75,    // read-only: the board's memory, for PRG ROM, holds 2^this bytes
+    kChrExt = 0x76,     // read-only: bit 0, CHR ROM can come from the board's memory
 };
 
 enum Status : uint8_t {
@@ -85,6 +96,10 @@ struct Video {
     uint32_t crc = 0;
     uint16_t shown = 0, late = 0, overrun = 0;
 };
+
+// Where CHR ROM byte `a` goes from kChrExtBase: each 16-byte tile's planes
+// interleaved, row r of plane p at 2r + p, so a 32-bit word holds two rows.
+size_t chr_ext_offset(size_t a);
 
 // A frame as the PPU outputs it: 256 x 240 values, {emphasis BGR, colour}.
 using Frame = std::vector<uint16_t>;
@@ -115,9 +130,15 @@ public:
     // override and the capture; uploads the ROM (PRG to the board's memory,
     // checked with the shell's CRC; CHR, or clears CHR RAM), sets the
     // mirroring, and clears RAM, PRG RAM, nametables and OAM, as MesenCE
-    // powers up. Returns
-    // an error message, or nothing. Mapper 0 only, for now.
-    std::optional<std::string> load(const NesRom& rom);
+    // powers up. Returns an error message, or nothing.
+    // CHR ROM goes in the board's memory if it's too big for CHR's block RAM,
+    // or with `chr_ext` set, if the system can take it from there.
+    std::optional<std::string> load(const NesRom& rom, bool chr_ext = false);
+    // Why this system can't run the ROM (an unsupported mapper or a size it
+    // has no room for), or nothing if it can.
+    std::optional<std::string> unsupported(const NesRom& rom);
+    // The system can take CHR ROM from the board's memory.
+    bool chr_ext();
     void set_vector(std::optional<uint16_t> pc);
     // The input player: plays `script` (frames in order, one entry a frame at
     // most, 512 at most) from reset; an empty one turns the player off.
@@ -194,7 +215,7 @@ struct RomCheck {
 // same frame; its audio CRC32 (the APU's levels through to that point) must
 // match the other backend's. Its notes carry the ROM's text report, if it has one.
 TestResult rom_test(Link& link, const RomCheck& check, const NesRom& rom, uint32_t frames,
-                    std::optional<uint32_t> build_id = std::nullopt);
+                    std::optional<uint32_t> build_id = std::nullopt, bool chr_ext = false);
 
 // A save-state round trip. The ROM runs uninterrupted from power-up to frame
 // `frames`; then again, saved at the first frame boundary after

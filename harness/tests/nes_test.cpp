@@ -4,6 +4,7 @@
 #include <algorithm>
 #include <filesystem>
 #include <fstream>
+#include <iomanip>
 #include <iterator>
 #include <map>
 #include <sstream>
@@ -76,16 +77,21 @@ namespace {
 
 // Runs a ROM in the sim to its golden frame: it must pass its own check and
 // show MesenCE's frame. `bram` runs it as the Tang Console 138K does.
-void matches_mesen(const std::string& id, bool bram = false) {
+enum class Sim { kDefault, kBram, kExt };
+
+void matches_mesen(const std::string& id, Sim sim = Sim::kDefault) {
     auto [g, rom] = golden_rom(id);
-    auto link = bram ? rig::make_nes_bram_sim() : rig::make_nes_sim();
+    bool bram = sim == Sim::kBram;
+    auto link = bram ? rig::make_nes_bram_sim() : sim == Sim::kExt ? rig::make_nes_ext_sim() : rig::make_nes_sim();
     auto r = rig::nes::rom_test(*link, g.check, rom, g.frames, bram ? RS_NES_BRAM_BUILD_ID : RS_NES_BUILD_ID);
     INFO(r.detail << " / " << r.notes);
     CHECK(r.passed);
     CHECK(r.crc32 == g.crc);
     // The APU's levels through to that frame: the board's must match.
     auto audio = rig::nes::load_golden_audio(RS_NES_AUDIO_GOLDEN);
-    REQUIRE(audio.count(id));
+    if (!audio.count(id) && r.audio_crc32)
+        FAIL("no audio CRC for " << id << " in nes_audio_crc32.txt; the sim's: " << id << " " << g.frames << " 0x"
+                                 << std::hex << std::setw(8) << std::setfill('0') << *r.audio_crc32);
     CHECK(r.audio_crc32 == audio[id]);
 }
 
@@ -97,7 +103,12 @@ void matches_mesen(const std::string& id, bool bram = false) {
 // The same on block RAM at a 50 MHz clock's rates, as the Tang Console 138K
 // runs it: a few ROMs whose timing is the most sensitive.
 #define MATCHES_MESEN_BRAM(id) \
-    TEST_CASE(id " matches MesenCE's frame on block RAM at 50 MHz") { matches_mesen(id, true); }
+    TEST_CASE(id " matches MesenCE's frame on block RAM at 50 MHz") { matches_mesen(id, Sim::kBram); }
+
+// The same as the Tang Nano 20K runs it, with CHR ROM bigger than CHR's
+// block RAM in the SDRAM.
+#define MATCHES_MESEN_EXT(id) \
+    TEST_CASE(id " matches MesenCE's frame with its CHR ROM in the SDRAM") { matches_mesen(id, Sim::kExt); }
 
 MATCHES_MESEN_BRAM("oam_read")
 MATCHES_MESEN_BRAM("ppu_vbl_nmi-10")
@@ -109,6 +120,19 @@ TEST_CASE("a save-state round trip gives the uninterrupted run's frames, trace a
         auto [g, rom] = golden_rom(id);
         auto link = rig::make_nes_sim();
         auto r = rig::nes::state_test(*link, rom, g.frames / 3, g.frames, RS_NES_BUILD_ID);
+        INFO(id << ": " << r.detail << " / " << r.notes);
+        CHECK(r.passed);
+        CHECK(r.crc32 == g.crc);
+    }
+}
+
+TEST_CASE("a save-state round trip keeps the mapper's state: MMC3 mid-IRQ test, MMC1 mid-probe") {
+    // mmc3_irq-4 times IRQs to the scanline; Holy Mapperel probes MMC1's
+    // banks in its first frames.
+    for (auto [id, at] : {std::pair{"mmc3_irq-4", 40u}, std::pair{"mapperel-mmc1-cr8k", 30u}}) {
+        auto [g, rom] = golden_rom(id);
+        auto link = rig::make_nes_sim();
+        auto r = rig::nes::state_test(*link, rom, at, g.frames, RS_NES_BUILD_ID);
         INFO(id << ": " << r.detail << " / " << r.notes);
         CHECK(r.passed);
         CHECK(r.crc32 == g.crc);
@@ -243,6 +267,48 @@ MATCHES_MESEN("blargg_apu-09")
 MATCHES_MESEN("blargg_apu-10")
 MATCHES_MESEN("blargg_apu-11")
 
+// The all-in-one blargg ROMs, on MMC1, and Holy Mapperel's mapper checks on
+// the cartridges whose CHR fits this system's 8 KB of CHR block RAM.
+MATCHES_MESEN("instr_test-official")
+MATCHES_MESEN("cpu_interrupts")
+MATCHES_MESEN("ppu_vbl_nmi")
+MATCHES_MESEN("apu_test")
+MATCHES_MESEN("mapperel-nrom")
+MATCHES_MESEN("mapperel-unrom")
+MATCHES_MESEN("mapperel-aorom")
+MATCHES_MESEN("mapperel-mmc1-cr8k")
+MATCHES_MESEN("mapperel-mmc1-p512k")
+MATCHES_MESEN("mapperel-mmc3-cr8k")
+// blargg's MMC3 IRQ tests, the older and the newer, for revision B.
+MATCHES_MESEN("mmc3_irq-1")
+MATCHES_MESEN("mmc3_irq-2")
+MATCHES_MESEN("mmc3_irq-3")
+MATCHES_MESEN("mmc3_irq-4")
+MATCHES_MESEN("mmc3_irq-6")
+MATCHES_MESEN("mmc3_test-1")
+MATCHES_MESEN("mmc3_test-2")
+MATCHES_MESEN("mmc3_test-3")
+MATCHES_MESEN("mmc3_test-5")
+MATCHES_MESEN_EXT("mapperel-cnrom")
+MATCHES_MESEN_EXT("mapperel-mmc1-c32k")
+MATCHES_MESEN_EXT("mapperel-mmc1-c128k")
+MATCHES_MESEN_EXT("mapperel-mmc3-c256k")
+// And ROMs with 8 KB of CHR ROM put there on purpose: the same frames as
+// from block RAM.
+#define MATCHES_MESEN_IN_SDRAM(id) \
+    TEST_CASE(id " matches MesenCE's frame with its 8 KB of CHR ROM read from the SDRAM") { \
+        auto [g, rom] = golden_rom(id); \
+        auto link = rig::make_nes_ext_sim(); \
+        auto r = rig::nes::rom_test(*link, g.check, rom, g.frames, RS_NES_BUILD_ID, true); \
+        INFO(r.detail << " / " << r.notes); \
+        CHECK(r.passed); \
+        CHECK(r.crc32 == g.crc); \
+    }
+MATCHES_MESEN_IN_SDRAM("oam_read")
+MATCHES_MESEN_IN_SDRAM("thwaite-play")
+MATCHES_MESEN_IN_SDRAM("ppu_open_bus")
+MATCHES_MESEN_IN_SDRAM("mapperel-nrom")
+
 TEST_CASE("nestest passes on the sim backend with the CPU bench's trace CRC") {
     std::string path = std::string(RS_TESTROMS) + "/nes-test-roms/other/nestest.nes";
     if (!std::filesystem::exists(path)) SKIP(path << " not found: run testroms/fetch.py");
@@ -318,3 +384,5 @@ TEST_CASE("the controllers shift out their buttons, then 1s, and give A while st
     CHECK(ram[0x20] == 0x41);  // strobed: A, again and again
     CHECK(ram[0x21] == 0x41);
 }
+
+

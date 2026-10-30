@@ -6,20 +6,19 @@
 #include <random>
 
 #include "Vbram_mem.h"
+#include "Vbram_mem_banked.h"
 
 namespace {
 
-void tick(Vbram_mem& m) {
+template <class M> void tick(M& m) {
     m.clk = 0;
     m.eval();
     m.clk = 1;
     m.eval();
 }
 
-} // namespace
-
-TEST_CASE("bram_mem: random reads and writes match a byte array, one clock each, wrapping at 2^AW") {
-    Vbram_mem m;
+template <class M> void random_access() {
+    M m;
     m.rst = 1;
     m.req = 0;
     tick(m);
@@ -53,4 +52,14 @@ TEST_CASE("bram_mem: random reads and writes match a byte array, one clock each,
         for (int g = static_cast<int>(rng() % 3); g > 0; g--) tick(m);
     }
     CHECK(reads > 10'000);
+}
+
+} // namespace
+
+TEST_CASE("bram_mem: random reads and writes match a byte array, one clock each, wrapping at 2^AW") {
+    random_access<Vbram_mem>();
+}
+
+TEST_CASE("bram_mem in banks (four of 256 bytes) behaves the same") {
+    random_access<Vbram_mem_banked>();
 }

@@ -34,7 +34,7 @@ id = "instr_test-official"
 source = "nes-test-roms"
 path = "instr_test-v5/official_only.nes"
 sha256 = "589b8835deb5cbc69618dac193a3dbd675540f7f2794e2d2a92e97beb8abc3cb"
-needs = "cpu"
+needs = "cpu, mmc1"
 covers = "Every official opcode's result and flags"
 check = "blargg"
 frames = 1870
@@ -44,7 +44,7 @@ id = "instr_test-all"
 source = "nes-test-roms"
 path = "instr_test-v5/all_instrs.nes"
 sha256 = "353870c157242e3d428ef7387109deaee0d2e158bdb432ab9aae4e657072c785"
-needs = "cpu, unstable opcodes"
+needs = "cpu, unstable opcodes, mmc1"
 covers = "Every opcode, including the unofficial ones (cpu/6502 stops at the unstable ones for now)"
 check = "blargg"
 frames = 2400
@@ -54,7 +54,7 @@ id = "instr_timing"
 source = "nes-test-roms"
 path = "instr_timing/instr_timing.nes"
 sha256 = "3d1bca14266f1e25b75a34ddd29c9df1ce9c6d990c8663a218f72e7861660fb0"
-needs = "cpu, apu frame counter"
+needs = "cpu, apu frame counter, unstable opcodes, mmc1"
 covers = "Cycle count of every instruction, and branch timing"
 check = "blargg"
 frames = 1305
@@ -64,7 +64,7 @@ id = "instr_misc"
 source = "nes-test-roms"
 path = "instr_misc/instr_misc.nes"
 sha256 = "b6762e20a285216304dfd2b5e1f192459354b23a5e48b2f5f9fb7cb0dac51243"
-needs = "cpu, apu"
+needs = "cpu, ppu, apu, unstable opcodes, mmc1"
 covers = "Address wraparound, branch edge cases, dummy reads"
 check = "blargg"
 frames = 230
@@ -74,7 +74,7 @@ id = "cpu_interrupts"
 source = "nes-test-roms"
 path = "cpu_interrupts_v2/cpu_interrupts.nes"
 sha256 = "ccbac4e824eb96ecfe8b82d331a083be186eb6776aa57e25c52251eaf7df9c4f"
-needs = "cpu, ppu, apu"
+needs = "cpu, ppu, apu, mmc1"
 covers = "IRQ, NMI and BRK timing and how they interact"
 check = "blargg"
 frames = 730
@@ -543,7 +543,7 @@ id = "apu_test"
 source = "nes-test-roms"
 path = "apu_test/apu_test.nes"
 sha256 = "00d4722bae1c82a14528dd3220462d3fb9ce4b14b8cec996619dea23e07fef0a"
-needs = "cpu, apu"
+needs = "cpu, apu, mmc1"
 covers = "Length counters, frame counter, IRQ flag, DMC rates"
 check = "blargg"
 frames = 306
@@ -982,3 +982,209 @@ covers = "Concentration Room with Start pressed twice: its story, then a game bo
 check = "frame"
 frames = 570
 input = [[100, 8], [110, 0], [200, 8], [210, 0]]
+
+# Damian Yerrick's Holy Mapperel: one test program, in a ROM for each of many
+# mappers and sizes (the ROMs differ only in their headers). It writes its
+# results on screen. zlib licence. The build writes every ROM into testroms/.
+
+[sources.holy-mapperel]
+git = "https://github.com/pinobatch/holy-mapperel"
+commit = "4e48b59432b5f1d3c011ac830e40ddf7ed5bbc61"
+build = ["make", "testroms/M1_P128K_C128K.nes"]
+license = "Zlib"
+credit = "Holy Mapperel by Damian Yerrick"
+
+[[rom]]
+id = "mmc3_irq-1"
+source = "nes-test-roms"
+path = "mmc3_irq_tests/1.Clocking.nes"
+sha256 = "699d0644bd2b6ff4c9ba598c9609f4a3da536594b6363585b2caf82cf337ac88"
+needs = "cpu, ppu, mmc3"
+covers = "MMC3's IRQ counter: clocking, reload and $C001"
+check = "zeropage"
+result = 0xF8
+frames = 20
+
+[[rom]]
+id = "mmc3_irq-2"
+source = "nes-test-roms"
+path = "mmc3_irq_tests/2.Details.nes"
+sha256 = "0af95238b69806c072c28aed0fa8ad812157dfee928a6c9cea8d5420268baade"
+needs = "cpu, ppu, mmc3"
+covers = "MMC3's IRQ counter: details of reload, disable and acknowledge"
+check = "zeropage"
+result = 0xF8
+frames = 25
+
+[[rom]]
+id = "mmc3_irq-3"
+source = "nes-test-roms"
+path = "mmc3_irq_tests/3.A12_clocking.nes"
+sha256 = "3b936e1079f12bdc5e55aa82def017ddc76fd79e3879ff0478d41ca718302e7c"
+needs = "cpu, ppu, mmc3"
+covers = "MMC3's IRQ counter clocked by the PPU's A12 through $2006"
+check = "zeropage"
+result = 0xF8
+frames = 20
+
+[[rom]]
+id = "mmc3_irq-4"
+source = "nes-test-roms"
+path = "mmc3_irq_tests/4.Scanline_timing.nes"
+sha256 = "3369e8f73a96ec97918c6c9440804a369a19256c57df91e62881555f21528894"
+needs = "cpu, ppu, mmc3"
+covers = "MMC3's IRQ timing on the scanline, to the PPU clock"
+check = "zeropage"
+result = 0xF8
+frames = 80
+
+[[rom]]
+id = "mmc3_irq-6"
+source = "nes-test-roms"
+path = "mmc3_irq_tests/6.MMC3_rev_B.nes"
+sha256 = "d8a2af42cdafe8046b36109e6f6ff71ca0d7f5d62c7d5953e0aa1d1828a86088"
+needs = "cpu, ppu, mmc3"
+covers = "MMC3 revision B's IRQ: a reload of 0 fires on every clock"
+check = "zeropage"
+result = 0xF8
+frames = 20
+
+[[rom]]
+id = "mmc3_test-1"
+source = "nes-test-roms"
+path = "mmc3_test_2/rom_singles/1-clocking.nes"
+sha256 = "b06d8a97f0ca672be92c841d6af7d1e650696e86e9cc0cf6eeb90d67a6ab499b"
+needs = "cpu, ppu, mmc3"
+covers = "MMC3's IRQ counter clocking; its result is on screen only (MMC3's PRG RAM is off)"
+check = "frame"
+frames = 120
+
+[[rom]]
+id = "mmc3_test-2"
+source = "nes-test-roms"
+path = "mmc3_test_2/rom_singles/2-details.nes"
+sha256 = "e7af16c764b119e60effb7b1cfeec3dd8e2e657041283693cdbbeedb4081f1e3"
+needs = "cpu, ppu, mmc3"
+covers = "MMC3's IRQ counter details; its result is on screen only (MMC3's PRG RAM is off)"
+check = "frame"
+frames = 120
+
+[[rom]]
+id = "mmc3_test-3"
+source = "nes-test-roms"
+path = "mmc3_test_2/rom_singles/3-A12_clocking.nes"
+sha256 = "b375f15b9f9d372c8084b9c50928be9e41a3ac48be831ce82d203c18891433ad"
+needs = "cpu, ppu, mmc3"
+covers = "MMC3's IRQ counter clocked by A12; its result is on screen only (MMC3's PRG RAM is off)"
+check = "frame"
+frames = 120
+
+[[rom]]
+id = "mmc3_test-5"
+source = "nes-test-roms"
+path = "mmc3_test_2/rom_singles/5-MMC3.nes"
+sha256 = "e0824123d60b83868dac1189b28250f8e10376a01be468a5a74aa59937cb32ca"
+needs = "cpu, ppu, mmc3"
+covers = "MMC3 revision B's IRQ behaviour; its result is on screen only (MMC3's PRG RAM is off)"
+check = "frame"
+frames = 120
+
+[[rom]]
+id = "mapperel-nrom"
+source = "holy-mapperel"
+path = "testroms/M0_P32K_C8K_V.nes"
+sha256 = "56d155857d83c403a73059b02cddf02bbba593a95b5b9d6707dd6bdd14601eea"
+needs = "cpu, ppu"
+covers = "NROM with 8 KB of CHR ROM: the baseline"
+check = "frame"
+frames = 300
+
+[[rom]]
+id = "mapperel-cnrom"
+source = "holy-mapperel"
+path = "testroms/M3_P32K_C32K_H.nes"
+sha256 = "16db0ae5bcaab1d4188b6e2bdb8d26d567a391f2582f3d59c110299425ace2f1"
+needs = "cpu, ppu, cnrom"
+covers = "CNROM: 32 KB of CHR ROM in 8 KB banks"
+check = "frame"
+frames = 300
+
+[[rom]]
+id = "mapperel-unrom"
+source = "holy-mapperel"
+path = "testroms/M2_P128K_CR8K_V.nes"
+sha256 = "8c15084fe33a719944d3a4c8d56a3440d59309d31063210c45449346196daab2"
+needs = "cpu, ppu, uxrom"
+covers = "UxROM: 128 KB of PRG ROM in 16 KB banks, CHR RAM"
+check = "frame"
+frames = 300
+
+[[rom]]
+id = "mapperel-aorom"
+source = "holy-mapperel"
+path = "testroms/M7_P128K_CR8K.nes"
+sha256 = "354f717c3c8f2ab744ad10abd401fc20a985b04e4d6980e29aa64035493191db"
+needs = "cpu, ppu, axrom"
+covers = "AxROM: 128 KB of PRG ROM in 32 KB banks, one-screen mirroring"
+check = "frame"
+frames = 300
+
+[[rom]]
+id = "mapperel-mmc1-cr8k"
+source = "holy-mapperel"
+path = "testroms/M1_P128K_CR8K.nes"
+sha256 = "b8934110286011a8981d2e4a01d6a7dab4e4f85bfacb389c3022de08ee010006"
+needs = "cpu, ppu, mmc1"
+covers = "MMC1 (SNROM-like): 128 KB of PRG ROM, CHR RAM"
+check = "frame"
+frames = 300
+
+[[rom]]
+id = "mapperel-mmc1-c32k"
+source = "holy-mapperel"
+path = "testroms/M1_P128K_C32K.nes"
+sha256 = "415d6284859c21d5777fe5a40d2fcfd8723d6dc337dc7ddf15ee103ee476d98f"
+needs = "cpu, ppu, mmc1"
+covers = "MMC1: 128 KB of PRG ROM, 32 KB of CHR ROM in 4 KB banks"
+check = "frame"
+frames = 300
+
+[[rom]]
+id = "mapperel-mmc1-c128k"
+source = "holy-mapperel"
+path = "testroms/M1_P128K_C128K.nes"
+sha256 = "2a2a96a207d664af07c0baf9a29bf72aa6ea6e5887f56de46b8ecda374bc6d68"
+needs = "cpu, ppu, mmc1"
+covers = "MMC1 (SxROM): 128 KB each of PRG and CHR ROM"
+check = "frame"
+frames = 300
+
+[[rom]]
+id = "mapperel-mmc1-p512k"
+source = "holy-mapperel"
+path = "testroms/M1_P512K_CR8K_S8K.nes"
+sha256 = "09a054de16624ecf9495cd16bed2c931108c1e3b674811d5cd6f154777a5ee70"
+needs = "cpu, ppu, mmc1"
+covers = "MMC1 (SUROM): 512 KB of PRG ROM, CHR RAM, battery-backed PRG RAM"
+check = "frame"
+frames = 300
+
+[[rom]]
+id = "mapperel-mmc3-cr8k"
+source = "holy-mapperel"
+path = "testroms/M4_P128K_CR8K.nes"
+sha256 = "5bddb766df9514718c6cccffef0e0ce222b02b6ab46aa5839463ab4bdb68557a"
+needs = "cpu, ppu, mmc3"
+covers = "MMC3: 128 KB of PRG ROM, CHR RAM"
+check = "frame"
+frames = 300
+
+[[rom]]
+id = "mapperel-mmc3-c256k"
+source = "holy-mapperel"
+path = "testroms/M4_P256K_C256K.nes"
+sha256 = "52e9bc2fd3572e7da251bc30a44468572a4fcd47ec1b63fe9498dec17dae97da"
+needs = "cpu, ppu, mmc3"
+covers = "MMC3 (TxROM): 256 KB each of PRG and CHR ROM"
+check = "frame"
+frames = 300

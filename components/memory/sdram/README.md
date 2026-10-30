@@ -23,7 +23,9 @@ Module `sdram_ctrl`.
 | `wdata` | in | 8 | Byte to write |
 | `ack` | out | 1 | One-cycle pulse: the access is done |
 | `rdata` | out | 8 | Byte read, valid with `ack` |
+| `rdata_w` | out | 32 | The whole word the byte was read from, byte lanes in address order, valid with `ack` |
 | `ready` | out | 1 | The power-up sequence is done |
+| `ref_hold` | in | 1 | While high, a due refresh waits (for a user with a deadline; let it through often enough) |
 | `sd_cke`, `sd_cs_n`, `sd_ras_n`, `sd_cas_n`, `sd_we_n` | out | 1 | SDRAM control |
 | `sd_ba`, `sd_addr`, `sd_dqm` | out | 2, 11, 4 | SDRAM bank, address, byte masks |
 | `sd_dq_o`, `sd_dq_oe`, `sd_dq_i` | out, out, in | 32, 1, 32 | SDRAM data, split for the board's tristate buffer |

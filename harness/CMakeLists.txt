@@ -27,11 +27,14 @@ rs_verilate(rs_sim_link COMPONENT nes_sdram PREFIX Vnes_sim PARAMS CLKS_PER_BIT=
 # The NES as the Tang Console 138K runs it: block RAM, and a 50 MHz clock's
 # rates (1.515 Mbaud, and the dot rate at 189/1760 of the clock).
 rs_verilate(rs_sim_link COMPONENT nes_bram PREFIX Vnes_bram_sim
-            PARAMS CLKS_PER_BIT=33 IDLE_CLKS=500000 DOT_NUM=189 DOT_DEN=1760 BUILD_ID=${nes_bram_id})
+            PARAMS CLKS_PER_BIT=33 IDLE_CLKS=500000 DOT_NUM=189 DOT_DEN=1760 CHR_AW=17 BUILD_ID=${nes_bram_id})
 # The NES as the Tang Nano 20K runs it with HDMI (boards/tang-nano-20k/rtl/nes_top.sv's
 # parameters): 46.40625 MHz, and keeping pace with its display.
 rs_verilate(rs_sim_link COMPONENT nes_sdram PREFIX Vnes_hdmi_sim
-            PARAMS CLKS_PER_BIT=31 IDLE_CLKS=464063 FREQ_MHZ=47 DOT_NUM=14 DOT_DEN=121 PACE=1 BUILD_ID=${nes_id})
+            PARAMS CLKS_PER_BIT=31 IDLE_CLKS=464063 FREQ_MHZ=47 DOT_NUM=14 DOT_DEN=121 PACE=1 CHR_EXT=1 BUILD_ID=${nes_id})
+# The same without the display, for running ROMs whose CHR ROM is in the SDRAM.
+rs_verilate(rs_sim_link COMPONENT nes_sdram PREFIX Vnes_ext_sim
+            PARAMS CLKS_PER_BIT=31 IDLE_CLKS=464063 FREQ_MHZ=47 DOT_NUM=14 DOT_DEN=121 CHR_EXT=1 BUILD_ID=${nes_id})
 target_include_directories(rs_sim_link PRIVATE ${PROJECT_SOURCE_DIR}/components/memory/sdram/sim)
 # The build IDs the models and bitstreams report, for runners to check.
 target_compile_definitions(rs_sim_link PUBLIC RS_SHELL_RAM_BUILD_ID=${shell_ram_id_c}

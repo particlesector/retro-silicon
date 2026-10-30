@@ -18,6 +18,9 @@ struct NesRom {
     bool nes2 = false;        // the header is NES 2.0
     Mirroring mirroring = Mirroring::kHorizontal;
     bool battery = false;     // PRG RAM is battery-backed
+    // NES 2.0 only (0 in an iNES 1.0 header, which doesn't say): bytes of
+    // PRG RAM, battery-backed PRG RAM and CHR RAM.
+    size_t prg_ram = 0, prg_nvram = 0, chr_ram = 0;
     std::vector<uint8_t> prg;
     std::vector<uint8_t> chr; // empty when the board has CHR RAM
 };

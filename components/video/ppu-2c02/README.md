@@ -23,6 +23,8 @@ Module `ppu_2c02` (the folder name can't start a module name), and `ppu_2c02_rgb
 | `reg_rdata` | out | 8 | The last read's data |
 | `nmi_n` | out | 1 | NMI, active low: VBL and PPUCTRL bit 7 |
 | `vaddr`, `vwe`, `vwdata` | out | 14, 1, 8 | Video memory address ($0000-$3FFF) and write |
+| `vaddr_next` | out | 14 | The address `vaddr` takes at the next `ce`; final for a pattern fetch or $2007 read from the second clock after a `ce` |
+| `vread_next` | out | 1 | The next dot's read is a pattern fetch or a $2007 read: the only reads of $0000-$1FFF whose data the PPU uses |
 | `vrdata` | in | 8 | Video memory read data |
 | `pix_valid`, `pix`, `pix_x`, `pix_y` | out | 1, 9, 8, 8 | A pixel |
 | `frame_end` | out | 1 | One-clock pulse at line 240, dot 0 |

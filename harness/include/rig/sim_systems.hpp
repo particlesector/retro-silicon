@@ -28,5 +28,9 @@ std::unique_ptr<SimLink> make_nes_bram_sim();
 inline constexpr unsigned kNesHdmiClockHz = 46'406'250;
 inline constexpr int kNesHdmiClksPerBit = 31;
 std::unique_ptr<SimLink> make_nes_hdmi_sim(std::function<void(uint32_t)> on_symbol = {});
+// The Tang Nano 20K's system as make_nes_hdmi_sim() has it, CHR ROM from the
+// SDRAM included, but without the display: no pacing, and no pixel clock.
+// Reports RS_NES_BUILD_ID.
+std::unique_ptr<SimLink> make_nes_ext_sim();
 
 } // namespace rig

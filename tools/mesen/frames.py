@@ -28,13 +28,16 @@ import argparse
 import json
 import os
 import re
+import shutil
 import subprocess
 import sys
 import tomllib
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
-SUPPORTED = {"cpu", "ppu", "apu", "apu frame counter", "controllers"}  # what systems/nes has so far
+SUPPORTED = {"cpu", "ppu", "apu", "apu frame counter", "controllers",  # what systems/nes has so far
+             "uxrom", "cnrom", "axrom", "mmc1", "mmc3"}
+MAPPERS = {0, 1, 2, 3, 4, 7}  # NROM, MMC1, UxROM, CNROM, MMC3, AxROM
 MARGIN = 30                 # frames after MesenCE's result before the golden frame
 
 LUA = """
@@ -126,6 +129,9 @@ def lua_script(entries):
 def run(mesen, home, rom: Path, frames: int, dump: bool, scratch: Path, script=()):
     lua = scratch / "frames.lua"
     lua.write_text(LUA.format(want=frames, dump="true" if dump else "false", script=lua_script(script)))
+    # MesenCE keeps battery-backed RAM between runs: start each from power-up,
+    # as the core does.
+    shutil.rmtree(home / ".config" / "MesenCE" / "Saves", ignore_errors=True)
     env = dict(os.environ, HOME=str(home))
     p = subprocess.run(["xvfb-run", "-a", mesen, "--testrunner", str(rom), str(lua)],
                        capture_output=True, text=True, timeout=900, env=env)
@@ -171,8 +177,8 @@ def main():
             worst = 2
             continue
         head = path.read_bytes()[:16]
-        if (head[6] >> 4) | (head[7] & 0xF0):
-            continue  # systems/nes has NROM (mapper 0) only so far
+        if ((head[6] >> 4) | (head[7] & 0xF0)) not in MAPPERS:
+            continue
         frames = r["frames"] + MARGIN
         script = r.get("input", [])
         out = run(args.mesen, args.home, path, frames, False, scratch, script)
