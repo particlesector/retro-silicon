@@ -8,15 +8,16 @@
 # usage: build.sh -d <device> -F <family> -t <top> -c <pins.cst> [-f <MHz>] [-k NET=MHz]... [-o <outdir>] [-s <seed>] [-g NAME=VALUE]... <sources...>
 # -g sets a top-level parameter. -f is the clock constraint for any clock not
 # named by -k, which constrains one clock net (a PLL's or divider's output,
-# whose rate nextpnr doesn't work out). -s is nextpnr's placement seed
-# (default 1): nextpnr doesn't analyse hold for Gowin parts, so a placement
-# that meets timing can still fail on the chip, and a board then pins a seed
-# its tests passed with. Writes <outdir>/<top>.fs plus synth.log, pnr.log and
-# report.json (achieved fmax).
+# whose rate nextpnr doesn't work out). Placement varies with nextpnr's seed:
+# without -s the build tries seeds 1 to 8 and keeps the first that meets
+# timing; -s pins one. nextpnr doesn't analyse hold for Gowin parts, so a
+# placement that meets timing can still fail on the chip, and a board then
+# pins a seed its tests passed with. Writes <outdir>/<top>.fs plus synth.log,
+# pnr.log and report.json (achieved fmax).
 set -euo pipefail
 
 freq=27
-seed=1
+seed=""
 out=build/fpga
 params=()
 clocks=()
@@ -64,10 +65,21 @@ if (( ${#clocks[@]} )); then
   sdc=(--sdc "$out/clocks.sdc")
 fi
 
-nextpnr-himbaechel -q -l "$out/pnr.log" --seed "$seed" \
-  --json "$out/$top.json" --write "$out/$top.pnr.json" \
-  --device "$device" --vopt family="$family" --vopt cst="$cst" \
-  --freq "$freq" "${sdc[@]}" --report "$out/report.json"
+placed=""
+for s in ${seed:-1 2 3 4 5 6 7 8}; do
+  if nextpnr-himbaechel -q -l "$out/pnr.log" --seed "$s" \
+      --json "$out/$top.json" --write "$out/$top.pnr.json" \
+      --device "$device" --vopt family="$family" --vopt cst="$cst" \
+      --freq "$freq" "${sdc[@]}" --report "$out/report.json"; then
+    placed=$s
+    break
+  fi
+  # A missed timing constraint can be another seed's luck; anything else stops the build.
+  grep -q "FAIL at" "$out/pnr.log" || exit 1
+  echo "seed $s: timing failed" >&2
+done
+[[ -n $placed ]] || { echo "build.sh: no seed met timing" >&2; exit 1; }
+echo "seed $placed"
 
 # Apycula's bundled Python lacks numpy and friends; it only warns that it runs slower.
 PYTHONWARNINGS=ignore::UserWarning gowin_pack -d "$family" -o "$out/$top.fs" "$out/$top.pnr.json"
