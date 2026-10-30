@@ -81,3 +81,5 @@ blargg_apu-10 50 0x3685c37f
 blargg_apu-11 50 0x54ae4a6c
 thwaite 630 0x243b1548
 croom 630 0xa8eceb75
+thwaite-play 600 0xaa364b99
+croom-play 600 0x78069f31

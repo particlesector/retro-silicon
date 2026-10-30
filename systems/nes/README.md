@@ -4,9 +4,22 @@ The NES as far as it's built:
 - the 2A03's CPU (`cpu/6502` with `DECIMAL = 0`), its APU (`audio/apu-2a03`), and its DMC and OAM DMA;
 - the 2C02 PPU (`video/ppu-2c02`);
 - 2 KB of RAM mirrored to `$1FFF`, and 8 KB of PRG RAM at `$6000`;
-- an NROM cartridge (mapper 0): PRG ROM in the board's memory, 8 KB of CHR ROM or CHR RAM in block RAM, and horizontal or vertical nametable mirroring.
+- an NROM cartridge (mapper 0): PRG ROM in the board's memory, 8 KB of CHR ROM or CHR RAM in block RAM, and horizontal or vertical nametable mirroring;
+- two standard controllers, driven by an input player (a script of buttons by frame) or by registers, for live input.
 
-The test shell loads ROMs, runs the system and reads results, frame CRCs and whole frames. A save-state controller saves and loads the whole system. The picture goes out as HDMI at 720p. The controllers and other mappers come in later milestones; until then, reads of `$4000`-`$5FFF` other than `$4015` give open bus (the last value on the data bus), and writes there other than the APU's and `$4014` do nothing.
+The test shell loads ROMs, runs the system and reads results, frame CRCs and whole frames. A save-state controller saves and loads the whole system. The picture goes out as HDMI at 720p. Other mappers come in a later milestone. Reads of `$4000`-`$5FFF` other than `$4015`, `$4016` and `$4017` give open bus (the last value on the data bus), and writes there other than the APU's, `$4014` and `$4016` do nothing.
+
+**Controllers.** Two standard pads, as MesenCE models them:
+- While `$4016`'s bit 0, the strobe, is set, they keep loading their buttons.
+- Each read of `$4016` or `$4017` then gives the next button in bit 0, in the order A, B, Select, Start, Up, Down, Left, Right, and 1s after the eighth.
+- Bits 4-1 read 0 and bits 7-5 open bus.
+- Every read cycle counts, a DMA's repeated read included, as on the console.
+
+The buttons the pads hold change only at a frame's end, line 240, so a run's input is the same on any board and in the sim. With the input player on (register `60`), they come from the input script at `0x07000000`:
+- 512 entries of 4 bytes, {pad 1, pad 2, frame low, frame high}, in frame order;
+- at each frame's end, the next entry applies if the new frame count has reached its frame, one entry a frame at most.
+
+With it off, they come from registers `64` and `65`, for live input. The script is configuration, like the ROM: load it, then a state.
 
 **Sound.** The APU's channel levels go into the audio CRC each CPU cycle, and through `apu_mixer` and `audio/resampler` to 48 kHz PCM. That's 800 samples per 29,780.5 cycles, the average NES frame with rendering on, so 48 kHz against the 60 Hz display the NES keeps pace with. The samples come out on `a_valid` and `a_pcm`, and `nes_video` sends them as HDMI audio, the same on both channels.
 
@@ -47,7 +60,7 @@ The system stops and starts only between CPU cycles, so stopping it changes noth
 
 ## Save states
 
-`common/save-state` walks 21,016 bytes: the CPU's 4 state words, the PPU's 101, the system's own 12 (below), the APU's 17, RAM, PRG RAM, CHR and the nametable RAM, in that order, between the bus and its buffer at `0x06000000`. PRG ROM and the cartridge registers aren't part of it: load the ROM, then the state.
+`common/save-state` walks 21,024 bytes: the CPU's 4 state words, the PPU's 101, the system's own 14 (below), the APU's 17, RAM, PRG RAM, CHR and the nametable RAM, in that order, between the bus and its buffer at `0x06000000`. PRG ROM and the cartridge registers aren't part of it: load the ROM, then the state.
 
 - **Save:** write register `38` with op 1 and a new sequence number; once `39` reads the same, the buffer holds the state. If the system is running, it stops at its next frame boundary for the walk, then runs on.
 - **Load:** write the buffer, release reset, and write `38` with op 2. The system is left stopped where the state was saved; set the limits and run.
@@ -78,6 +91,8 @@ The system's own state words, at `0x04002000`:
 | 6-9 | The resampler's 4 words |
 | 10 | The PCM CRC |
 | 11 | The PCM sample count |
+| 12 | The buttons the pads hold (pad 2's in 31-24, pad 1's in 23-16), then controller 2's and 1's shift registers |
+| 13 | The input script's position (9-1), the strobe (0) |
 
 The clock-enable's phase isn't state: it only sets how many clocks pass before the next dot.
 
@@ -92,11 +107,12 @@ The clock-enable's phase isn't state: it only sets how many clocks pass before t
 | `0x03004000`–`0x030047FF` | The nametable RAM as it is, unmirrored |
 | `0x04000000`–`0x0400000F` | CPU save state, 4 words, little-endian |
 | `0x04001000`–`0x04001193` | PPU save state, 101 words (OAM is words 0-63) |
-| `0x04002000`–`0x0400202F` | The system's own state, 12 words (above) |
+| `0x04002000`–`0x04002037` | The system's own state, 14 words (above) |
 | `0x04003000`–`0x04003043` | APU save state, 17 words |
 | `0x05000000`–`0x050003BF` | CRC of each line of the last frame, 4 bytes a line; read while stopped |
 | `0x05001000`–`0x050011FF` | The captured line, 2 bytes a pixel |
 | `0x06000000`–`0x06007FFF` | The save-state buffer; while no command runs |
+| `0x07000000`–`0x070007FF` | The input script, 512 entries of 4 bytes; write-only (reads give 0). An entry is written when its byte 3 is |
 
 Anything else reads 0 and ignores writes. Multi-byte registers are little-endian. A save-state word is written when its byte 3 is written, using bytes 0-2 written before it. State writes count only while the system is held in reset or stopped between cycles, and the system's own words only out of reset.
 
@@ -130,6 +146,12 @@ Anything else reads 0 and ignores writes. Multi-byte registers are little-endian
 | `50` | 4 | The audio CRC (read-only): CRC-32 of the APU's channel levels in every CPU cycle since reset, 3 bytes a cycle: {pulse 2, pulse 1}, {noise, triangle}, the DMC's level |
 | `54` | 4 | The PCM CRC (read-only): CRC-32 of the 48 kHz samples since reset, 2 bytes each, low first |
 | `58` | 4 | How many 48 kHz samples since reset (read-only) |
+| `60` | 1 | Bit 0: the input player drives the controllers |
+| `61` | 2 | Entries in the input script, 0-512 |
+| `64` | 1 | Controller 1's buttons while the player is off (bit 0 A, B, Select, Start, Up, Down, Left, bit 7 Right) |
+| `65` | 1 | Controller 2's |
+| `66` | 2 | The input script's next entry (read-only) |
+| `68` | 2 | The buttons the pads hold, pad 1 then pad 2 (read-only) |
 
 The limits are levels: raising one lets the system run on from where it stopped. All registers are absolute, so a command the shell runs twice does no harm.
 

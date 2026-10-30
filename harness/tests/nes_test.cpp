@@ -229,6 +229,8 @@ MATCHES_MESEN("apu_mixer-noise")
 MATCHES_MESEN("apu_mixer-dmc")
 MATCHES_MESEN("thwaite")
 MATCHES_MESEN("croom")
+MATCHES_MESEN("thwaite-play")
+MATCHES_MESEN("croom-play")
 MATCHES_MESEN("blargg_apu-01")
 MATCHES_MESEN("blargg_apu-02")
 MATCHES_MESEN("blargg_apu-03")
@@ -271,3 +273,48 @@ TEST_CASE("a test after nestest on the same system isn't held by the limits nest
     CHECK(r.crc32 == g.crc);
 }
 
+
+TEST_CASE("the controllers shift out their buttons, then 1s, and give A while strobed") {
+    // A 16 KB NROM program at $C000: strobe, read $4016 and $4017 ten times
+    // each into $0300 and $0310, then two reads of $4016 with the strobe held
+    // into $0320, and again.
+    std::vector<uint8_t> code = {
+        0x78, 0xD8,                                      // sei; cld
+        0xA9, 0x01, 0x8D, 0x16, 0x40,                    // loop: lda #1; sta $4016
+        0xA9, 0x00, 0x8D, 0x16, 0x40, 0xA2, 0x00,        //   lda #0; sta $4016; ldx #0
+        0xAD, 0x16, 0x40, 0x9D, 0x00, 0x03,              // rd: lda $4016; sta $0300,x
+        0xAD, 0x17, 0x40, 0x9D, 0x10, 0x03,              //   lda $4017; sta $0310,x
+        0xE8, 0xE0, 0x0A, 0xD0, 0xEF,                    //   inx; cpx #10; bne rd
+        0xA9, 0x01, 0x8D, 0x16, 0x40,                    //   lda #1; sta $4016
+        0xAD, 0x16, 0x40, 0x8D, 0x20, 0x03,              //   lda $4016; sta $0320
+        0xAD, 0x16, 0x40, 0x8D, 0x21, 0x03,              //   lda $4016; sta $0321
+        0xA9, 0x00, 0x8D, 0x16, 0x40,                    //   lda #0; sta $4016
+        0x4C, 0x02, 0xC0};                               //   jmp loop
+    rig::NesRom rom;
+    rom.prg.assign(16384, 0xEA);
+    std::copy(code.begin(), code.end(), rom.prg.begin());
+    for (int v : {0x3FFA, 0x3FFC, 0x3FFE}) {
+        rom.prg[v] = 0x00;
+        rom.prg[v + 1] = 0xC0;
+    }
+    auto link = rig::make_nes_sim();
+    rig::shell::Client c(*link);
+    rig::nes::Console nes(c);
+    nes.hold_reset();
+    REQUIRE_FALSE(nes.load(rom));
+    const uint8_t p1 = rig::nes::kA | rig::nes::kStart | rig::nes::kDown | rig::nes::kRight;  // 0xA9
+    const uint8_t p2 = rig::nes::kB | rig::nes::kSelect | rig::nes::kLeft;                   // 0x46
+    nes.set_live_input(p1, p2);
+    nes.stop_frame(3);  // the buttons apply at a frame's end
+    nes.run();
+    nes.wait_stopped();
+    auto ram = nes.peek(0x0300, 0x22);
+    for (int i = 0; i < 10; i++) {
+        INFO("read " << i);
+        // Bits 7-5 are open bus: the address's high byte, $40.
+        CHECK(ram[i] == (0x40 | (i < 8 ? (p1 >> i) & 1 : 1)));
+        CHECK(ram[0x10 + i] == (0x40 | (i < 8 ? (p2 >> i) & 1 : 1)));
+    }
+    CHECK(ram[0x20] == 0x41);  // strobed: A, again and again
+    CHECK(ram[0x21] == 0x41);
+}

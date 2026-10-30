@@ -2,8 +2,8 @@
 // The NES, as far as it's built: the 2A03's CPU, APU and DMA, the 2C02 PPU,
 // 2 KB of RAM, 8 KB of PRG RAM at $6000, and an NROM cartridge (PRG ROM in the
 // board's memory, 8 KB of CHR ROM or RAM in block RAM, nametable mirroring by
-// a register), under the test shell, with a save-state controller. The
-// controllers come later; their registers read as open bus. The APU's channel
+// a register), and two standard controllers, under the test shell, with a
+// save-state controller. Reads of $4018-$5FFF give open bus. The APU's channel
 // levels go into the audio CRC, and through apu_mixer and audio/resampler out
 // as 48 kHz PCM (800 samples per 29,780.5 CPU cycles, the average NES frame:
 // 48 kHz against a 60 Hz display that the NES keeps pace with).
@@ -37,9 +37,10 @@
 //   0x03000000-0x03003FFF  the PPU's: CHR ($0000-$1FFF) and nametables ($2000-$3FFF);
 //                          0x03004000-0x030047FF the nametable RAM as it is, unmirrored
 //   0x04000000-0x0400000F  CPU save state; 0x04001000-0x04001193 PPU save state;
-//                          0x04002000-0x0400202F the system's own; 0x04003000-0x04003043 APU save state
+//                          0x04002000-0x04002037 the system's own; 0x04003000-0x04003043 APU save state
 //   0x05000000-0x050003BF  line CRCs of the last frame; 0x05001000-0x050011FF the captured line
 //   0x06000000-0x06007FFF  the save-state buffer
+//   0x07000000-0x070007FF  the input script: 512 entries, written only
 // LEDs (active low): led[0] a corrupt command frame, led[1] a stalled one,
 // led[2] memory ready, led[3] running, led[4] halted or late, led[5] heartbeat.
 module nes #(
@@ -104,13 +105,13 @@ module nes #(
         .crc_error, .timeout);
 
     // The regions a save state walks, in order: the CPU's, PPU's, system's and
-    // APU's state words, RAM, PRG RAM, CHR and the nametable RAM. 21,016 bytes.
+    // APU's state words, RAM, PRG RAM, CHR and the nametable RAM. 21,024 bytes.
     localparam int SS_REGIONS = 8;
     localparam logic [SS_REGIONS*32-1:0] SS_BASES = {
         32'h03004000, 32'h03000000, 32'h02006000, 32'h02000000,
         32'h04003000, 32'h04002000, 32'h04001000, 32'h04000000};
     localparam logic [SS_REGIONS*32-1:0] SS_LENS = {
-        32'd2048, 32'd8192, 32'd8192, 32'd2048, 32'd68, 32'd48, 32'd404, 32'd16};
+        32'd2048, 32'd8192, 32'd8192, 32'd2048, 32'd68, 32'd56, 32'd404, 32'd16};
 
     logic [7:0]  ss_cmd, ss_done, ss_hq;
     logic        ss_busy, ss_hold_req, ss_hold_frame, ss_ready, ss_own;
@@ -146,6 +147,7 @@ module nes #(
     wire sel_state = s_addr[31:24] == 8'h04;
     wire sel_probe = s_addr[31:24] == 8'h05;
     assign sel_ssbuf = s_addr[31:24] == 8'h06;
+    wire sel_input = s_addr[31:24] == 8'h07;
 
     // ---- Control registers ----
     logic        ctrl_run, ctrl_reset, mirror_v, chr_ram;
@@ -420,6 +422,8 @@ module nes #(
     wire c_ppu  = bus_addr[15:13] == 3'b001;  // $2000-$3FFF, 8 registers mirrored
     wire c_apu  = bus_addr[15:5] == 11'h200;  // $4000-$401F
     wire c_4015 = bus_addr == 16'h4015;
+    wire c_pad1 = bus_addr == 16'h4016;
+    wire c_pad2 = bus_addr == 16'h4017;  // reads; a write there is the APU's
     wire c_wram = bus_addr[15:13] == 3'b011;  // $6000-$7FFF
     wire c_prg  = bus_addr[15];               // $8000-$FFFF
     wire c_vec  = vec_en && bus_addr[15:1] == 15'h7FFE;
@@ -635,6 +639,87 @@ module nes #(
         end
     end
 
+    // ---- Controllers and the input player ----
+    // Two standard controllers, as MesenCE models them: while $4016's bit 0
+    // (the strobe) is set, they keep loading their buttons; each read of
+    // $4016 or $4017 then gives the next button in bit 0 (A, B, Select, Start,
+    // Up, Down, Left, Right) and 1s after the eighth. Every read cycle counts,
+    // a DMA's repeated read included, as on the console.
+    //
+    // The buttons change only at a frame's end (line 240), so a run's input
+    // is the same on any board and in the sim. With the player on, they come
+    // from the input script, entries {frame[15:0], pad 2, pad 1} in frame
+    // order: at each frame's end, the next entry applies if the new frame
+    // count has reached its frame (one entry a frame at most). Otherwise
+    // they're registers 64 and 65, for live input. The script is
+    // configuration, like the ROM: it isn't part of a save state.
+    logic        strobe, in_on;
+    logic [7:0]  sr1, sr2, live1, live2;
+    logic [15:0] pads;           // {pad 2, pad 1}, as the console sees them
+    logic [8:0]  in_idx, in_idx_n;
+    logic [9:0]  in_len;
+    logic [31:0] script[512];
+    logic [31:0] ent;
+    logic [23:0] in_stage;
+    logic        in_ack;
+    wire         pad_bit = c_pad1 ? (strobe ? pads[0] : sr1[0]) : (strobe ? pads[8] : sr2[0]);
+    wire         in_we = s_new && sel_input && s_we && !in_ack && s_addr[1:0] == 2'd3;
+
+    // The script's block RAM takes its read address on the falling edge: on
+    // the GW2AR-18 a block RAM's address needs more hold than a short path
+    // from a register gives.
+    always_ff @(negedge clk)
+        in_idx_n <= in_idx;
+
+    always_ff @(posedge clk) begin
+        if (in_we)
+            script[s_addr[10:2]] <= {s_wdata, in_stage};
+        ent <= script[in_idx_n];
+    end
+
+    always_ff @(posedge clk) begin
+        in_ack <= s_new && sel_input && !in_ack && !rst;
+        if (s_new && sel_input && s_we && !in_ack)
+            case (s_addr[1:0])
+                2'd0: in_stage[7:0]   <= s_wdata;
+                2'd1: in_stage[15:8]  <= s_wdata;
+                2'd2: in_stage[23:16] <= s_wdata;
+                default: ;
+            endcase
+        if (ce) begin
+            if (bus_we && c_pad1)
+                strobe <= bus_wdata[0];
+            if (bus_we ? c_pad1 && bus_wdata[0] : strobe) begin
+                sr1 <= pads[7:0];
+                sr2 <= pads[15:8];
+            end else if (!bus_we) begin
+                if (c_pad1)
+                    sr1 <= {1'b1, sr1[7:1]};
+                if (c_pad2)
+                    sr2 <= {1'b1, sr2[7:1]};
+            end
+        end
+        if (frame_end) begin
+            if (!in_on)
+                pads <= {live2, live1};
+            else if (10'(in_idx) < in_len && {16'b0, ent[31:16]} <= frames + 1'b1) begin
+                pads   <= ent[15:0];
+                in_idx <= in_idx + 1'b1;
+            end
+        end
+        if (st_we_sys && st_sys_w == 4'd12)
+            {pads, sr2, sr1} <= st_wdata;
+        if (st_we_sys && st_sys_w == 4'd13)
+            {in_idx, strobe} <= st_wdata[9:0];
+        if (sys_rst) begin
+            strobe <= 1'b0;
+            sr1    <= '0;
+            sr2    <= '0;
+            pads   <= '0;
+            in_idx <= '0;
+        end
+    end
+
     // ---- CPU data in, open bus and the trace CRC ----
     logic [7:0] open_bus;
 
@@ -649,8 +734,10 @@ module nes #(
             cpu_din = ppu_rdata;
         else if (c_4015)
             cpu_din = apu_status | (open_bus & 8'h20);  // bit 5 is open bus
+        else if (c_pad1 || c_pad2)
+            cpu_din = {open_bus[7:5], 4'b0, pad_bit};
         else
-            cpu_din = open_bus;  // the other APU and I/O registers, and $4020-$5FFF
+            cpu_din = open_bus;  // the other APU registers, $4018-$5FFF
 
     // Each CPU cycle goes into the trace CRC as 4 bytes: address low, address
     // high, data (read or written), flags (bit 0 write, bit 1 opcode fetch).
@@ -836,7 +923,9 @@ module nes #(
     //   4 {OAM DMA count [8] [14], DMC cancel and request waiting [13:12], in DMA,
     //      DMC dummy cycle needed, DMC abort [10:9], lead dots [8:6],
     //      cycle state [5:4], late, DMC DMA on, OAM DMA on, halt needed},
-    //   5 the audio CRC, 6-9 the resampler's words, 10 the PCM CRC, 11 the PCM sample count.
+    //   5 the audio CRC, 6-9 the resampler's words, 10 the PCM CRC, 11 the PCM sample count,
+    //   12 {pads 2 and 1, controller 2's and 1's shift registers},
+    //   13 {input script position [9:1], strobe [0]}.
     // Pipelines that drain within a few clocks of a stop (the trace CRC's
     // bytes) have drained before a save state's walk starts.
     logic [23:0] st_stage;
@@ -852,7 +941,7 @@ module nes #(
     assign st_wdata  = {s_wdata, st_stage};
     assign st_we_cpu = st_commit && st_sel == 2'd0 && s_addr[11:4] == '0;
     assign st_we_ppu = st_commit && st_sel == 2'd1 && s_addr[11:9] == '0;
-    assign st_we_sys = st_commit && st_sel == 2'd2 && s_addr[11:6] == '0 && s_addr[5:2] <= 4'd11;
+    assign st_we_sys = st_commit && st_sel == 2'd2 && s_addr[11:6] == '0 && s_addr[5:2] <= 4'd13;
     assign st_we_apu = st_commit && st_sel == 2'd3 && s_addr[11:7] == '0;
     assign st_sys_w  = s_addr[5:2];
     assign ss_hwe    = sp_issue && sel_ssbuf && s_we && !ss_busy;
@@ -869,6 +958,8 @@ module nes #(
             4'd6, 4'd7, 4'd8, 4'd9: sys_st = rs_st_rdata;
             4'd10:   sys_st = pcm_crc;
             4'd11:   sys_st = pcm_n;
+            4'd12:   sys_st = {pads, sr2, sr1};
+            4'd13:   sys_st = {22'b0, in_idx, strobe};
             default: sys_st = '0;
         endcase
 
@@ -959,6 +1050,11 @@ module nes #(
                 8'h41: vcap_frame[15:8]  <= s_wdata;
                 8'h42: vcap_frame[23:16] <= s_wdata;
                 8'h43: vcap_frame[31:24] <= s_wdata;
+                8'h60: in_on             <= s_wdata[0];
+                8'h61: in_len[7:0]       <= s_wdata;
+                8'h62: in_len[9:8]       <= s_wdata[1:0];
+                8'h64: live1             <= s_wdata;
+                8'h65: live2             <= s_wdata;
                 default: ;
             endcase
         case (r)
@@ -1035,6 +1131,15 @@ module nes #(
             8'h59:   reg_q <= pcm_n[15:8];
             8'h5A:   reg_q <= pcm_n[23:16];
             8'h5B:   reg_q <= pcm_n[31:24];
+            8'h60:   reg_q <= {7'b0, in_on};
+            8'h61:   reg_q <= in_len[7:0];
+            8'h62:   reg_q <= {6'b0, in_len[9:8]};
+            8'h64:   reg_q <= live1;
+            8'h65:   reg_q <= live2;
+            8'h66:   reg_q <= in_idx[7:0];
+            8'h67:   reg_q <= {7'b0, in_idx[8]};
+            8'h68:   reg_q <= pads[7:0];
+            8'h69:   reg_q <= pads[15:8];
             default: reg_q <= '0;
         endcase
         if (rst) begin
@@ -1051,6 +1156,10 @@ module nes #(
             ss_cmd     <= '0;
             vid_pace   <= PACE;
             vcap_frame <= '0;
+            in_on      <= 1'b0;
+            in_len     <= '0;
+            live1      <= '0;
+            live2      <= '0;
         end
     end
 
@@ -1058,10 +1167,10 @@ module nes #(
     logic       none_ack;
 
     always_ff @(posedge clk)
-        none_ack <= s_new && !(sel_sdram || sel_reg || sel_mem || sel_vram || sel_state || sel_probe || sel_ssbuf)
+        none_ack <= s_new && !(sel_sdram || sel_reg || sel_mem || sel_vram || sel_state || sel_probe || sel_ssbuf || sel_input)
                     && !none_ack && !rst;
 
-    assign s_ack = sh_sd_ack || sh_m_ack || sh_v_ack || sp_ack || reg_ack || none_ack;
+    assign s_ack = sh_sd_ack || sh_m_ack || sh_v_ack || sp_ack || reg_ack || none_ack || in_ack;
     always_comb
         if (sh_sd_ack)
             s_rdata = sd_rdata_q;

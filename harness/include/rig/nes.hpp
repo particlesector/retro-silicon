@@ -27,7 +27,8 @@ constexpr uint32_t kApuState = 0x04003000;
 constexpr uint32_t kLineCrcs = 0x05000000;
 constexpr uint32_t kCapture = 0x05001000;
 constexpr uint32_t kSaveBuffer = 0x06000000;
-constexpr size_t kSaveStateBytes = 21016;   // what the save-state controller walks
+constexpr uint32_t kInputScript = 0x07000000;  // the input player's script, 512 entries of 4 bytes
+constexpr size_t kSaveStateBytes = 21024;   // what the save-state controller walks
 
 constexpr int kWidth = 256, kHeight = 240;
 constexpr int kPpuStateWords = 101;
@@ -61,6 +62,11 @@ enum Reg : uint32_t {
     kAudioCrc = 0x50,   // 4 bytes, read-only: CRC-32 of the APU's channel levels, every CPU cycle since reset
     kPcmCrc = 0x54,     // 4 bytes, read-only: CRC-32 of the 48 kHz samples since reset, 2 bytes each, low first
     kPcmCount = 0x58,   // 4 bytes, read-only: how many samples
+    kInputOn = 0x60,    // bit 0: the input player drives the controllers
+    kInputLen = 0x61,   // 2 bytes: entries in the script
+    kLive1 = 0x64,      // controller 1's buttons when the player is off
+    kLive2 = 0x65,      // controller 2's
+    kPads = 0x68,       // 2 bytes, read-only: the buttons the console sees
 };
 
 enum Status : uint8_t {
@@ -86,6 +92,17 @@ using Frame = std::vector<uint16_t>;
 // CRC-32 of a frame as the video probe computes it: 2 bytes a pixel, low first.
 uint32_t frame_crc(const Frame& f);
 
+// Controller buttons as a byte: bit 0 A, then B, Select, Start, Up, Down,
+// Left, and bit 7 Right, the order the console reads them.
+enum Button : uint8_t { kA = 1, kB = 2, kSelect = 4, kStart = 8, kUp = 16, kDown = 32, kLeft = 64, kRight = 128 };
+
+// An input script entry: from frame `frame` on (counting frames ended since
+// reset), controller 1 holds `pad1` and controller 2 `pad2`.
+struct InputEntry {
+    uint16_t frame;
+    uint8_t pad1, pad2 = 0;
+};
+
 // systems/nes through its test shell. Every call is an absolute register write
 // or read, so the shell's retries are safe.
 class Console {
@@ -102,6 +119,11 @@ public:
     // an error message, or nothing. Mapper 0 only, for now.
     std::optional<std::string> load(const NesRom& rom);
     void set_vector(std::optional<uint16_t> pc);
+    // The input player: plays `script` (frames in order, one entry a frame at
+    // most, 512 at most) from reset; an empty one turns the player off.
+    void set_input_script(const std::vector<InputEntry>& script);
+    // The buttons while the player is off, taken at each frame's end.
+    void set_live_input(uint8_t pad1, uint8_t pad2 = 0);
     void stop_at(uint32_t cycles);
     void stop_frame(uint32_t frames);
     void run();  // releases reset and runs
@@ -162,6 +184,7 @@ struct RomCheck {
     std::string id;
     Kind kind = kBlargg;
     uint16_t result = 0;  // kZeroPage: where the ROM leaves 1 for a pass
+    std::vector<InputEntry> input;  // played from reset, if any
 };
 
 // A test ROM run from power-up until `frames` frames have ended. Passes when

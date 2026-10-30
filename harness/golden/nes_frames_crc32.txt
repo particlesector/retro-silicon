@@ -78,3 +78,5 @@ blargg_apu-10 50 0xd5f9e7ef zeropage 0xf0 nes-test-roms/blargg_apu_2005.07.30/10
 blargg_apu-11 50 0xd5f9e7ef zeropage 0xf0 nes-test-roms/blargg_apu_2005.07.30/11.len_reload_timing.nes
 thwaite 630 0x222d9416 frame - thwaite/thwaite.nes
 croom 630 0xf50af05b frame - croom/croom.nes
+thwaite-play 600 0x4f9725b0 frame - thwaite/thwaite.nes input=100:8,110:0,200:8,210:0
+croom-play 600 0x11ed9318 frame - croom/croom.nes input=100:8,110:0,200:8,210:0
