@@ -71,6 +71,12 @@ All notable changes to this project are listed here. The format follows [Keep a 
 - `systems/nes`: the APU, its IRQ and `$4015`; one DMA unit for the DMC's and OAM's DMA, as MesenCE runs them; the APU's 17 state words and the audio CRC (register `50`) in save states, now 20,992 bytes; the channel levels on `a_` ports.
 - `boards/gowin/build.sh -s` and `rs_board_bitstream(... SEED)`: a fixed placement seed. nextpnr doesn't check hold for Gowin parts, and some Tang Nano 20K placements that meet timing fail on the chip (with HDMI audio, seeds 2 and 3); its NES builds with seed 5.
 - `harness`: the audio CRC (`Console::audio_crc`, `TestResult::audio_crc32`), checked by the save-state test and against `golden/nes_audio_crc32.txt`; 34 APU and timing ROMs in the sim tests.
+- `systems/nes`: mappers (`nes_cart`): NROM, UxROM, CNROM, AxROM, MMC1 (with SUROM's 512 KB) and MMC3 (with its revision B IRQ), set up from the ROM's header by registers `2C`, `2D` and `70`, as MesenCE runs them; PRG RAM only if the ROM has it; the mapper's registers in save states, now 21,052 bytes; all of CHR's block RAM at `0x08000000`.
+- `systems/nes`: CHR ROM from the board's memory (`CHR_EXT`, the Tang Nano 20K's SDRAM), interleaved so a 32-bit word holds both planes of two rows, prefetched a dot ahead through the mapper into a two-word cache; a dot waits for memory that's behind (a PRG read, a CHR word) instead of missing it.
+- `video/ppu-2c02`: `vaddr_next` and `vread_next`, the next dot's address and whether the PPU uses its data, for memory slower than a dot.
+- `memory/sdram`: `rdata_w`, a read's whole word, and `ref_hold`, to keep a refresh out of the way.
+- `memory/bram`: `BANK_AW`, for memories built from banks (openXC7 places at most 32 KB as one). The PYNQ-Z2's NES has 256 KB of PRG ROM and 128 KB of CHR, the Tang Console 138K's 128 KB of CHR.
+- `harness`: NES 2.0 RAM sizes in `NesRom`; `Console::load` sets up the mapper and puts big CHR ROM in the board's memory; `Console::unsupported` says why a board can't run a ROM. Test ROMs: Holy Mapperel for each mapper (built from source), blargg's MMC3 IRQ tests and all-in-one MMC1 ROMs, and Holy Mapperel's larger CHR ROMs in the sim as the Tang Nano 20K runs them (`make_nes_ext_sim`).
 
 ### Changed
 
@@ -83,5 +89,7 @@ All notable changes to this project are listed here. The format follows [Keep a 
 
 ### Fixed
 
+- `tools/mesen/frames.py`: MesenCE's battery saves are cleared before each run; a ROM with battery-backed PRG RAM got a different frame the second time.
+- `testroms/manifest.toml`: blargg's all-in-one ROMs say they need MMC1, and `instr_misc` and `instr_timing` unstable opcodes.
 - `video/line-scaler`: the ring is in memories of 8 bits or fewer, so no toolchain has to use block RAM parity bits; with openXC7 a 9-bit ring lost its ninth bit (the NES's emphasis) on a PYNQ-Z2.
 - `memory/sdram`: a WRITE waits the whole of tRAS after its row opens. Its auto-precharge can start under a clock after it, so from about 40 MHz the precharge could come before tRAS.

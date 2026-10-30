@@ -20,7 +20,12 @@
 // Video memory port: `vaddr`, `vwe` and `vwdata` change only on `ce` clocks
 // and hold until the next. Memory must answer the address on `vrdata` from
 // the clock before the next `ce` through it, and perform a write once,
-// before that.
+// before that. `vaddr_next` is the address `vaddr` will take at the next
+// `ce`, for memory too slow to answer within a dot: from the second clock
+// after a `ce` (and so after that dot's register access) it's final for a
+// pattern fetch or a $2007 read, whose addresses don't depend on that dot's
+// `vrdata`. `vread_next` marks those reads (whether rendering is on or not):
+// the PPU uses no other dot's data from $0000-$1FFF.
 //
 // Pixels: pixel x of a line comes out two dots after it's drawn, which is
 // when grayscale and emphasis apply (as on the 2C02, a $2001 write changes
@@ -51,6 +56,8 @@ module ppu_2c02 #(
 
     // Video memory: pattern tables and nametables ($0000-$3EFF).
     output logic [13:0] vaddr,
+    output logic [13:0] vaddr_next,
+    output logic        vread_next,
     output logic        vwe,
     output logic [7:0]  vwdata,
     input  logic [7:0]  vrdata,
@@ -203,6 +210,7 @@ module ppu_2c02 #(
     logic        n_p1_v;
     logic [7:0]  n_p1_x, n_p1_y;
     logic [13:0] n_vaddr;
+    logic        n_vread;  // the next dot's read is one the PPU may use: a pattern fetch or a $2007 read
     logic        n_vwe;
     logic [7:0]  n_vwdata;
     logic        n_frame;
@@ -611,20 +619,25 @@ module ppu_2c02 #(
             nd = n_dot + 9'd1;
             nl = cl;
         end
+        // With rendering off (as the next dot will see it), the address is the
+        // bus's: v, as MesenCE's PPU leaves it, so a mapper watching A12 sees
+        // no fetches.
         n_vaddr = n_bus_addr;
-        if (!n_fill && !n_vwe && (nl < 9'd240 || nl == 9'd261)) begin
+        n_vread = n_fill;
+        if (!n_fill && !n_vwe && n_ren_prev && (nl < 9'd240 || nl == 9'd261)) begin
             if ((nd >= 9'd1 && nd <= 9'd256) || (nd >= 9'd321 && nd <= 9'd336)) begin
                 case (nd[2:0])
                     3'd1:    n_vaddr = nt_addr(n_v);
                     3'd3:    n_vaddr = at_addr(n_v);
-                    3'd5:    n_vaddr = {1'b0, n_tile_addr};
-                    3'd7:    n_vaddr = {1'b0, n_tile_addr | 13'd8};
+                    3'd5:    begin n_vaddr = {1'b0, n_tile_addr}; n_vread = 1'b1; end
+                    3'd7:    begin n_vaddr = {1'b0, n_tile_addr | 13'd8}; n_vread = 1'b1; end
                     default: ;
                 endcase
             end else if (nd >= 9'd257 && nd <= 9'd320) begin
                 slot = 3'((nd - 9'd257) >> 3);
                 case (3'(nd - 9'd257))
                     3'd4: begin
+                        n_vread = 1'b1;
                         sy    = sec[{slot, 2'd0}];
                         stile = sec[{slot, 2'd1}];
                         sattr = sec[{slot, 2'd2}];
@@ -635,7 +648,7 @@ module ppu_2c02 #(
                         else
                             n_vaddr = {1'b0, ctrl[3], stile, 1'b0, rr[2:0]};
                     end
-                    3'd6:    n_vaddr = {1'b0, n_sp_addr | 13'd8};
+                    3'd6:    begin n_vaddr = {1'b0, n_sp_addr | 13'd8}; n_vread = 1'b1; end
                     default: n_vaddr = nt_addr(n_v);
                 endcase
             end else if (nd == 9'd337 || nd == 9'd339)
@@ -677,6 +690,7 @@ module ppu_2c02 #(
         logic        p1_v;
         logic [7:0]  p1_x, p1_y;
         logic [13:0] vaddr;
+        logic        vread;
         logic        vwe;
         logic [7:0]  vwdata;
         logic        frame;
@@ -692,13 +706,16 @@ module ppu_2c02 #(
 
     next_t nq;
 
+    assign vaddr_next = nq.vaddr;
+    assign vread_next = nq.vread;
+
     always_ff @(posedge clk)
         nq <= {n_vbl, n_s0hit, n_ovf, n_oamaddr, n_v, n_t, n_rdbuf, n_io, n_io_age, n_odd, n_dot, n_line,
                 n_sh_lo, n_sh_hi, n_pal_prev, n_pal_cur, n_tile_pal, n_tile_lo, n_tile_hi, n_tile_addr,
                 n_oam_buf, n_sec_addr, n_in_range, n_copy_done, n_s0_added, n_s0_vis, n_ovf_cnt,
                 n_sp_addr, n_sp_attr, n_sp_x, n_sp_lo, n_sp_in, n_ren_cur, n_ren_prev, n_prevent,
                 n_rd_sm, n_wr_sm, n_ign, n_need_inc, n_upd_delay, n_bus_addr, n_fill,
-                n_p1_c, n_p1_v, n_p1_x, n_p1_y, n_vaddr, n_vwe, n_vwdata, n_frame,
+                n_p1_c, n_p1_v, n_p1_x, n_p1_y, n_vaddr, n_vread, n_vwe, n_vwdata, n_frame,
                 sec_we, sec_wa, sec_wd, pal_we, pal_wa, pal_wd, sl_we, sl_clear, sl_wa};
 
     // ---- Register access: the next state if `reg_ce` ----

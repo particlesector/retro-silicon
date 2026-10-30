@@ -3,6 +3,7 @@
 
 #include <algorithm>
 #include <chrono>
+#include <iterator>
 #include <cstdio>
 #include <fstream>
 #include <sstream>
@@ -43,13 +44,64 @@ uint32_t frame_crc(const Frame& f) {
 
 void Console::hold_reset() { put32(kCtrl, 2, 1); }
 
-std::optional<std::string> Console::load(const NesRom& rom) {
-    if (rom.mapper != 0) return "mapper " + std::to_string(rom.mapper) + " isn't supported yet";
-    if (rom.prg.size() != 16384 && rom.prg.size() != 32768)
-        return "NROM needs 16 or 32 KB of PRG, not " + std::to_string(rom.prg.size());
-    if (!rom.chr.empty() && rom.chr.size() != 8192)
-        return "NROM needs 8 KB of CHR, not " + std::to_string(rom.chr.size());
+namespace {
+
+bool pow2(size_t n) { return n && !(n & (n - 1)); }
+
+// The PRG RAM the cartridge has: what a NES 2.0 header says, or 8 KB, as
+// MesenCE gives a ROM whose iNES 1.0 header can't say.
+size_t prg_ram_size(const NesRom& rom) { return rom.nes2 ? rom.prg_ram + rom.prg_nvram : 8192; }
+
+// PRG ROM as the board's memory holds it. MesenCE takes a bank number modulo
+// the ROM's bank count, which for a size that isn't a power of 2 a mask can't
+// do: so an MMC1 ROM of such a size (blargg's 80 KB ones) goes in as 256 KB,
+// all MMC1's 16 KB banks, bank b a copy of bank b mod count. MMC1 never asks
+// for a bank counted from the end, as the other mappers' fixed banks do.
+std::vector<uint8_t> prg_image(const NesRom& rom) {
+    size_t n = rom.prg.size();
+    if (!(n & (n - 1))) return rom.prg;
+    std::vector<uint8_t> img(256 * 1024);
+    for (size_t a = 0; a < img.size(); a++) img[a] = rom.prg[(a / 16384) % (n / 16384) * 16384 + a % 16384];
+    return img;
+}
+
+} // namespace
+
+std::optional<std::string> Console::unsupported(const NesRom& rom) {
+    static const unsigned kMappers[] = {0, 1, 2, 3, 4, 7};
+    if (std::find(std::begin(kMappers), std::end(kMappers), rom.mapper) == std::end(kMappers))
+        return "mapper " + std::to_string(rom.mapper) + " isn't supported";
     if (rom.mirroring == NesRom::Mirroring::kFourScreen) return "four-screen mirroring isn't supported";
+    if (rom.prg.size() < 16384 || rom.prg.size() % 16384 ||
+        (!pow2(rom.prg.size()) && (rom.mapper != 1 || rom.prg.size() > 256 * 1024)))
+        return "PRG ROM must be a power of 2 from 16 KB (or for MMC1, 16 KB banks up to 256 KB), not " +
+               std::to_string(rom.prg.size()) + " bytes";
+    if (rom.mapper == 0 && rom.prg.size() > 32768) return "NROM has 16 or 32 KB of PRG ROM";
+    if (!rom.chr.empty() && (!pow2(rom.chr.size()) || rom.chr.size() < 8192))
+        return "CHR ROM must be a power of 2 from 8 KB, not " + std::to_string(rom.chr.size()) + " bytes";
+    if (rom.chr.empty() && rom.chr_ram > 8192) return "CHR RAM over 8 KB isn't supported";
+    if (prg_ram_size(rom) > 8192) return "PRG RAM over 8 KB isn't supported";
+    size_t mem = size_t{1} << c_.peek(kRegs + kMemBits, 1)[0];
+    size_t chr = size_t{1} << c_.peek(kRegs + kChrBits, 1)[0];
+    bool ext = rom.chr.size() > chr && chr_ext();
+    size_t prg = prg_image(rom).size();
+    if (prg > (ext ? std::min(mem, kChrExtBase) : mem))
+        return std::to_string(prg / 1024) + " KB of PRG ROM doesn't fit this board's " +
+               std::to_string(mem / 1024) + " KB";
+    if (rom.chr.size() > (ext ? kChrExtMax : chr))
+        return std::to_string(rom.chr.size() / 1024) + " KB of CHR ROM doesn't fit this board's " +
+               std::to_string(chr / 1024) + " KB";
+    return std::nullopt;
+}
+
+bool Console::chr_ext() { return c_.peek(kRegs + kChrExt, 1)[0] & 1; }
+
+size_t chr_ext_offset(size_t a) {
+    return (a & ~size_t{0xF}) | (a & 7) << 1 | (a >> 3 & 1);
+}
+
+std::optional<std::string> Console::load(const NesRom& rom, bool want_ext) {
+    if (auto e = unsupported(rom)) return e;
     // Whatever ran before may have left limits, the vector override or a
     // capture set: start from none.
     stop_at(0);
@@ -58,21 +110,37 @@ std::optional<std::string> Console::load(const NesRom& rom) {
     put32(kCapEn, 0, 1);
     set_input_script({});
     set_live_input(0, 0);
-    c_.write(kSdram, rom.prg);
+    auto prg = prg_image(rom);
+    c_.write(kSdram, prg);
     Crc32 want;
-    want.update(rom.prg);
-    uint32_t got = c_.crc(kSdram, static_cast<uint32_t>(rom.prg.size()));
+    want.update(prg);
+    uint32_t got = c_.crc(kSdram, static_cast<uint32_t>(prg.size()));
     if (got != want.value())
         return "uploaded PRG has CRC " + hex(got, 8) + ", expected " + hex(want.value(), 8);
-    put32(kPrgMask, static_cast<uint32_t>(rom.prg.size() - 1), 3);  // 16 KB mirrors into both halves
+    put32(kPrgMask, static_cast<uint32_t>(prg.size() - 1), 3);  // 16 KB mirrors into both halves
 
     bool chr_ram = rom.chr.empty();
-    put32(kCart, (rom.mirroring == NesRom::Mirroring::kVertical ? 1 : 0) | (chr_ram ? 2 : 0), 1);
+    // CHR ROM bigger than CHR's block RAM goes in the board's memory, interleaved.
+    bool ext = !chr_ram && (rom.chr.size() > (size_t{1} << c_.peek(kRegs + kChrBits, 1)[0]) || (want_ext && chr_ext()));
+    put32(kMapper, rom.mapper, 1);
+    put32(kCart, (rom.mirroring == NesRom::Mirroring::kVertical ? 1 : 0) | (chr_ram ? 2 : 0) |
+                     (prg_ram_size(rom) ? 4 : 0) | (ext ? 8 : 0), 1);
     std::vector<uint8_t> zeros(8192, 0);
     const std::vector<uint8_t>& chr = chr_ram ? zeros : rom.chr;
-    c_.write(kPpu, chr);
-    if (c_.crc(kPpu, 8192) != [&] { Crc32 c; c.update(chr); return c.value(); }())
-        return "uploaded CHR doesn't read back";
+    put32(kChrMask, static_cast<uint32_t>(chr.size() - 1), 3);
+    if (ext) {
+        std::vector<uint8_t> laid(chr.size());
+        for (size_t a = 0; a < chr.size(); a++) laid[chr_ext_offset(a)] = chr[a];
+        c_.write(kSdram + kChrExtBase, laid);
+        Crc32 want_chr;
+        want_chr.update(laid);
+        if (c_.crc(kSdram + kChrExtBase, static_cast<uint32_t>(laid.size())) != want_chr.value())
+            return "uploaded CHR doesn't read back";
+    } else {
+        c_.write(kChr, chr);
+        if (c_.crc(kChr, static_cast<uint32_t>(chr.size())) != [&] { Crc32 c; c.update(chr); return c.value(); }())
+            return "uploaded CHR doesn't read back";
+    }
     // Power-up memory, all zeros: nametables, RAM, PRG RAM and OAM.
     c_.write(kPpu + 0x2000, std::vector<uint8_t>(0x1000, 0));
     c_.write(kCpu + 0x0000, std::vector<uint8_t>(0x800, 0));
@@ -272,7 +340,7 @@ TestResult nestest(Link& link, const NesRom& rom, uint32_t cycles, std::optional
 }
 
 TestResult rom_test(Link& link, const RomCheck& check, const NesRom& rom, uint32_t frames,
-                    std::optional<uint32_t> build_id) {
+                    std::optional<uint32_t> build_id, bool chr_ext) {
     TestResult r;
     r.name = check.id;
     auto t0 = std::chrono::steady_clock::now();
@@ -299,7 +367,7 @@ TestResult rom_test(Link& link, const RomCheck& check, const NesRom& rom, uint32
                           ": the wrong bitstream is loaded");
 
         nes.hold_reset();
-        if (auto e = nes.load(rom)) return finish(*e);
+        if (auto e = nes.load(rom, chr_ext)) return finish(*e);
         r.bytes = rom.prg.size() + rom.chr.size();
         nes.set_vector(std::nullopt);
         nes.set_input_script(check.input);

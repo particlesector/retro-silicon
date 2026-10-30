@@ -65,7 +65,7 @@ module nes_top #(
     logic [9:0]  tmds0, tmds1, tmds2;
 
     nes_sdram #(.CLKS_PER_BIT(CLKS_PER_BIT), .IDLE_CLKS(464_063), .FREQ_MHZ(47), .DOT_NUM(14), .DOT_DEN(121),
-                .PACE(1'b1), .SAVE_STATE(1'b0), .BUILD_ID(BUILD_ID)) u_sys (
+                .PACE(1'b1), .SAVE_STATE(1'b0), .CHR_EXT(1'b1), .BUILD_ID(BUILD_ID)) u_sys (
         .clk(sclk), .uart_rx, .uart_tx, .led,
         .sd_cke(O_sdram_cke), .sd_cs_n(O_sdram_cs_n), .sd_ras_n(O_sdram_ras_n),
         .sd_cas_n(O_sdram_cas_n), .sd_we_n(O_sdram_wen_n), .sd_ba(O_sdram_ba),

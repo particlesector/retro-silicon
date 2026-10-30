@@ -3,7 +3,11 @@
 // the 64 Mbit chip inside the Tang Nano 20K's GW2AR-18. The user side is a byte
 // port: hold req (with addr, we, wdata) until ack, which also marks rdata valid
 // on a read; req may still be high the clock after ack. Each access opens a row and closes it again with auto-precharge, so
-// every access takes the same time unless a refresh is under way.
+// every access takes the same time unless a refresh is under way. A read's
+// whole 32-bit word comes out on rdata_w too, its byte lanes in address
+// order. While ref_hold is high, a due refresh waits, so a user with a
+// deadline can keep it out of the way; the user must let it through often
+// enough (a refresh is due every REFRESH_NS).
 //
 // The SDRAM's clock must be the inverse of clk (the board inverts it), so the
 // chip samples commands half a cycle after they're registered and its read data
@@ -23,7 +27,9 @@ module sdram_ctrl #(
     input  logic [7:0]  wdata,
     output logic        ack,          // one-cycle pulse
     output logic [7:0]  rdata,
+    output logic [31:0] rdata_w,      // the word a read's byte is in
     output logic        ready,        // the power-up sequence is done
+    input  logic        ref_hold,     // keep a due refresh waiting
 
     output logic        sd_cke,
     output logic        sd_cs_n,
@@ -145,7 +151,7 @@ module sdram_ctrl #(
                 end
             S_IDLE:
                 if (wait_n == '0) begin
-                    if (ref_due) begin
+                    if (ref_due && !ref_hold) begin
                         cmd     <= C_REFRESH;
                         wait_n  <= CW'(T_RC - 1);
                         ref_due <= 1'b0;
@@ -182,7 +188,8 @@ module sdram_ctrl #(
                 if (cl_n != '0)
                     cl_n <= cl_n - 1'b1;
                 else begin
-                    rdata <= sd_dq_i[lane*8 +: 8];
+                    rdata   <= sd_dq_i[lane*8 +: 8];
+                    rdata_w <= sd_dq_i;
                     ack   <= 1'b1;
                     state <= S_IDLE;
                 end

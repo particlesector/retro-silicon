@@ -67,8 +67,10 @@ module pynq_nes_top #(
     /* verilator lint_on UNUSEDSIGNAL */
     logic [9:0] tmds0, tmds1, tmds2;
 
-    nes_bram #(.CLKS_PER_BIT(CLKS_PER_BIT), .IDLE_CLKS(371_250), .DOT_NUM(35), .DOT_DEN(242), .MEM_AW(15), .PACE(1'b1),
-               .BUILD_ID(BUILD_ID)) u_sys (
+    // 256 KB of PRG ROM and 128 KB of CHR in 32 KB banks, the most openXC7
+    // places as one memory: 96 of the chip's 140 36 Kb block RAMs.
+    nes_bram #(.CLKS_PER_BIT(CLKS_PER_BIT), .IDLE_CLKS(371_250), .DOT_NUM(35), .DOT_DEN(242), .MEM_AW(18),
+               .CHR_AW(17), .BANK_AW(15), .PACE(1'b1), .BUILD_ID(BUILD_ID)) u_sys (
         .clk(sclk), .uart_rx, .uart_tx, .led(sys_led),
         .pclk, .tmds0, .tmds1, .tmds2);
 

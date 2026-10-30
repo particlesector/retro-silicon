@@ -3,6 +3,7 @@
 
 #include "Vshell_ram_sim.h"
 #include "Vnes_bram_sim.h"
+#include "Vnes_ext_sim.h"
 #include "Vnes_hdmi_sim.h"
 #include "Vnes_sim.h"
 #include "Vshell_sdram_sim.h"
@@ -33,6 +34,8 @@ private:
 // since the board would then fail in ways the sim can't predict.
 template <class V> class WithSdram : public SimModel {
 public:
+    explicit WithSdram(double mhz = SimLink::kClockHz / 1e6) : sdram_(mhz) {}
+
     bool tick(bool rx) override {
         m_.uart_rx = rx;
         m_.clk = 0;
@@ -47,7 +50,7 @@ public:
 
 private:
     V m_;
-    SdramModel sdram_{SimLink::kClockHz / 1e6};
+    SdramModel sdram_;
 };
 
 // The NES as the Tang Nano 20K runs it with HDMI: the system at 46.40625 MHz
@@ -111,6 +114,11 @@ std::unique_ptr<SimLink> make_shell_sdram_sim() {
 }
 
 std::unique_ptr<SimLink> make_nes_sim() { return std::make_unique<SimLink>(std::make_unique<WithSdram<Vnes_sim>>(), SimLink::kClksPerBit, 64); }
+
+std::unique_ptr<SimLink> make_nes_ext_sim() {
+    return std::make_unique<SimLink>(std::make_unique<WithSdram<Vnes_ext_sim>>(kNesHdmiClockHz / 1e6),
+                                     kNesHdmiClksPerBit, 64, kNesHdmiClockHz);
+}
 
 std::unique_ptr<SimLink> make_nes_bram_sim() {
     return std::make_unique<SimLink>(std::make_unique<Verilated<Vnes_bram_sim>>(), 33, 64, 50'000'000);

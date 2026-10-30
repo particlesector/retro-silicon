@@ -9,6 +9,8 @@ module nes_bram #(
     parameter int          DOT_NUM      = 35,
     parameter int          DOT_DEN      = 176,
     parameter int          MEM_AW       = 18,   // 256 KB
+    parameter int          CHR_AW       = 13,   // CHR: 8 KB
+    parameter int          BANK_AW      = 32,   // block RAM in banks of 2^BANK_AW bytes, if less than the size
     parameter bit          PACE         = 1'b0,
     parameter bit          SAVE_STATE   = 1'b1,
     parameter logic [31:0] BUILD_ID     = '0
@@ -27,6 +29,9 @@ module nes_bram #(
     logic        req, we, ack, ready;
     logic [22:0] addr;
     logic [7:0]  wdata, rdata;
+    /* verilator lint_off UNUSEDSIGNAL */
+    logic        ref_hold;  // block RAM has no refresh
+    /* verilator lint_on UNUSEDSIGNAL */
 
     // The picture, out through nes_video.
     logic        pix_valid, v_waiting, v_req, v_cap_t, v_crc_ok, v_crc_t;
@@ -40,10 +45,11 @@ module nes_bram #(
     por u_por (.clk, .rst);
 
     nes #(.CLKS_PER_BIT(CLKS_PER_BIT), .IDLE_CLKS(IDLE_CLKS), .DOT_NUM(DOT_NUM), .DOT_DEN(DOT_DEN),
-          .PACE(PACE), .SAVE_STATE(SAVE_STATE), .BUILD_ID(BUILD_ID)) u_nes (
+          .PACE(PACE), .SAVE_STATE(SAVE_STATE), .MEM_AW(MEM_AW), .CHR_AW(CHR_AW),
+          .CHR_BANK_AW(BANK_AW < CHR_AW ? BANK_AW : CHR_AW), .BUILD_ID(BUILD_ID)) u_nes (
         .clk, .uart_rx, .uart_tx, .led,
         .mem_req(req), .mem_we(we), .mem_addr(addr), .mem_wdata(wdata),
-        .mem_ack(ack), .mem_rdata(rdata), .mem_ready(ready),
+        .mem_ack(ack), .mem_rdata(rdata), .mem_rdata_w(32'h0), .mem_ready(ready), .mem_ref_hold(ref_hold),
         .pix_valid, .pix, .pix_x, .pix_y, .v_waiting, .v_req, .v_cap_t,
         .v_crc, .v_crc_ok, .v_crc_t, .v_shown, .v_late, .v_overrun,
         .a_valid, .a_pcm);
@@ -54,6 +60,6 @@ module nes_bram #(
         .shown(v_shown), .late(v_late), .overrun(v_overrun),
         .pclk, .tmds0, .tmds1, .tmds2);
 
-    bram_mem #(.AW(MEM_AW), .IW(23)) u_mem (
+    bram_mem #(.AW(MEM_AW), .IW(23), .BANK_AW(BANK_AW < MEM_AW ? BANK_AW : MEM_AW)) u_mem (
         .clk, .rst, .req, .we, .addr, .wdata, .ack, .rdata, .ready);
 endmodule

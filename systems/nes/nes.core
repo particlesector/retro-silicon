@@ -1,11 +1,12 @@
 CAPI=2:
 # SPDX-License-Identifier: Apache-2.0
 name: retro-silicon:system:nes:0.1.0
-description: The NES so far - CPU, PPU, APU, DMA, RAM, PRG RAM and an NROM cartridge - under the test shell, with save states; nes_sdram and nes_bram put memory behind it
+description: The NES so far - CPU, PPU, APU, DMA, RAM, and a cartridge with PRG RAM and the mappers NROM, UxROM, CNROM, AxROM, MMC1 and MMC3 - under the test shell, with save states; nes_sdram and nes_bram put memory behind it
 
 filesets:
   rtl:
     files:
+      - rtl/nes_cart.sv
       - rtl/nes.sv
       - rtl/nes_video.sv
       - rtl/nes_sdram.sv

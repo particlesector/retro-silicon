@@ -11,6 +11,7 @@ module nes_sdram #(
     parameter int          DOT_DEN      = 176,
     parameter bit          PACE         = 1'b0,
     parameter bit          SAVE_STATE   = 1'b1,
+    parameter bit          CHR_EXT      = 1'b0,  // CHR ROM from the SDRAM; needs 8 clocks a dot or more
     parameter logic [31:0] BUILD_ID     = '0
 ) (
     input  logic        clk,
@@ -39,6 +40,8 @@ module nes_sdram #(
     logic        req, we, ack, ready;
     logic [22:0] addr;
     logic [7:0]  wdata, rdata;
+    logic [31:0] rdata_w;
+    logic        ref_hold;
 
     // The picture, out through nes_video.
     logic        pix_valid, v_waiting, v_req, v_cap_t, v_crc_ok, v_crc_t;
@@ -52,10 +55,10 @@ module nes_sdram #(
     por u_por (.clk, .rst);
 
     nes #(.CLKS_PER_BIT(CLKS_PER_BIT), .IDLE_CLKS(IDLE_CLKS), .DOT_NUM(DOT_NUM), .DOT_DEN(DOT_DEN),
-          .PACE(PACE), .SAVE_STATE(SAVE_STATE), .BUILD_ID(BUILD_ID)) u_nes (
+          .PACE(PACE), .SAVE_STATE(SAVE_STATE), .CHR_EXT(CHR_EXT), .BUILD_ID(BUILD_ID)) u_nes (
         .clk, .uart_rx, .uart_tx, .led,
         .mem_req(req), .mem_we(we), .mem_addr(addr), .mem_wdata(wdata),
-        .mem_ack(ack), .mem_rdata(rdata), .mem_ready(ready),
+        .mem_ack(ack), .mem_rdata(rdata), .mem_rdata_w(rdata_w), .mem_ready(ready), .mem_ref_hold(ref_hold),
         .pix_valid, .pix, .pix_x, .pix_y, .v_waiting, .v_req, .v_cap_t,
         .v_crc, .v_crc_ok, .v_crc_t, .v_shown, .v_late, .v_overrun,
         .a_valid, .a_pcm);
@@ -66,9 +69,11 @@ module nes_sdram #(
         .shown(v_shown), .late(v_late), .overrun(v_overrun),
         .pclk, .tmds0, .tmds1, .tmds2);
 
-    sdram_ctrl #(.FREQ_MHZ(FREQ_MHZ)) u_sdram (
+    // With CHR from the SDRAM, a due refresh can wait for a few dots (see
+    // nes.sv), so it falls due twice as often as it must.
+    sdram_ctrl #(.FREQ_MHZ(FREQ_MHZ), .REFRESH_NS(CHR_EXT ? 7_800 : 15_000)) u_sdram (
         .clk, .rst,
-        .req, .we, .addr, .wdata, .ack, .rdata, .ready,
+        .req, .we, .addr, .wdata, .ack, .rdata, .rdata_w, .ready, .ref_hold,
         .sd_cke, .sd_cs_n, .sd_ras_n, .sd_cas_n, .sd_we_n, .sd_ba, .sd_addr, .sd_dqm,
         .sd_dq_o, .sd_dq_oe, .sd_dq_i);
 endmodule

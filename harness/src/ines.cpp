@@ -19,6 +19,10 @@ std::variant<NesRom, std::string> parse_ines(std::span<const uint8_t> file) {
         rom.mapper |= (file[8] & 0x0Fu) << 8;
         prg_units |= (file[9] & 0x0Fu) << 8;
         chr_units |= (file[9] & 0xF0u) << 4;
+        auto shift = [](unsigned n) -> size_t { return n ? size_t{64} << n : 0; };
+        rom.prg_ram = shift(file[10] & 0x0F);
+        rom.prg_nvram = shift(file[10] >> 4);
+        rom.chr_ram = shift(file[11] & 0x0F);
     } else if (file[7] & 0x0C) {
         // Old dumps put text in bytes 7-15; only the low mapper nibble is trustworthy.
         rom.mapper &= 0x0F;

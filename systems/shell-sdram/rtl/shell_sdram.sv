@@ -46,10 +46,14 @@ module shell_sdram #(
         .crc_error, .timeout);
 
     // The controller ignores req until its power-up sequence is done.
+    /* verilator lint_off UNUSEDSIGNAL */
+    logic [31:0] rdata_w;  // the shell reads bytes
+    /* verilator lint_on UNUSEDSIGNAL */
+
     sdram_ctrl #(.FREQ_MHZ(FREQ_MHZ)) u_sdram (
         .clk, .rst,
         .req(bus_req), .we(bus_we), .addr(bus_addr[22:0]), .wdata(bus_wdata),
-        .ack(bus_ack), .rdata(bus_rdata), .ready,
+        .ack(bus_ack), .rdata(bus_rdata), .rdata_w(rdata_w), .ready, .ref_hold(1'b0),
         .sd_cke, .sd_cs_n, .sd_ras_n, .sd_cas_n, .sd_we_n, .sd_ba, .sd_addr, .sd_dqm,
         .sd_dq_o, .sd_dq_oe, .sd_dq_i);
 

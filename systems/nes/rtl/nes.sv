@@ -1,9 +1,9 @@
 // SPDX-License-Identifier: Apache-2.0
 // The NES, as far as it's built: the 2A03's CPU, APU and DMA, the 2C02 PPU,
-// 2 KB of RAM, 8 KB of PRG RAM at $6000, and an NROM cartridge (PRG ROM in the
-// board's memory, 8 KB of CHR ROM or RAM in block RAM, nametable mirroring by
-// a register), and two standard controllers, under the test shell, with a
-// save-state controller. Reads of $4018-$5FFF give open bus. The APU's channel
+// 2 KB of RAM, a cartridge (PRG ROM in the board's memory, CHR ROM or RAM in
+// block RAM, 8 KB of PRG RAM at $6000 if it has any, and its mapper, nes_cart,
+// configured by registers from the ROM's header), and two standard
+// controllers, under the test shell, with a save-state controller. Reads of $4018-$5FFF give open bus. The APU's channel
 // levels go into the audio CRC, and through apu_mixer and audio/resampler out
 // as 48 kHz PCM (800 samples per 29,780.5 CPU cycles, the average NES frame:
 // 48 kHz against a 60 Hz display that the NES keeps pace with).
@@ -12,15 +12,23 @@
 // block RAM or anything else behind it. memory/arbiter shares it between the
 // CPU's PRG reads, first, and the shell.
 //
+// CHR ROM too big for its block RAM can come from the board's memory instead
+// (CHR_EXT, for SDRAM like the Tang Nano 20K's; see "CHR ROM from the board's
+// memory" below). Then CHR's reads go first of all, a word at a time
+// (mem_rdata_w), each a dot ahead of the PPU's fetch, with the others kept
+// out of the clocks just before one may come and refreshes held off while
+// one waits (mem_ref_hold). It needs at least 8 clocks a dot.
+//
 // Timing. The PPU runs one dot per pulse of a phase accumulator at DOT_NUM/
 // DOT_DEN of the clock: the NTSC rate exactly, on average. Each CPU cycle is
 // three dots; the CPU's PPU register access falls after the second and its
 // NMI sample after the third, as in MesenCE, and after reset the PPU runs
 // LEAD_DOTS dots before the CPU's first cycle, which lines its first opcode
 // fetch up with MesenCE's. A CPU cycle starts the clock after the last one
-// ended: its address is valid then, a PRG read goes to memory at once and must
-// be back by the cycle's end (the sticky `late` status bit records a miss),
-// and RAM is read on that first clock and written on the last.
+// ended: its address is valid then, a PRG read goes to memory at once (the
+// cycle's last dot waits for it, if memory is slow; the sticky `late` status
+// bit would record data that still missed), and RAM is read on that first
+// clock and written on the last.
 //
 // The system stops and starts only between CPU cycles, so stopping (by the
 // shell, a cycle or frame count, the video probe's capture, a save state or
@@ -34,13 +42,17 @@
 //   0x00000000-0x007FFFFF  the board's memory: PRG ROM from 0
 //   0x01000000-0x010000FF  control and status registers
 //   0x02000000-0x0200FFFF  the CPU's address space: RAM and PRG RAM; the rest reads 0
-//   0x03000000-0x03003FFF  the PPU's: CHR ($0000-$1FFF) and nametables ($2000-$3FFF);
-//                          0x03004000-0x030047FF the nametable RAM as it is, unmirrored
+//   0x03000000-0x03003FFF  the PPU's: the first 8 KB of CHR, unbanked ($0000-$1FFF), and the
+//                          nametables ($2000-$3FFF); 0x03004000-0x030047FF the nametable
+//                          RAM as it is, unmirrored
 //   0x04000000-0x0400000F  CPU save state; 0x04001000-0x04001193 PPU save state;
-//                          0x04002000-0x04002037 the system's own; 0x04003000-0x04003043 APU save state
+//                          0x04002000-0x04002053 the system's own; 0x04003000-0x04003043 APU save state
 //   0x05000000-0x050003BF  line CRCs of the last frame; 0x05001000-0x050011FF the captured line
 //   0x06000000-0x06007FFF  the save-state buffer
 //   0x07000000-0x070007FF  the input script: 512 entries, written only
+//   0x08000000-...         all of CHR in block RAM, unbanked (2^CHR_AW bytes)
+//   0x00400000-0x007FFFFF  with CHR_EXT, CHR ROM in the board's memory, each tile's
+//                          row r of plane p at byte 16 x tile + 2r + p
 // LEDs (active low): led[0] a corrupt command frame, led[1] a stalled one,
 // led[2] memory ready, led[3] running, led[4] halted or late, led[5] heartbeat.
 module nes #(
@@ -51,6 +63,10 @@ module nes #(
     parameter int          LEAD_DOTS    = 5,
     parameter bit          PACE         = 1'b0,     // keep pace with a display from reset
     parameter bit          SAVE_STATE   = 1'b1,     // 0 leaves out save states, for a board short of logic
+    parameter int          CHR_AW       = 13,       // CHR ROM or RAM: 2^CHR_AW bytes of block RAM
+    parameter int          CHR_BANK_AW  = CHR_AW,   // ...built from banks of 2^CHR_BANK_AW (see memory/bram)
+    parameter int          MEM_AW       = 23,       // the board's memory: 2^MEM_AW bytes, for PRG ROM
+    parameter bit          CHR_EXT      = 1'b0,     // CHR ROM can come from the board's memory
     parameter logic [31:0] BUILD_ID     = '0
 ) (
     input  logic        clk,
@@ -65,7 +81,9 @@ module nes #(
     output logic [7:0]  mem_wdata,
     input  logic        mem_ack,
     input  logic [7:0]  mem_rdata,
+    input  logic [31:0] mem_rdata_w,  // with CHR_EXT: a read's whole 32-bit word, byte lanes in address order
     input  logic        mem_ready,
+    output logic        mem_ref_hold, // with CHR_EXT: keep the memory's refresh away now
 
     // The picture, to nes_video, and its pacing and checks (see nes_video).
     output logic        pix_valid,
@@ -105,13 +123,14 @@ module nes #(
         .crc_error, .timeout);
 
     // The regions a save state walks, in order: the CPU's, PPU's, system's and
-    // APU's state words, RAM, PRG RAM, CHR and the nametable RAM. 21,024 bytes.
+    // APU's state words, RAM, PRG RAM, CHR RAM (the first 8 KB) and the
+    // nametable RAM. 21,052 bytes.
     localparam int SS_REGIONS = 8;
     localparam logic [SS_REGIONS*32-1:0] SS_BASES = {
         32'h03004000, 32'h03000000, 32'h02006000, 32'h02000000,
         32'h04003000, 32'h04002000, 32'h04001000, 32'h04000000};
     localparam logic [SS_REGIONS*32-1:0] SS_LENS = {
-        32'd2048, 32'd8192, 32'd8192, 32'd2048, 32'd68, 32'd56, 32'd404, 32'd16};
+        32'd2048, 32'd8192, 32'd8192, 32'd2048, 32'd68, 32'd84, 32'd404, 32'd16};
 
     logic [7:0]  ss_cmd, ss_done, ss_hq;
     logic        ss_busy, ss_hold_req, ss_hold_frame, ss_ready, ss_own;
@@ -148,10 +167,13 @@ module nes #(
     wire sel_probe = s_addr[31:24] == 8'h05;
     assign sel_ssbuf = s_addr[31:24] == 8'h06;
     wire sel_input = s_addr[31:24] == 8'h07;
+    wire sel_chr   = s_addr[31:24] == 8'h08;
 
     // ---- Control registers ----
-    logic        ctrl_run, ctrl_reset, mirror_v, chr_ram;
+    logic        ctrl_run, ctrl_reset, mirror_v, chr_ram, wram_on, chr_ext;
+    logic [7:0]  mapper;
     logic [22:0] prg_mask;
+    logic [17:0] chr_mask;
     logic [15:0] vec;
     logic        vec_en;
     logic [31:0] stop_at, stop_frame, cycles, frames;
@@ -174,20 +196,29 @@ module nes #(
     cstate_t    cs;
     logic       go, sys_rst, halted, cap_held, ss_hold, pace_wait;
     logic       dot_slot, v_hold, ppu_ce, reg_ce, ce, cyc_start;
+    logic       ppu_ce_q;  // the clock after ppu_ce, when the PPU's new address is out
     logic [1:0] dn;    // dots so far in this CPU cycle
     logic [2:0] lead;
 
     // Stops are levels, so raising a limit runs on from where it stopped.
     assign stopped   = (stop_at != '0 && cycles >= stop_at) || (stop_frame != '0 && frames >= stop_frame);
     assign sys_rst   = rst || ctrl_reset;
-    assign go        = ctrl_run && !ctrl_reset && !stopped && mem_ready && !cap_held && !ss_hold && !pace_wait;
+    logic       chr_cold;  // CHR from the board's memory has to be fetched before the system runs
+    assign go        = ctrl_run && !ctrl_reset && !stopped && mem_ready && !cap_held && !ss_hold && !pace_wait
+                       && !chr_cold;
     assign cyc_start = cs == C_START && go;
     assign ce        = cs == C_END;
 
-    clock_enable #(.NUM(DOT_NUM), .DEN(DOT_DEN)) u_dot (
-        .clk, .rst(sys_rst), .en(cs == C_RUN || cs == C_END || go), .ce(dot_slot));
+    // The dots wait while memory is behind (mem_wait, below): a dot's CHR
+    // word or a cycle's PRG byte that isn't back yet holds the dot that
+    // needs it before it starts, which changes nothing but how long the
+    // system takes.
+    logic mem_wait;
 
-    logic        st_we_cpu, st_we_ppu, st_we_sys, st_we_apu;  // save-state writes, below
+    clock_enable #(.NUM(DOT_NUM), .DEN(DOT_DEN)) u_dot (
+        .clk, .rst(sys_rst), .en((cs == C_RUN || cs == C_END || go) && !mem_wait), .ce(dot_slot));
+
+    logic        st_we_cpu, st_we_ppu, st_we_sys, st_we_apu, st_we_cart;  // save-state writes, below
     logic [3:0]  st_sys_w;
     logic [31:0] st_wdata;
 
@@ -232,7 +263,7 @@ module nes #(
 
     // ---- CPU ----
     logic [15:0] cpu_addr;
-    logic        cpu_we, cpu_sync, cpu_rdy, nmi_n, irq_n;
+    logic        cpu_we, cpu_sync, cpu_rdy, nmi_n, irq_n, apu_irq_n, cart_irq_n;
     logic [7:0]  cpu_dout, cpu_din;
     logic [31:0] cpu_st_rdata;
 
@@ -428,8 +459,29 @@ module nes #(
     wire c_prg  = bus_addr[15];               // $8000-$FFFF
     wire c_vec  = vec_en && bus_addr[15:1] == 15'h7FFE;
 
-    // ---- PPU ----
+    // ---- The cartridge's mapper ----
+    logic [22:0] cart_prg_a;
+    logic [17:0] cart_chr_a, cart_chr_n;  // vaddr's and vaddr_next's
+    logic [13:0] vaddr_next;
+    logic        vread_next;
+    logic [1:0]  cart_mirror;
+    logic        cart_wram_rd, cart_wram_wr;
+    logic [31:0] cart_st_rdata;
     logic [13:0] vaddr;
+
+    nes_cart #(.SAVE_STATE(SAVE_STATE)) u_cart (
+        .clk, .rst(sys_rst),
+        .mapper, .hdr_vertical(mirror_v), .prg_512k(prg_mask[19:18] == 2'b01),
+        .wr_ce(reg_ce), .ce, .addr(bus_addr), .we(bus_we), .wdata(bus_wdata),
+        .prg_addr(cart_prg_a), .wram_rd(cart_wram_rd), .wram_wr(cart_wram_wr), .irq_n(cart_irq_n),
+        .va({vaddr_next[12:0], vaddr[12:0]}), .a12(vaddr[12]), .a12_ce(ppu_ce_q),
+        .chr_addr({cart_chr_n, cart_chr_a}), .mirror(cart_mirror),
+        .st_addr(s_addr[4:2]), .st_rdata(cart_st_rdata), .st_we(st_we_cart), .st_wdata);
+
+    assign irq_n = apu_irq_n && cart_irq_n;
+    wire wram_rd = wram_on && cart_wram_rd;  // PRG RAM answers; otherwise $6000-$7FFF is open bus
+
+    // ---- PPU ----
     logic        vwe;
     logic [7:0]  vwdata, vrdata, ppu_rdata;
     logic        frame_end;
@@ -443,7 +495,7 @@ module nes #(
         .clk, .rst(sys_rst), .ce(ppu_ce),
         .reg_ce(reg_ce && c_ppu), .reg_we(bus_we), .reg_addr(bus_addr[2:0]), .reg_wdata(bus_wdata),
         .reg_rdata(ppu_rdata), .nmi_n,
-        .vaddr, .vwe, .vwdata, .vrdata,
+        .vaddr, .vaddr_next, .vread_next, .vwe, .vwdata, .vrdata,
         .pix_valid, .pix, .pix_x, .pix_y, .frame_end,
         .dbg_line(ppu_line), .dbg_dot(ppu_dot),
         .st_addr(s_addr[8:2]), .st_rdata(ppu_st_rdata), .st_we(st_we_ppu), .st_wdata);
@@ -475,7 +527,7 @@ module nes #(
         .clk, .rst(sys_rst), .ce(ce || apu_extra), .odd(!cycles[0]),
         .wr(bus_we && c_apu && !apu_extra), .rd_status(!bus_we && c_4015 && !apu_extra),
         .addr(bus_addr[4:0]), .wdata(bus_wdata),
-        .status(apu_status), .irq_n,
+        .status(apu_status), .irq_n(apu_irq_n),
         .dma_req(apu_dma_req), .dma_cancel(apu_dma_cancel), .dma_addr(apu_dma_addr),
         .dma_done(dkind_q == D_DMC && !apu_extra), .dma_data(cpu_din),
         .pulse1(a_pulse1), .pulse2(a_pulse2), .triangle(a_triangle), .noise(a_noise), .dmc(a_dmc),
@@ -484,45 +536,216 @@ module nes #(
     // ---- CHR and nametables, shared with the shell ----
     // The PPU has the port on each dot_slot and v_hold clock, reading on both
     // so the data holds, and writing on dot_slot; the shell has the others.
-    logic [7:0]  chr[8192];
     logic [7:0]  ciram[2048];
     logic [7:0]  chr_q, ciram_q, sh_v_data;
-    logic [13:0] va;
+    /* verilator lint_off UNUSEDSIGNAL */
+    logic [13:0] va;  // bit 12 only addresses CHR, which takes chr_a
+    /* verilator lint_on UNUSEDSIGNAL */
     logic        va_we, va_ci_q;
     logic [7:0]  va_wdata;
     logic        sh_v_issue, sh_v_wait, sh_v_ack;
 
-    assign sh_v_issue = !dot_slot && !v_hold && s_new && sel_vram && !sh_v_wait && !sh_v_ack;
+    assign sh_v_issue = !dot_slot && !v_hold && s_new && (sel_vram || sel_chr) && !sh_v_wait && !sh_v_ack;
 
-    logic va_raw;  // the shell's view of the nametable RAM as it is, unmirrored
+    logic              va_raw;  // the shell's view of the nametable RAM as it is, unmirrored
+    logic [CHR_AW-1:0] chr_a;
+    /* verilator lint_off UNUSEDSIGNAL */  // the bits beyond CHR_AW
+    wire  [17:0]       cart_chr_m = cart_chr_a & chr_mask;
+    wire  [31:0]       sh_chr_a   = sel_chr ? s_addr : {19'b0, s_addr[12:0]};
+    /* verilator lint_on UNUSEDSIGNAL */
 
+    // The nametable RAM's A10, by the mapper's mirroring.
+    function automatic logic ci_a10(input logic [1:0] m, input logic [1:0] a11_10);
+        case (m)
+            2'd0:    ci_a10 = 1'b0;
+            2'd1:    ci_a10 = 1'b1;
+            2'd2:    ci_a10 = a11_10[0];
+            default: ci_a10 = a11_10[1];
+        endcase
+    endfunction
+
+    // The PPU's address through the mapper, as its banks stand at the dot's
+    // start: taken the clock after the dot's ppu_ce, before a mapper write in
+    // that clock (wr_ce) takes effect, as MesenCE's PPU fetches before the
+    // CPU's write in that dot. While the system is stopped it follows the
+    // banks, so a loaded state's banks apply.
+    logic              ci10_l;
+    logic [17:0]       chr_l;
+    logic              paused;
+
+    always_ff @(posedge clk) begin
+        ppu_ce_q <= ppu_ce;
+        if (ppu_ce_q || paused) begin
+            chr_l  <= cart_chr_m;
+            ci10_l <= ci_a10(cart_mirror, vaddr[11:10]);
+        end
+        if (sys_rst)
+            ppu_ce_q <= 1'b0;
+    end
+
+    logic ci_10;
     always_comb
         if (dot_slot || v_hold) begin
             va       = vaddr;
             va_raw   = 1'b0;
+            chr_a    = chr_l[CHR_AW-1:0];
+            ci_10    = ci10_l;
             va_we    = dot_slot && vwe && (vaddr[13] || chr_ram);
             va_wdata = vwdata;
         end else begin
-            va       = s_addr[13:0];
-            va_raw   = s_addr[14];
+            va       = sel_chr ? 14'b0 : s_addr[13:0];
+            va_raw   = !sel_chr && s_addr[14];
+            chr_a    = sh_chr_a[CHR_AW-1:0];
+            ci_10    = ci_a10(cart_mirror, va[11:10]);
             va_we    = sh_v_issue && s_we;
             va_wdata = s_wdata;
         end
 
     wire        va_ci = va[13] || va_raw;
-    wire [10:0] ci_a  = va_raw ? va[10:0] : {mirror_v ? va[10] : va[11], va[9:0]};
+    wire [10:0] ci_a  = va_raw ? va[10:0] : {ci_10, va[9:0]};
 
     always_ff @(posedge clk) begin
-        if (va_we && !va_ci)
-            chr[va[12:0]] <= va_wdata;
         if (va_we && va_ci)
             ciram[ci_a] <= va_wdata;
-        chr_q   <= chr[va[12:0]];
         ciram_q <= ciram[ci_a];
         va_ci_q <= va_ci;
     end
 
-    assign vrdata = va_ci_q ? ciram_q : chr_q;
+    // CHR, in banks if CHR_BANK_AW asks for them.
+    localparam int CHR_NB = 2 ** (CHR_AW - CHR_BANK_AW);
+
+    if (CHR_NB == 1) begin : g_chr1
+        logic [7:0] chr[2**CHR_AW];
+
+        always_ff @(posedge clk) begin
+            if (va_we && !va_ci)
+                chr[chr_a] <= va_wdata;
+            chr_q <= chr[chr_a];
+        end
+    end else begin : g_chrn
+        logic [7:0]                   bq[CHR_NB];
+        logic [CHR_AW-CHR_BANK_AW-1:0] bsel;
+
+        for (genvar b = 0; b < CHR_NB; b++) begin : g_bank
+            logic [7:0] chr[2**CHR_BANK_AW];
+
+            always_ff @(posedge clk) begin
+                if (va_we && !va_ci && chr_a[CHR_AW-1:CHR_BANK_AW] == (CHR_AW - CHR_BANK_AW)'(b))
+                    chr[chr_a[CHR_BANK_AW-1:0]] <= va_wdata;
+                bq[b] <= chr[chr_a[CHR_BANK_AW-1:0]];
+            end
+        end
+
+        always_ff @(posedge clk)
+            bsel <= chr_a[CHR_AW-1:CHR_BANK_AW];
+
+        assign chr_q = bq[bsel];
+    end
+
+    // ---- CHR ROM from the board's memory ----
+    // CHR ROM is in the board's memory from 0x400000, each 16-byte tile with
+    // its two planes interleaved, so one 32-bit word holds two rows of a
+    // tile, both planes: CHR byte a is at 0x400000 + {a[17:4], a[2:0], a[3]}.
+    // Two words are cached. In the clock after the PPU's next address is
+    // final (vaddr_next: the second clock after a dot's ppu_ce, or the third
+    // if the CPU accessed the PPU or wrote the mapper in that dot), it goes
+    // through the mapper (whose banks hold until the next dot's start, when
+    // chr_l takes them) and, if it's CHR the PPU will use (vread_next: a
+    // pattern fetch or $2007 read, at most one word in 8 dots while it
+    // renders) and not cached, its word is read
+    // into the entry the current dot doesn't use, as soon as no other CHR
+    // read is out. A dot's read comes from the cache, and one that isn't
+    // there sets `late` (and is fetched, for the dots after). The other users of the
+    // memory start nothing just before a CHR read may come (see mem_quiet),
+    // so a CHR read waits for one access at most.
+    // After reset or a state load (chr_cold), the current address is fetched
+    // before the system runs on.
+    function automatic logic [20:0] chr_word(input logic [15:0] tile_rows);  // {a[17:4], a[2:1]}
+        chr_word = {1'b1, 4'b0, tile_rows};
+    endfunction
+
+    logic        ppu_ce_qq, ppu_ce_q3, pf_late_reg, pf_armed, cw_pend, cw_hit_q, cw_ext_q, vread_l;
+    logic [1:0]  cw_valid;
+    logic [20:0] cw_tag[2];
+    logic [31:0] cw_data[2];
+    logic [20:0] cw_addr;
+    logic [7:0]  cw_q;
+    wire         chr_x   = CHR_EXT && chr_ext;
+    /* verilator lint_off UNUSEDSIGNAL */
+    wire  [17:0] pf_chr  = cart_chr_n & chr_mask;  // its row's low bit and plane don't pick the word
+    /* verilator lint_on UNUSEDSIGNAL */
+    wire  [20:0] pf_word = chr_word({pf_chr[17:4], pf_chr[2:1]});
+    wire  [20:0] cur_word = chr_word({chr_l[17:4], chr_l[2:1]});
+    wire         pf_at   = pf_late_reg ? ppu_ce_q3 : ppu_ce_qq;
+    wire         cur_e   = cw_valid[1] && cw_tag[1] == cur_word;  // the entry the current dot uses
+    wire         pf_hit  = (cw_valid[0] && cw_tag[0] == pf_word) || (cw_valid[1] && cw_tag[1] == pf_word);
+    wire         cur_hit = (cw_valid[0] && cw_tag[0] == cur_word) || cur_e;
+    wire  [1:0]  cur_ln  = {chr_l[0], chr_l[3]};
+    // The current dot's word is missing (late, or cold): chr_l has it from
+    // the clock after ppu_ce. Only the reads the PPU uses (vread_next) count;
+    // after a load, whatever vaddr is.
+    wire         cur_need = !vaddr[13] && (vread_l || chr_cold);
+    wire         cur_miss = cur_need && !cur_hit && !ppu_ce && !ppu_ce_q;
+    logic        cw_ack;
+
+    always_ff @(posedge clk) begin
+        ppu_ce_qq <= ppu_ce_q;
+        ppu_ce_q3 <= ppu_ce_qq;
+        if (ppu_ce_q)
+            pf_late_reg <= reg_ce && (c_ppu || (bus_we && c_prg));
+        // A prefetch waits while another read is out; the next dot's start
+        // ends its chance.
+        if (pf_at)
+            pf_armed <= 1'b1;
+        if (ppu_ce)
+            pf_armed <= 1'b0;
+        if (chr_x && !cw_pend && !ctrl_reset) begin
+            if (cur_miss) begin
+                cw_pend <= 1'b1;
+                cw_addr <= cur_word;
+            end else if ((pf_at || pf_armed) && !vaddr_next[13] && vread_next && !pf_hit) begin
+                cw_pend  <= 1'b1;
+                cw_addr  <= pf_word;
+                pf_armed <= 1'b0;
+            end
+            if (chr_cold && !cur_miss && !ppu_ce && !ppu_ce_q)
+                chr_cold <= 1'b0;
+        end
+        if (cw_ack) begin
+            cw_pend           <= 1'b0;
+            cw_valid[!cur_e]  <= 1'b1;
+            cw_tag[!cur_e]    <= cw_addr;
+            cw_data[!cur_e]   <= mem_rdata_w;
+        end
+        // The current dot's byte, read with the block RAM's.
+        cw_hit_q <= cur_hit;
+        cw_q     <= cur_e ? cw_data[1][8*cur_ln +: 8] : cw_data[0][8*cur_ln +: 8];
+        cw_ext_q <= chr_x && !va_ci && (dot_slot || v_hold);
+        if (ppu_ce)
+            vread_l <= vread_next;
+        if (!chr_x || sys_rst || st_we_cpu || st_we_ppu || st_we_sys || st_we_cart) begin
+            chr_cold <= chr_x;
+            cw_valid <= '0;
+        end
+        if (sys_rst) begin
+            ppu_ce_qq <= 1'b0;
+            ppu_ce_q3 <= 1'b0;
+            pf_armed  <= 1'b0;
+            vread_l   <= 1'b0;
+        end
+        if (rst || !chr_x)
+            cw_pend <= 1'b0;
+    end
+
+    // An access the memory starts in the clock after ppu_ce is done in time
+    // for a CHR read that comes after it to land before the next dot reads
+    // it; one started later isn't. So the other users start nothing in the
+    // two clocks after that (three, when the CHR read waits for a register
+    // access), and a refresh waits while a CHR read is out.
+    wire mem_quiet = chr_x && (ppu_ce_q || ppu_ce_qq || (ppu_ce_q3 && pf_late_reg));
+    assign mem_ref_hold = cw_pend;
+
+    assign vrdata = va_ci_q ? ciram_q : cw_ext_q ? cw_q : chr_q;
 
     always_ff @(posedge clk) begin
         sh_v_ack <= 1'b0;
@@ -545,27 +768,34 @@ module nes #(
     logic [7:0]  cpu_sd_data;
     logic        sh_sd_ack;     // the shell's access is done: acknowledge it a clock later
     logic [7:0]  sd_rdata_q;    // with its read data, held
-    logic [14:0] prg_a;
-    logic [1:0]  a_ack;
+    logic [22:0] prg_a;
+    logic [2:0]  a_ack;
     logic [7:0]  a_rdata;
 
-    mem_arbiter #(.N(2), .AW(23)) u_arb (
+    // Clients: CHR's reads (CHR_EXT), the CPU's and the shell's.
+    mem_arbiter #(.N(3), .AW(23)) u_arb (
         .clk, .rst,
-        .c_req({s_new && sel_sdram, cpu_sd_pend}), .c_we({s_we, 1'b0}),
-        .c_addr({s_addr[22:0], {8'b0, prg_a} & prg_mask}), .c_wdata({s_wdata, 8'h00}),
+        .c_req({s_new && sel_sdram && !mem_quiet, cpu_sd_pend && !mem_quiet, cw_pend}), .c_we({s_we, 2'b0}),
+        .c_addr({s_addr[22:0], prg_a & prg_mask, cw_addr, 2'b00}), .c_wdata({s_wdata, 16'h0000}),
         .c_ack(a_ack), .c_rdata(a_rdata),
         .m_req(mem_req), .m_we(mem_we), .m_addr(mem_addr), .m_wdata(mem_wdata),
         .m_ack(mem_ack), .m_rdata(mem_rdata));
 
+    assign cw_ack = a_ack[0];
+
+    // A CPU cycle's third dot waits for its PRG read; a dot reading CHR from
+    // the board's memory waits for its word.
+    assign mem_wait = (cs == C_RUN && dn == 2'd2 && cpu_sd_pend) || (chr_x && cur_need && !cur_hit);
+
     always_ff @(posedge clk) begin
-        sh_sd_ack <= a_ack[1];
-        if (a_ack[1])
+        sh_sd_ack <= a_ack[2];
+        if (a_ack[2])
             sd_rdata_q <= a_rdata;
         if (cyc_start && !bus_we && c_prg && !c_vec) begin
             cpu_sd_pend <= 1'b1;
-            prg_a       <= bus_addr[14:0];
+            prg_a       <= cart_prg_a;
         end
-        if (a_ack[0]) begin
+        if (a_ack[1]) begin
             cpu_sd_data <= a_rdata;
             cpu_sd_pend <= 1'b0;
         end
@@ -596,7 +826,7 @@ module nes #(
         if (cpu_slot) begin
             m_addr = bus_addr[12:0];
             m_ram  = c_ram;
-            m_wram = c_wram;
+            m_wram = c_wram && cart_wram_wr && wram_on;
             m_we   = ce && bus_we;
         end else begin
             m_addr  = s_addr[12:0];
@@ -728,7 +958,7 @@ module nes #(
             cpu_din = bus_addr[0] ? vec[15:8] : vec[7:0];
         else if (c_prg)
             cpu_din = cpu_sd_data;
-        else if (c_ram || c_wram)
+        else if (c_ram || (c_wram && wram_rd))
             cpu_din = cpu_mem_data;
         else if (c_ppu)
             cpu_din = ppu_rdata;
@@ -829,6 +1059,8 @@ module nes #(
             if (cpu_sd_pend)
                 late <= 1'b1;
         end
+        if (ppu_ce && cw_ext_q && vread_l && !cw_hit_q)
+            late <= 1'b1;  // a CHR read the cache didn't have
         if (frame_end)
             frames <= frames + 1'b1;
         if (st_we_sys)
@@ -926,7 +1158,8 @@ module nes #(
     //      cycle state [5:4], late, DMC DMA on, OAM DMA on, halt needed},
     //   5 the audio CRC, 6-9 the resampler's words, 10 the PCM CRC, 11 the PCM sample count,
     //   12 {pads 2 and 1, controller 2's and 1's shift registers},
-    //   13 {input script position [9:1], strobe [0]}.
+    //   13 {input script position [9:1], strobe [0]},
+    //   16-20 the mapper's (nes_cart's) words 0-4.
     // Pipelines that drain within a few clocks of a stop (the trace CRC's
     // bytes) have drained before a save state's walk starts.
     logic [23:0] st_stage;
@@ -935,7 +1168,7 @@ module nes #(
     logic        sp_ack;
     logic [31:0] sys_st, st_q;
     wire         sp_issue = s_new && (sel_state || sel_probe || sel_ssbuf) && sp_wait == '0 && !sp_ack;
-    wire         paused   = ctrl_reset || ((cs == C_START || cs == C_LEAD) && !go);
+    assign       paused   = ctrl_reset || ((cs == C_START || cs == C_LEAD) && !go);
     wire  [1:0]  st_sel   = s_addr[13:12];  // CPU, PPU, the system's, APU
     wire         st_commit = sp_issue && sel_state && s_we && paused && s_addr[1:0] == 2'd3;
 
@@ -944,6 +1177,7 @@ module nes #(
     assign st_we_ppu = st_commit && st_sel == 2'd1 && s_addr[11:9] == '0;
     assign st_we_sys = st_commit && st_sel == 2'd2 && s_addr[11:6] == '0 && s_addr[5:2] <= 4'd13;
     assign st_we_apu = st_commit && st_sel == 2'd3 && s_addr[11:7] == '0;
+    assign st_we_cart = st_commit && st_sel == 2'd2 && s_addr[11:6] == 6'd1 && s_addr[5:2] <= 4'd4;
     assign st_sys_w  = s_addr[5:2];
     assign ss_hwe    = sp_issue && sel_ssbuf && s_we && !ss_busy;
 
@@ -992,7 +1226,7 @@ module nes #(
             case (st_sel)
                 2'd0:    st_q <= s_addr[11:4] == '0 ? cpu_st_rdata : '0;
                 2'd1:    st_q <= s_addr[11:9] == '0 ? ppu_st_rdata : '0;
-                2'd2:    st_q <= s_addr[11:6] == '0 ? sys_st : '0;
+                2'd2:    st_q <= s_addr[11:6] == '0 ? sys_st : s_addr[11:6] == 6'd1 ? cart_st_rdata : '0;
                 default: st_q <= s_addr[11:7] == '0 ? apu_st_rdata : '0;
             endcase
         if (sp_wait == 2'd1) begin
@@ -1038,7 +1272,8 @@ module nes #(
                 8'h1D: stop_frame[15:8]  <= s_wdata;
                 8'h1E: stop_frame[23:16] <= s_wdata;
                 8'h1F: stop_frame[31:24] <= s_wdata;
-                8'h2C: {chr_ram, mirror_v} <= s_wdata[1:0];
+                8'h2C: {chr_ext, wram_on, chr_ram, mirror_v} <= s_wdata[3:0];
+                8'h2D: mapper            <= s_wdata;
                 8'h30: cap_frame[7:0]    <= s_wdata;
                 8'h31: cap_frame[15:8]   <= s_wdata;
                 8'h32: cap_frame[23:16]  <= s_wdata;
@@ -1056,6 +1291,9 @@ module nes #(
                 8'h62: in_len[9:8]       <= s_wdata[1:0];
                 8'h64: live1             <= s_wdata;
                 8'h65: live2             <= s_wdata;
+                8'h70: chr_mask[7:0]     <= s_wdata;
+                8'h71: chr_mask[15:8]    <= s_wdata;
+                8'h72: chr_mask[17:16]   <= s_wdata[1:0];
                 default: ;
             endcase
         case (r)
@@ -1095,7 +1333,8 @@ module nes #(
             8'h29:   reg_q <= crc_frame[15:8];
             8'h2A:   reg_q <= crc_frame[23:16];
             8'h2B:   reg_q <= crc_frame[31:24];
-            8'h2C:   reg_q <= {6'b0, chr_ram, mirror_v};
+            8'h2C:   reg_q <= {4'b0, chr_ext, wram_on, chr_ram, mirror_v};
+            8'h2D:   reg_q <= mapper;
             8'h30:   reg_q <= cap_frame[7:0];
             8'h31:   reg_q <= cap_frame[15:8];
             8'h32:   reg_q <= cap_frame[23:16];
@@ -1141,6 +1380,12 @@ module nes #(
             8'h67:   reg_q <= {7'b0, in_idx[8]};
             8'h68:   reg_q <= pads[7:0];
             8'h69:   reg_q <= pads[15:8];
+            8'h70:   reg_q <= chr_mask[7:0];
+            8'h71:   reg_q <= chr_mask[15:8];
+            8'h72:   reg_q <= {6'b0, chr_mask[17:16]};
+            8'h74:   reg_q <= 8'(CHR_AW);
+            8'h75:   reg_q <= 8'(MEM_AW);
+            8'h76:   reg_q <= {7'b0, CHR_EXT};
             default: reg_q <= '0;
         endcase
         if (rst) begin
@@ -1153,6 +1398,10 @@ module nes #(
             stop_frame <= '0;
             mirror_v   <= 1'b0;
             chr_ram    <= 1'b0;
+            wram_on    <= 1'b1;
+            chr_ext    <= 1'b0;
+            mapper     <= '0;
+            chr_mask   <= 18'h1FFF;
             cap_en     <= 1'b0;
             ss_cmd     <= '0;
             vid_pace   <= PACE;
@@ -1168,7 +1417,8 @@ module nes #(
     logic       none_ack;
 
     always_ff @(posedge clk)
-        none_ack <= s_new && !(sel_sdram || sel_reg || sel_mem || sel_vram || sel_state || sel_probe || sel_ssbuf || sel_input)
+        none_ack <= s_new && !(sel_sdram || sel_reg || sel_mem || sel_vram || sel_state || sel_probe || sel_ssbuf || sel_input
+                              || sel_chr)
                     && !none_ack && !rst;
 
     assign s_ack = sh_sd_ack || sh_m_ack || sh_v_ack || sp_ack || reg_ack || none_ack || in_ack;
