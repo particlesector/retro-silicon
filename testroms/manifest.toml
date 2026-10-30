@@ -11,6 +11,9 @@
 # check = "frame": no result of its own; the core's frame `frames` must match
 # MesenCE's (tools/mesen/frames.py).
 # check = "trace": compare a CPU trace against the reference log.
+# input: an input script for player 1, [[frame, buttons], ...] in frame order,
+# the buttons (bit 0 A, B, Select, Start, Up, Down, Left, bit 7 Right) held
+# from that frame on, counting frames ended since power-up.
 # needs: the parts of the console the ROM exercises.
 
 [sources.nes-test-roms]
@@ -957,3 +960,25 @@ needs = "cpu, ppu, apu"
 covers = "A homebrew game (NROM-128): its title screen, with music"
 check = "frame"
 frames = 600
+
+[[rom]]
+id = "thwaite-play"
+source = "thwaite"
+path = "thwaite.nes"
+sha256 = "ee51cd9562f28195ba015d9857c6c4fc9bf67cdfb213e95f655e586b92195173"
+needs = "cpu, ppu, apu, controllers"
+covers = "Thwaite with Start pressed twice: its title menu, then a game, with music"
+check = "frame"
+frames = 570
+input = [[100, 8], [110, 0], [200, 8], [210, 0]]
+
+[[rom]]
+id = "croom-play"
+source = "croom"
+path = "croom.nes"
+sha256 = "926bad4e153ff6cad08843056f2408bf6999518a174d6a669fa36345b0a7a31e"
+needs = "cpu, ppu, apu, controllers"
+covers = "Concentration Room with Start pressed twice: its story, then a game board, with music"
+check = "frame"
+frames = 570
+input = [[100, 8], [110, 0], [200, 8], [210, 0]]
