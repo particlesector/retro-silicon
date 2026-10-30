@@ -8,6 +8,7 @@ Module `apu_mixer` mixes the levels as the 2A03's output does, nonlinearly, with
 
 ## Timing
 
+- **Settling:** a cycle's access inputs must be steady from the clock before its `ce`, and the outputs settle the clock after it. The pulse channels' sweep targets, the APU's longest path, are registered a clock behind. In `systems/nes` the inputs are steady from the cycle's start, several clocks before its end.
 - **CPU cycles:** one per clock with `ce` high. On each `ce` the APU takes that cycle's register access, then runs the next cycle's tick, so its outputs and `status` after a `ce` are the state a read in the following cycle sees, as on the 2A03.
 - **Reset:** the clock after reset runs the first cycle's tick, with no access, as MesenCE ticks the APU at the start of every cycle. So `ce` must not come on that clock. The noise period starts at the table's first entry, as in MesenCE.
 - **IRQ:** the access inputs are the cycle's whether or not `ce` is high, and `irq_n` follows them. It is the IRQ as the CPU samples it at the cycle's end: after the access (a `$4015` read clears the frame IRQ) and before the tick and any DMA byte.

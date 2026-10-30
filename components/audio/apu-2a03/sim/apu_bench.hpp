@@ -39,7 +39,8 @@ public:
     int dma_wait = -1;        // cycles until the pending DMA's byte arrives
     int dma_latency_max = 4;  // the DMA's wait is 1 to this many cycles
     std::mt19937 rng{1};
-    bool irq_at_end_ok = true;  // irq_n, with the last cycle's access presented, matched the model
+    bool irq_at_end_ok = true;
+    bool dma_req = false, dma_cancel = false;  // the last cycle's DMA pulses  // irq_n, with the last cycle's access presented, matched the model
 
     ApuBench() {
         m.rst = 1;
@@ -73,18 +74,20 @@ public:
         m.rd_status = in.rd_status;
         m.dma_done = in.dma_done;
         m.dma_data = in.dma_data;
-        m.eval();
+        clock();  // the inputs settle a clock before ce, as in a system
         bool rtl_irq_at_end = !m.irq_n;
         m.ce = 1;
         clock();
         m.ce = 0;
+        dma_req = m.dma_req;  // one-clock pulses after the ce
+        dma_cancel = m.dma_cancel;
         m.wr = m.rd_status = m.dma_done = 0;
-        m.eval();
+        clock();  // and the outputs a clock after
         model.cycle(in);
         irq_at_end_ok = rtl_irq_at_end == model.irq_at_end;
         cycles++;
-        if (m.dma_cancel) dma_wait = -1;
-        if (m.dma_req) dma_wait = std::uniform_int_distribution<int>(0, dma_latency_max - 1)(rng);
+        if (dma_cancel) dma_wait = -1;
+        if (dma_req) dma_wait = std::uniform_int_distribution<int>(0, dma_latency_max - 1)(rng);
     }
 
     void write(uint16_t addr, uint8_t v) { cycle(true, static_cast<uint8_t>(addr & 0x1F), v); }
@@ -101,7 +104,7 @@ public:
     // on its ce and last one clock).
     ApuOut rtl() const {
         return {m.status, m.pulse1, m.pulse2, m.triangle, m.noise, m.dmc,
-                !m.irq_n, static_cast<bool>(m.dma_req), static_cast<bool>(m.dma_cancel),
+                !m.irq_n, dma_req, dma_cancel,
                 m.dma_addr};
     }
     ApuOut ref() const {

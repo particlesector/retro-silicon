@@ -69,6 +69,12 @@ for seed in $(seq 1 "$seeds"); do
   log=$out/pnr.log
   if ! nextpnr-xilinx --seed "$seed" --chipdb "$chipdb" --xdc "$xdc" --json "$out/$top.json" \
       --fasm "$out/$top.fasm" > "$log" 2>&1; then
+    # Some placements pack a LUT-RAM with flip-flops on the other clock edge
+    # in one half-slice, which can't be configured: another seed may not.
+    if grep -q "control-set contention" "$log"; then
+      echo "seed $seed: this placement mixes clock edges in a slice (see $log)" >&2
+      continue
+    fi
     tail -20 "$log" >&2
     exit 1
   fi
