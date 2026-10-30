@@ -774,7 +774,7 @@ module nes #(
     // are block RAM), so the resampler takes it two clocks after the ce. The PCM CRC covers every sample since reset, 2
     // bytes each, low first; pcm_n counts them.
     logic [15:0] mix;
-    logic        ce_q, ce_qq, pcm_v;
+    logic        ce_q, ce_qq, pcm_v, rs_busy;
     logic [31:0] rs_st_rdata, pcm_crc, pcm_n;
     logic [15:0] pcm_b;
     logic [1:0]  pcm_bn;
@@ -782,7 +782,8 @@ module nes #(
     apu_mixer u_mix (.clk, .pulse1(a_pulse1), .pulse2(a_pulse2), .triangle(a_triangle), .noise(a_noise),
                      .dmc(a_dmc), .out(mix));
 
-    resampler #(.SAVE_STATE(SAVE_STATE)) u_rs (.clk, .rst(sys_rst), .ce(ce_qq), .in(mix), .valid(pcm_v), .out(a_pcm),
+    resampler #(.SAVE_STATE(SAVE_STATE)) u_rs (.clk, .rst(sys_rst), .ce(ce_qq), .in(mix), .valid(pcm_v), .busy(rs_busy),
+                    .out(a_pcm),
                     .st_addr(2'(st_sys_w - 4'd6)), .st_rdata(rs_st_rdata),
                     .st_we(st_we_sys && st_sys_w >= 4'd6 && st_sys_w <= 4'd9), .st_wdata);
 
@@ -972,7 +973,7 @@ module nes #(
             ss_hold <= 1'b1;
 
     assign ss_ready = ss_hold && paused && !ctrl_reset && tr_n == '0 && au_n == '0
-                      && !ce_q && !ce_qq && !pcm_v && pcm_bn == '0;
+                      && !ce_q && !ce_qq && !rs_busy && !pcm_v && pcm_bn == '0;
 
     always_ff @(posedge clk) begin
         sp_ack <= sp_wait == 2'd1 && !rst;

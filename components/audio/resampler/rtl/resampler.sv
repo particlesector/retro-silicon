@@ -22,7 +22,8 @@ module resampler #(
     input  logic        rst,
     input  logic        ce,     // an input sample
     input  logic [15:0] in,     // unsigned
-    output logic        valid,  // a one-clock pulse after the ce that makes a sample
+    output logic        valid,  // a one-clock pulse, three clocks after the ce that makes a sample
+    output logic        busy,   // a sample is between that ce and its valid: don't save state yet
     output logic signed [15:0] out,    // the latest sample
     // Save state: 4 words
     input  logic [1:0]  st_addr,
@@ -52,18 +53,35 @@ module resampler #(
     wire        [5:0]  c    = n + 1'b1;
     wire        [16:0] a    = 17'(acc) + 17'(NUM);
     wire               take = a >= 17'(DEN);
-    wire        [14:0] v    = 15'((39'(s) * 39'(c == 6'(LO) ? R_LO : R_HI)) >> 17);  // the average, halved
+    // A sample in three steps, a clock each, as the multiply and the
+    // high-pass are the longest paths: the sum and its count, then the
+    // average, then the high-pass. Samples come many clocks apart.
+    logic [21:0] s_t;
+    logic        hi_t, go1, go2;
+    logic [14:0] v;              // the average, halved
     // y is v less a weighted average of earlier v, all under 2^15, so
     // |y| < 2^16 (2^31 in 17.15) and ny fits.
     wire signed [31:0] ny    = ($signed({17'b0, v}) - $signed({17'b0, v_prev})) * 32'sd32768
                                + y - (y >>> HPF);
+
+    assign busy = go1 || go2;
     wire signed [16:0] whole = y[31:15];
 
     assign out = whole > 17'sd32767 ? 16'sh7FFF : whole < -17'sd32768 ? -16'sh8000 : whole[15:0];
 
     always_ff @(posedge clk) begin
         valid <= 1'b0;
+        go1   <= 1'b0;
+        go2   <= go1;
+        if (go1)
+            v <= 15'((39'(s_t) * 39'(hi_t ? R_HI : R_LO)) >> 17);
+        if (go2) begin
+            v_prev <= v;
+            y      <= ny;
+            valid  <= 1'b1;
+        end
         if (rst) begin
+            go2    <= 1'b0;
             sum    <= '0;
             n      <= '0;
             acc    <= '0;
@@ -79,11 +97,11 @@ module resampler #(
         else if (ce) begin
             acc <= take ? 16'(a - 17'(DEN)) : 16'(a);
             if (take) begin
-                sum    <= '0;
-                n      <= '0;
-                v_prev <= v;
-                y      <= ny;
-                valid  <= 1'b1;
+                sum  <= '0;
+                n    <= '0;
+                s_t  <= s;
+                hi_t <= c != 6'(LO);
+                go1  <= 1'b1;
             end else begin
                 sum <= s;
                 n   <= c;

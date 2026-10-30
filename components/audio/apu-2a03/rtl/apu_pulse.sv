@@ -75,10 +75,13 @@ module apu_pulse #(
         endcase
     endfunction
 
-    logic [11:0] target;
+    // The sweep's targets, a clock behind: the current registers' (for the
+    // mute) and those after this cycle's write (for the half-frame clock).
+    // Their shift and add is the APU's longest path; `ce` comes a clock or
+    // more after the inputs settle, so the registered copies are in time.
+    logic [11:0] target, w_target;
     logic        muted;
 
-    assign target   = target_of(period, sw_neg, sw_shift);
     assign muted    = period < 11'd8 || (!sw_neg && target > 12'h7FF);
     assign active   = len_active;
     assign out      = (!muted && len_active && duty_bit(duty, pos)) ? level : 4'd0;
@@ -93,7 +96,7 @@ module apu_pulse #(
     logic [2:0]  w_sw_shift;
     logic [3:0]  w_sw_per;
     logic [7:0]  n_sw_div;
-    logic [11:0] n_timer, w_target;
+    logic [11:0] n_timer;
 
     always_comb begin
         w_duty      = duty;
@@ -121,7 +124,6 @@ module apu_pulse #(
                     w_pos    = '0;
                 end
             endcase
-        w_target = target_of(w_period, w_sw_neg, w_sw_shift);
 
         // The half-frame clock's sweep.
         n_period    = w_period;
@@ -147,6 +149,11 @@ module apu_pulse #(
             n_pos   = w_pos - 3'd1;
         end else
             n_timer = timer - 12'd1;
+    end
+
+    always_ff @(posedge clk) begin
+        target   <= target_of(period, sw_neg, sw_shift);
+        w_target <= target_of(w_period, w_sw_neg, w_sw_shift);
     end
 
     always_ff @(posedge clk)

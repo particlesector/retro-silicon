@@ -48,15 +48,18 @@ struct Bench {
         m.clk = 1;
         m.eval();
     }
-    // One input and an idle clock; returns whether it made a sample (the
-    // pulse after the ce).
+    // One input and three idle clocks; returns whether it made a sample
+    // (valid pulses three clocks after the ce).
     bool step(uint16_t x) {
         m.in = x;
         m.ce = 1;
         clock();
         m.ce = 0;
-        bool v = m.valid;
-        clock();
+        bool v = false;
+        for (int i = 0; i < 3; i++) {
+            clock();
+            v = v || m.valid;
+        }
         return v;
     }
 };

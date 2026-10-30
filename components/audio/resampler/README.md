@@ -17,7 +17,8 @@ Module `resampler`.
 | --- | --- | --- | --- |
 | `clk`, `rst` | in | 1 | Clock; synchronous reset to silence |
 | `ce`, `in` | in | 1, 16 | An input sample, unsigned |
-| `valid` | out | 1 | A one-clock pulse the clock after a `ce` that made a sample |
+| `valid` | out | 1 | A one-clock pulse three clocks after a `ce` that made a sample: the sum, the multiply and the high-pass take a clock each. `ce` must come at least four clocks apart |
+| `busy` | out | 1 | A sample is between its `ce` and its `valid`: don't read or write the save state yet |
 | `out` | out | 16 | The latest sample, signed |
 | `st_addr`, `st_rdata`, `st_we`, `st_wdata` | | 2, 32, 1, 32 | Save-state port: 4 words, {count, sum}, {the last average, the accumulator}, `y`, and one unused |
 
