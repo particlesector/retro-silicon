@@ -995,11 +995,101 @@ license = "Zlib"
 credit = "Holy Mapperel by Damian Yerrick"
 
 [[rom]]
-id = "mapperel-mmc1-p128k-c128k"
+id = "mapperel-nrom"
+source = "holy-mapperel"
+path = "testroms/M0_P32K_C8K_V.nes"
+sha256 = "56d155857d83c403a73059b02cddf02bbba593a95b5b9d6707dd6bdd14601eea"
+needs = "cpu, ppu"
+covers = "NROM with 8 KB of CHR ROM: the baseline"
+check = "frame"
+frames = 300
+
+[[rom]]
+id = "mapperel-cnrom"
+source = "holy-mapperel"
+path = "testroms/M3_P32K_C32K_H.nes"
+sha256 = "16db0ae5bcaab1d4188b6e2bdb8d26d567a391f2582f3d59c110299425ace2f1"
+needs = "cpu, ppu, cnrom"
+covers = "CNROM: 32 KB of CHR ROM in 8 KB banks"
+check = "frame"
+frames = 300
+
+[[rom]]
+id = "mapperel-unrom"
+source = "holy-mapperel"
+path = "testroms/M2_P128K_CR8K_V.nes"
+sha256 = "8c15084fe33a719944d3a4c8d56a3440d59309d31063210c45449346196daab2"
+needs = "cpu, ppu, uxrom"
+covers = "UxROM: 128 KB of PRG ROM in 16 KB banks, CHR RAM"
+check = "frame"
+frames = 300
+
+[[rom]]
+id = "mapperel-aorom"
+source = "holy-mapperel"
+path = "testroms/M7_P128K_CR8K.nes"
+sha256 = "354f717c3c8f2ab744ad10abd401fc20a985b04e4d6980e29aa64035493191db"
+needs = "cpu, ppu, axrom"
+covers = "AxROM: 128 KB of PRG ROM in 32 KB banks, one-screen mirroring"
+check = "frame"
+frames = 300
+
+[[rom]]
+id = "mapperel-mmc1-cr8k"
+source = "holy-mapperel"
+path = "testroms/M1_P128K_CR8K.nes"
+sha256 = "b8934110286011a8981d2e4a01d6a7dab4e4f85bfacb389c3022de08ee010006"
+needs = "cpu, ppu, mmc1"
+covers = "MMC1 (SNROM-like): 128 KB of PRG ROM, CHR RAM"
+check = "frame"
+frames = 300
+
+[[rom]]
+id = "mapperel-mmc1-c32k"
+source = "holy-mapperel"
+path = "testroms/M1_P128K_C32K.nes"
+sha256 = "415d6284859c21d5777fe5a40d2fcfd8723d6dc337dc7ddf15ee103ee476d98f"
+needs = "cpu, ppu, mmc1"
+covers = "MMC1: 128 KB of PRG ROM, 32 KB of CHR ROM in 4 KB banks"
+check = "frame"
+frames = 300
+
+[[rom]]
+id = "mapperel-mmc1-c128k"
 source = "holy-mapperel"
 path = "testroms/M1_P128K_C128K.nes"
-sha256 = ""
+sha256 = "2a2a96a207d664af07c0baf9a29bf72aa6ea6e5887f56de46b8ecda374bc6d68"
 needs = "cpu, ppu, mmc1"
-covers = "MMC1 (SxROM) with 128 KB of PRG ROM and 128 KB of CHR ROM: bank switching, mirroring"
+covers = "MMC1 (SxROM): 128 KB each of PRG and CHR ROM"
+check = "frame"
+frames = 300
+
+[[rom]]
+id = "mapperel-mmc1-p512k"
+source = "holy-mapperel"
+path = "testroms/M1_P512K_CR8K_S8K.nes"
+sha256 = "09a054de16624ecf9495cd16bed2c931108c1e3b674811d5cd6f154777a5ee70"
+needs = "cpu, ppu, mmc1"
+covers = "MMC1 (SUROM): 512 KB of PRG ROM, CHR RAM, battery-backed PRG RAM"
+check = "frame"
+frames = 300
+
+[[rom]]
+id = "mapperel-mmc3-cr8k"
+source = "holy-mapperel"
+path = "testroms/M4_P128K_CR8K.nes"
+sha256 = "5bddb766df9514718c6cccffef0e0ce222b02b6ab46aa5839463ab4bdb68557a"
+needs = "cpu, ppu, mmc3"
+covers = "MMC3: 128 KB of PRG ROM, CHR RAM"
+check = "frame"
+frames = 300
+
+[[rom]]
+id = "mapperel-mmc3-c256k"
+source = "holy-mapperel"
+path = "testroms/M4_P256K_C256K.nes"
+sha256 = "52e9bc2fd3572e7da251bc30a44468572a4fcd47ec1b63fe9498dec17dae97da"
+needs = "cpu, ppu, mmc3"
+covers = "MMC3 (TxROM): 256 KB each of PRG and CHR ROM"
 check = "frame"
 frames = 300
