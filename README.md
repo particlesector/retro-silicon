@@ -8,7 +8,7 @@ Every component builds with the open-source flow (Yosys, nextpnr, Verilator) and
 
 ## Status
 
-The NES runs on three boards from two FPGA families, the Sipeed Tang Nano 20K and Tang Console 138K (Gowin) and the TUL PYNQ-Z2 (AMD), with its CPU, PPU and HDMI output giving the same results as the simulation and the MesenCE emulator. Its APU is next. The site generates each part's status from the latest simulation and board runs: see [Components](https://retro-silicon.particlesector.com/components/), and each component's own README.
+retro-silicon is built one system at a time, starting with the NES. The site shows where every part stands, generated from the latest simulation and board runs: see [Components](https://retro-silicon.particlesector.com/components/) and [Boards](https://retro-silicon.particlesector.com/boards/), and each component's own README.
 
 ## Quick start
 
