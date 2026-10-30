@@ -982,3 +982,24 @@ covers = "Concentration Room with Start pressed twice: its story, then a game bo
 check = "frame"
 frames = 570
 input = [[100, 8], [110, 0], [200, 8], [210, 0]]
+
+# Damian Yerrick's Holy Mapperel: one test program, in a ROM for each of many
+# mappers and sizes (the ROMs differ only in their headers). It writes its
+# results on screen. zlib licence. The build writes every ROM into testroms/.
+
+[sources.holy-mapperel]
+git = "https://github.com/pinobatch/holy-mapperel"
+commit = "4e48b59432b5f1d3c011ac830e40ddf7ed5bbc61"
+build = ["make", "testroms/M1_P128K_C128K.nes"]
+license = "Zlib"
+credit = "Holy Mapperel by Damian Yerrick"
+
+[[rom]]
+id = "mapperel-mmc1-p128k-c128k"
+source = "holy-mapperel"
+path = "testroms/M1_P128K_C128K.nes"
+sha256 = ""
+needs = "cpu, ppu, mmc1"
+covers = "MMC1 (SxROM) with 128 KB of PRG ROM and 128 KB of CHR ROM: bank switching, mirroring"
+check = "frame"
+frames = 300
