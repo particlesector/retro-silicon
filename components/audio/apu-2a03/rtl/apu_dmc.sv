@@ -15,6 +15,7 @@
 module apu_dmc (
     input  logic        clk,
     input  logic        rst,
+    input  logic        soft_rst,  // the reset button: as rst, but the sample address and length are kept
     input  logic        ce,
     input  logic        odd,       // this CPU cycle's count is odd
     input  logic        wr,        // a write to $4010-$4013 this cycle
@@ -194,8 +195,10 @@ module apu_dmc (
     always_ff @(posedge clk) begin
         dma_req    <= 1'b0;
         dma_cancel <= 1'b0;
-        if (rst) begin
-            {irq_en, loop, irq, level, addr_reg, len_reg, cur, remain, rbuf, shift, start_wait, stop_wait} <= '0;
+        if (rst || soft_rst) begin
+            {irq_en, loop, irq, level, cur, remain, rbuf, shift, start_wait, stop_wait} <= '0;
+            if (rst)
+                {addr_reg, len_reg} <= '0;
             buf_empty <= 1'b1;
             silence   <= 1'b1;
             bits      <= 4'd8;

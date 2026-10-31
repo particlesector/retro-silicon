@@ -187,6 +187,7 @@ Anything else reads 0 and ignores writes. Multi-byte registers are little-endian
 | `8C` | 2 | How many of the trace buffer's entries are valid (read-only), up to 2^`TRACE_AW`: cycles `88` - this to `88` - 1 |
 | `8E` | 1 | The trace buffer holds 2^this cycles (read-only: `TRACE_AW`) |
 | `8F` | 1 | The CPU/PPU alignment: PPU dots after a reset before the CPU's first cycle, 1-7 (power-up `LEAD_DOTS`), taken as the system leaves reset. 5 is MesenCE's default alignment; 6 and 7 put the CPU a dot and two later, as two of MesenCE's random ones do |
+| `90` | 8 | The reset button: pressed as the frame these two words count (frames ended since power-up; 0 never) ends, at the next boundary between CPU cycles. As in MesenCE, it restarts the timing as a power-up does (the CPU's reset sequence, the PPU at the pre-render line, the alignment, DMA, the cycle count) and keeps RAM, the mapper, the frame count, the CRCs, and what the CPU, PPU and APU keep (`soft_rst` in their READMEs) |
 
 The limits are levels: raising one lets the system run on from where it stopped. All registers are absolute, so a command the shell runs twice does no harm.
 

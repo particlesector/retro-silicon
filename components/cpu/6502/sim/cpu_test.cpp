@@ -345,6 +345,27 @@ TEST_CASE("6502 SHY stores the register whole when a DMA holds its dummy read") 
     REQUIRE(w.data == 0xFF);
 }
 
+TEST_CASE("6502 soft reset keeps A, X, Y and the flags, sets I, takes 3 from S and reads the vector") {
+    // LDA #$CA; LDX #$93; LDY #$C1; CLI; SEC; then a loop, where the reset comes.
+    Program p({0xA9, 0xCA, 0xA2, 0x93, 0xA0, 0xC1, 0x58, 0x38, 0x4C, 0x08, 0x04});
+    p.ram[0x0600] = 0xEA;  // the reset vector's target after the change below
+    for (int i = 0; i < 7; i++) p.instruction();
+    auto before = p.regs();
+    REQUIRE(before.s == 0xFD);
+    REQUIRE((before.p & 0x04) == 0);
+    p.ram[0xFFFC] = 0x00;
+    p.ram[0xFFFD] = 0x06;
+    p.soft_reset();
+    REQUIRE(p.run_to(0x0600, 20));
+    auto r = p.regs();
+    REQUIRE(r.a == 0xCA);
+    REQUIRE(r.x == 0x93);
+    REQUIRE(r.y == 0xC1);
+    REQUIRE(r.s == 0xFA);
+    REQUIRE((r.p & 0x04) == 0x04);  // I
+    REQUIRE((r.p & 0x01) == 0x01);  // C kept
+}
+
 TEST_CASE("6502 stops on a JAM opcode until reset") {
     Program p({0xEA, 0x02, 0xEA});
     p.instruction();

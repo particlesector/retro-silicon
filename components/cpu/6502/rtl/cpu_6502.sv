@@ -28,6 +28,7 @@ module cpu_6502 #(
 ) (
     input  logic        clk,
     input  logic        rst,      // synchronous; the CPU runs its reset sequence after it falls
+    input  logic        soft_rst, // the reset button: the reset sequence again, A, X, Y and P kept (S - 3, I set)
     input  logic        ce,       // one CPU cycle per clock with ce high
 
     output logic [15:0] addr,
@@ -838,6 +839,17 @@ module cpu_6502 #(
             y        <= '0;
             {fn, fv, fd, fi, fz, fc} <= 6'b000100;
             pc       <= '0;
+            ir       <= '0;
+            irq_r    <= 1'b0;
+            nmi_r    <= 1'b0;
+            nmi_pend <= 1'b0;
+            nmi_vec  <= 1'b0;
+        end else if (soft_rst) begin
+            phase    <= P_FETCH;
+            t        <= '0;
+            int_go   <= 1'b1;
+            int_src  <= I_RESET;
+            stalled  <= 1'b0;
             ir       <= '0;
             irq_r    <= 1'b0;
             nmi_r    <= 1'b0;

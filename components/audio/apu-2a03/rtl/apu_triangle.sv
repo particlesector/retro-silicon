@@ -7,6 +7,7 @@
 module apu_triangle (
     input  logic       clk,
     input  logic       rst,
+    input  logic       soft_rst, // the reset button: as rst, but the length counter keeps its count and halt
     input  logic       ce,
     input  logic       wr,       // a write to $4008-$400B this cycle
     input  logic [1:0] wreg,
@@ -37,7 +38,7 @@ module apu_triangle (
 
     // The control flag is also the length counter's halt.
     apu_length u_len (
-        .clk, .rst, .ce,
+        .clk, .rst, .soft_rst, .ce,
         .wr_halt(wr && wreg == 2'd0), .halt_val(wdata[7]),
         .wr_load(wr && wreg == 2'd3), .load_val,
         .wr_en, .en_val, .half, .active(len_active), .active_next(len_next), .halt,
@@ -89,7 +90,7 @@ module apu_triangle (
     end
 
     always_ff @(posedge clk)
-        if (rst)
+        if (rst || soft_rst)
             {period, timer, pos, lin, lin_load, lin_reload, control} <= '0;
         else if (st_we) begin
             if (st_addr == 2'd0)

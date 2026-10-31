@@ -11,6 +11,7 @@
 module apu_length (
     input  logic       clk,
     input  logic       rst,
+    input  logic       soft_rst, // the reset button: only the enable clears (the triangle's; the others reset)
     input  logic       ce,       // one CPU cycle
     // This cycle's writes
     input  logic       wr_halt,  // the channel's halt bit is written
@@ -69,6 +70,8 @@ module apu_length (
     always_ff @(posedge clk)
         if (rst)
             {en, halt, new_halt, cnt, reload, prev} <= '0;
+        else if (soft_rst)
+            en <= 1'b0;
         else if (st_we)
             {en, halt, new_halt, cnt, reload, prev} <= st_wdata;
         else if (ce) begin

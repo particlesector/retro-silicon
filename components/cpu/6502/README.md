@@ -16,6 +16,7 @@ Module `cpu_6502` (the folder name can't start a module name).
 | Port | Dir | Width | Meaning |
 | --- | --- | --- | --- |
 | `clk`, `rst` | in | 1 | Clock; synchronous reset, after which the CPU runs its reset sequence (three dummy stack reads, then the vector at `$FFFC`) |
+| `soft_rst` | in | 1 | The reset button: the reset sequence again with A, X, Y and P kept, so S drops by 3 and I is set |
 | `ce` | in | 1 | One CPU cycle per clock with `ce` high |
 | `addr` | out | 16 | This cycle's address |
 | `we` | out | 1 | This cycle writes `dout` |
@@ -70,7 +71,7 @@ On a Tang Nano 20K, in `systems/nes`: nestest's 26,554 cycles give the same bus-
 
 Gaps:
 - **RDY:** stalls are modelled as repeating the stalled read, which is right for straightforward cases but not every pipeline stage. It's left out of the lockstep for now and will be matched exactly when the NES's DMA needs it.
-- **Unstable opcodes:** not implemented. Because of them, blargg's `all_instrs` stops at its first unstable opcode.
+- **Unstable opcodes:** as MesenCE runs them, which is how the NES's tests expect them; not checked against perfect6502, whose results for them depend on analogue effects it doesn't model.
 - **ARR with D set:** binary on this core; the NMOS chip adjusts it. The NES never sees it.
 - **perfect6502's ANC, ALR and ARR** leave out the AND with the operand, which real chips do (perfect6502 issue #13). Those three are checked by unit tests instead of the lockstep.
 

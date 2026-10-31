@@ -19,6 +19,7 @@
 module apu_frame (
     input  logic       clk,
     input  logic       rst,
+    input  logic       soft_rst,  // the reset button: as rst, but the mode is kept and written back
     input  logic       ce,
     input  logic       odd,       // this CPU cycle's count is odd
     input  logic       wr,        // $4017 written this cycle
@@ -150,6 +151,12 @@ module apu_frame (
             {count, step, mode, inhibit, irq_flag, line, clr, block} <= '0;
             pend      <= 1'b1;
             pend_mode <= 1'b0;
+            delay     <= 3'd3;
+        end else if (soft_rst) begin
+            // As if $4017 were written with its mode (IRQs allowed), 3 cycles before.
+            {count, step, inhibit, irq_flag, line, clr, block} <= '0;
+            pend      <= 1'b1;
+            pend_mode <= mode;
             delay     <= 3'd3;
         end else if (st_we)
             {count, step, mode, inhibit, irq_flag, line, clr, pend, pend_mode, delay, block} <= st_wdata;

@@ -147,6 +147,7 @@ std::optional<std::string> Console::load(const NesRom& rom, bool want_ext) {
     put32(kCapEn, 0, 1);
     set_input_script({});
     set_live_input(0, 0);
+    set_reset_presses({});
     auto prg = prg_image(rom);
     c_.write(kSdram, prg);
     Crc32 want;
@@ -207,6 +208,12 @@ void Console::set_input_script(const std::vector<InputEntry>& script) {
 void Console::set_live_input(uint8_t pad1, uint8_t pad2) {
     put32(kLive1, pad1, 1);
     put32(kLive2, pad2, 1);
+}
+
+void Console::set_reset_presses(const std::vector<uint32_t>& frames) {
+    if (frames.size() > 2) throw RigError("the reset button can be pressed at 2 frames at most");
+    put32(kResetAt, frames.size() > 0 ? frames[0] : 0);
+    put32(kResetAt + 4, frames.size() > 1 ? frames[1] : 0);
 }
 
 void Console::stop_at(uint32_t cycles) { put32(kStopAt, cycles); }
@@ -482,6 +489,7 @@ TestResult rom_test(Link& link, const RomCheck& check, const NesRom& rom, uint32
         r.bytes = rom.prg.size() + rom.chr.size();
         nes.set_vector(std::nullopt);
         nes.set_input_script(check.input);
+        nes.set_reset_presses(check.reset);
         nes.stop_frame(frames);
         nes.run();
         uint8_t st = nes.wait_stopped();
@@ -680,18 +688,23 @@ std::vector<GoldenRom> load_golden_roms(const std::string& file) {
         std::string crc, kind, result;
         ss >> g.check.id >> g.frames >> crc >> kind >> result >> g.path;
         if (!ss) throw RigError("bad line in " + file + ": " + line);
-        // Optional: input=frame:pad1,frame:pad1,...
-        std::string input;
-        if (ss >> input) {
-            if (input.rfind("input=", 0) != 0) throw RigError("bad line in " + file + ": " + line);
-            std::istringstream es(input.substr(6));
+        // Optional: input=frame:pad1,frame:pad1,... and reset=frame,frame
+        std::string opt;
+        while (ss >> opt) {
             std::string e;
-            while (std::getline(es, e, ',')) {
-                auto colon = e.find(':');
-                if (colon == std::string::npos) throw RigError("bad input entry " + e + " in " + file);
-                g.check.input.push_back({static_cast<uint16_t>(std::stoul(e.substr(0, colon))),
-                                         static_cast<uint8_t>(std::stoul(e.substr(colon + 1), nullptr, 0))});
-            }
+            if (opt.rfind("input=", 0) == 0) {
+                std::istringstream es(opt.substr(6));
+                while (std::getline(es, e, ',')) {
+                    auto colon = e.find(':');
+                    if (colon == std::string::npos) throw RigError("bad input entry " + e + " in " + file);
+                    g.check.input.push_back({static_cast<uint16_t>(std::stoul(e.substr(0, colon))),
+                                             static_cast<uint8_t>(std::stoul(e.substr(colon + 1), nullptr, 0))});
+                }
+            } else if (opt.rfind("reset=", 0) == 0) {
+                std::istringstream es(opt.substr(6));
+                while (std::getline(es, e, ',')) g.check.reset.push_back(static_cast<uint32_t>(std::stoul(e)));
+            } else
+                throw RigError("bad line in " + file + ": " + line);
         }
         g.crc = static_cast<uint32_t>(std::stoul(crc, nullptr, 16));
         g.check.kind = kind == "zeropage" ? RomCheck::kZeroPage : kind == "frame" ? RomCheck::kFrame : RomCheck::kBlargg;

@@ -22,6 +22,7 @@ Module `apu_mixer` mixes the levels as the 2A03's output does, nonlinearly, with
 | Port | Dir | Width | Meaning |
 | --- | --- | --- | --- |
 | `clk`, `rst` | in | 1 | Clock; synchronous reset to the power-up state |
+| `soft_rst` | in | 1 | The reset button, as MesenCE: the same, but the frame counter keeps its mode (acting as if `$4017` were written with it), the DMC keeps its sample address and length, and the triangle's length counter keeps its count and halt |
 | `ce` | in | 1 | One CPU cycle |
 | `odd` | in | 1 | This cycle's count is odd |
 | `wr`, `addr`, `wdata` | in | 1, 5, 8 | A write to `$4000 + addr` this cycle (`$4014` and `$4016` are ignored) |
