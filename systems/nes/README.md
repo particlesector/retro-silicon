@@ -229,6 +229,8 @@ The limits are levels: raising one lets the system run on from where it stopped.
 
 `rig::nes::nestest` runs nestest's automated mode for 26,554 cycles while the host reads memory; the trace CRC is still `0xebba51ce`, in the sim (both memories) and on both boards, and the trace buffer's last 1024 cycles match nestest.log, instruction by instruction.
 
+**The reset button (Oct 31).** blargg's apu_reset and cpu_reset ROMs (8) ask for it, MesenCE presses it 10 frames later, and the core presses it at the same frames: all 8 match MesenCE in the sim and on both boards, 183 golden ROMs in all.
+
 **The sweep (Oct 31).** The golden list has 175 ROMs: the 103 before and 72 more from nes-test-roms (every ROM there for these mappers with a result MesenCE gives automatically). 165 match MesenCE in the sim, on the Tang Nano 20K and on the PYNQ-Z2, with the same CRCs. The same 10 fail on all three, to be fixed in milestone 10b:
 - eight instruction tests that use the unstable unofficial opcodes (XAA, LAX `#imm`, AHX, SHX, SHY, TAS, LAS), which halt `cpu/6502` (`instr_test-03` and `-07`, `instr_test_v3-02`, `-06` and `-all`, `nes_instr_test-02` and `-06`, `cpu_test5-cpu`);
 - `dmc_dma-4016_read`: the extra controller reads a DMC DMA makes during a `$4016` read;
