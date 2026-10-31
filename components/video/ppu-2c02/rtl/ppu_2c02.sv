@@ -548,6 +548,10 @@ module ppu_2c02 #(
             end else if (cd == 9'd337 || cd == 9'd339) begin
                 if (ren_cur) begin
                     n_bus_addr = nt_addr(n_v);
+                    // The unused nametable fetches' byte: dot 0 puts its
+                    // pattern address on the bus (below).
+                    if (cd == 9'd339)
+                        n_tile_addr = {ctrl[4], vrdata, 1'b0, n_v[14:12]};
                     if (cd == 9'd339 && pre && odd)
                         n_dot = 9'd340;  // the odd frame's skipped dot
                 end
@@ -653,6 +657,13 @@ module ppu_2c02 #(
                 endcase
             end else if (nd == 9'd337 || nd == 9'd339)
                 n_vaddr = nt_addr(n_v);
+            // Dot 0 of a visible line puts the pattern address of dot 339's
+            // nametable byte on the bus, as MesenCE's PPU does (not on line 0
+            // after the odd frame's skipped dot): with the background at
+            // $1000, A12 rises there, so an MMC3 doesn't see it low from dot
+            // 337 to dot 4 and count a second rise in the line.
+            else if (nd == 9'd0 && nl < 9'd240 && (nl != 9'd0 || cd != 9'd339))
+                n_vaddr = {1'b0, n_tile_addr};
         end
     end
 

@@ -49,7 +49,13 @@ The port follows [docs/conventions.md](../../../docs/conventions.md): four words
 
 ## Opcodes
 
-Every official opcode, and the stable unofficial ones: LAX, SAX, DCP, ISC, SLO, RLA, SRE, RRA, ANC, ALR, ARR, AXS, SBC `$EB` and the NOPs. The JAM opcodes, and the unstable ones (XAA, LAX `#imm`, AHX, SHX, SHY, TAS, LAS), stop the CPU with `halted` set.
+Every official opcode, and the unofficial ones: LAX, SAX, DCP, ISC, SLO, RLA, SRE, RRA, ANC, ALR, ARR, AXS, SBC `$EB` and the NOPs, and the unstable ones as MesenCE runs them:
+
+- **XAA `#imm`:** A = (A | `$EE`) & X & imm. **LAX `#imm`:** A = X = imm.
+- **LAS abs,Y:** A = X = S = memory & S.
+- **SHY abs,X, SHX abs,Y, AHX abs,Y and (zp),Y, TAS abs,Y:** each stores Y, X or A & X ANDed with the base address's high byte + 1. Across a page, the written address's high byte is ANDed with that register too. If RDY held the dummy read before the write (a DMA), the register is stored whole. TAS also sets S = A & X.
+
+The JAM opcodes stop the CPU with `halted` set.
 
 ## Status
 

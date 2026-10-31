@@ -278,6 +278,16 @@ MATCHES_MESEN("cpu_interrupts-2")
 MATCHES_MESEN("cpu_interrupts-3")
 MATCHES_MESEN("cpu_interrupts-4")
 MATCHES_MESEN("cpu_interrupts-5")
+// The unstable unofficial opcodes: XAA and LAX #imm (immediate), SHY, SHX,
+// AHX, TAS and LAS (abs,X and abs,Y).
+MATCHES_MESEN("instr_test-03")
+MATCHES_MESEN("nes_instr_test-02")
+MATCHES_MESEN("nes_instr_test-06")
+// A DMC DMA halting a $4016 read: only its halt cycle clocks the pad, as on
+// an NES (not a Famicom), so a read loses one bit.
+MATCHES_MESEN("dmc_dma-4016_read")
+// The older MMC3 test's IRQ timing within a scanline.
+MATCHES_MESEN("mmc3_test_v1-4")
 MATCHES_MESEN("instr_misc-01")
 MATCHES_MESEN("instr_misc-02")
 MATCHES_MESEN("instr_misc-03")

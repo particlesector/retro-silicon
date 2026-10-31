@@ -106,3 +106,8 @@ mapperel-mmc1-c128k 330 0x88cad8cb
 mapperel-mmc1-p512k 330 0x3b5b3ec5
 mapperel-mmc3-cr8k 330 0x936b04cd
 mapperel-mmc3-c256k 330 0xb852cbe0
+nes_instr_test-02 88 0xe1171be4
+nes_instr_test-06 274 0xa65038d6
+instr_test-03 118 0x04b75add
+dmc_dma-4016_read 90 0x0f9e43f4
+mmc3_test_v1-4 370 0x409907ff
