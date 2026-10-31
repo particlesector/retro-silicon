@@ -136,6 +136,7 @@ The clock-enable's phase isn't state: it only sets how many clocks pass before t
 | `0x06000000`–`0x06007FFF` | The save-state buffer; while no command runs |
 | `0x07000000`–`0x070007FF` | The input script, 512 entries of 4 bytes; write-only (reads give 0). An entry is written when its byte 3 is |
 | `0x08000000`– | All of CHR's block RAM, unbanked: 2^`CHR_AW` bytes, mirrored |
+| `0x09000000`– | The trace buffer's ring (`debug/trace`): 2^`TRACE_AW` entries of 4 bytes, the trace CRC's bytes for one CPU cycle; cycle n is at entry n mod 2^`TRACE_AW`. Read while stopped |
 
 Anything else reads 0 and ignores writes. Multi-byte registers are little-endian. A save-state word is written when its byte 3 is written, using bytes 0-2 written before it. State writes count only while the system is held in reset or stopped between cycles, and the system's own words only out of reset.
 
@@ -182,6 +183,10 @@ Anything else reads 0 and ignores writes. Multi-byte registers are little-endian
 | `76` | 1 | Bit 0: CHR ROM can come from the board's memory (read-only: `CHR_EXT`) |
 | `78` | 4 | Clocks the dots have waited for memory since reset (read-only): a PRG read or CHR word not back in time. They change nothing the system does, but too many keep it from keeping pace with a display |
 | `7C` | 12 | A memory cache's counts since reset, 4 bytes each (read-only; 0 without one): reads it answered, reads that went to memory, lines it prefetched (`nes_axi`'s `memory/cache`) |
+| `88` | 4 | The trace buffer's count (read-only): the number of the cycle it records next; a state loaded sets it to the state's cycle |
+| `8C` | 2 | How many of the trace buffer's entries are valid (read-only), up to 2^`TRACE_AW`: cycles `88` - this to `88` - 1 |
+| `8E` | 1 | The trace buffer holds 2^this cycles (read-only: `TRACE_AW`) |
+| `8F` | 1 | The CPU/PPU alignment: PPU dots after a reset before the CPU's first cycle, 1-7 (power-up `LEAD_DOTS`), taken as the system leaves reset. 5 is MesenCE's default alignment; 6 and 7 put the CPU a dot and two later, as two of MesenCE's random ones do |
 
 The limits are levels: raising one lets the system run on from where it stopped. All registers are absolute, so a command the shell runs twice does no harm.
 
@@ -210,17 +215,25 @@ The limits are levels: raising one lets the system run on from where it stopped.
 | `CLKS_PER_BIT` | 18 | Clocks per bit; 1.5 Mbaud at 27 MHz |
 | `IDLE_CLKS` | 270,000 | The shell's stall timeout; 10 ms at 27 MHz |
 | `DOT_NUM`, `DOT_DEN` | 35, 176 | PPU dots per clocks: 189, 1760 at 50 MHz. Dots must come at least 5 clocks apart, so a CPU cycle leaves SDRAM its 10 |
-| `LEAD_DOTS` | 5 | PPU dots after reset before the CPU's first cycle |
+| `LEAD_DOTS` | 5 | PPU dots after reset before the CPU's first cycle, register `8F`'s power-up value |
 | `PACE` | 0 | Keep pace with the display from power-up (register `3C` bit 0) |
 | `CHR_AW`, `CHR_BANK_AW` | 13, `CHR_AW` | CHR's block RAM: 2^`CHR_AW` bytes, in banks of 2^`CHR_BANK_AW` (`nes_bram`'s `CHR_AW` and `BANK_AW`) |
 | `MEM_AW` | 23 | The board's memory's size, for the harness (`nes_bram` passes its own) |
 | `CHR_EXT` | 0 | CHR ROM can come from the board's memory (`nes_sdram`'s too); needs 8 or more clocks a dot |
+| `TRACE_AW` | 10 | The trace buffer keeps the last 2^`TRACE_AW` CPU cycles (4 bytes each, in byte-wide block RAM) |
 | `SAVE_STATE` | 1 | 0 builds the system without save states (the CPU's, PPU's, APU's and resampler's ports do nothing; OAM can still be cleared): the Tang Nano 20K's NES, which fits only so with the APU and HDMI audio |
 | `BUILD_ID` | 0 | Reported by INFO; the CMake build sets it from the RTL's SHA-256 |
 
 ## Status
 
-`rig::nes::nestest` runs nestest's automated mode for 26,554 cycles while the host reads memory; the trace CRC is still `0xebba51ce`, in the sim (both memories) and on both boards.
+`rig::nes::nestest` runs nestest's automated mode for 26,554 cycles while the host reads memory; the trace CRC is still `0xebba51ce`, in the sim (both memories) and on both boards, and the trace buffer's last 1024 cycles match nestest.log, instruction by instruction.
+
+**The sweep (Oct 31).** The golden list has 175 ROMs: the 103 before and 72 more from nes-test-roms (every ROM there for these mappers with a result MesenCE gives automatically). 165 match MesenCE in the sim, on the Tang Nano 20K and on the PYNQ-Z2, with the same CRCs. The same 10 fail on all three, to be fixed in milestone 10b:
+- eight instruction tests that use the unstable unofficial opcodes (XAA, LAX `#imm`, AHX, SHX, SHY, TAS, LAS), which halt `cpu/6502` (`instr_test-03` and `-07`, `instr_test_v3-02`, `-06` and `-all`, `nes_instr_test-02` and `-06`, `cpu_test5-cpu`);
+- `dmc_dma-4016_read`: the extra controller reads a DMC DMA makes during a `$4016` read;
+- `mmc3_test_v1-4`: the older MMC3 test's IRQ timing within a scanline.
+
+**Other power-ups.** With RAM powered up all `0xFF`, and at the CPU/PPU alignments of 6 and 7 lead dots (register `8F`), the 103 earlier ROMs match MesenCE's frames at the same settings on both boards (`tools/mesen/frames.py --ram`, `--lead`); in the sim, the ROMs whose frames those change (blargg's APU tests, `full_palette`).
 
 `rig::nes::rom_test` runs each test ROM in `harness/golden/nes_frames_crc32.txt` from power-up to a set frame. Each ROM must pass its own check, and its last frame's CRC must match MesenCE's (`tools/mesen/frames.py`). All 42 pass in the sim and on both boards, a Tang Nano 20K at 46.40625 MHz on SDRAM, keeping pace with its HDMI output, and a Tang Console 138K at 50 MHz on block RAM:
 - blargg's `ppu_vbl_nmi` singles, `ppu_open_bus` and `oam_read`;

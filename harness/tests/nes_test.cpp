@@ -114,6 +114,39 @@ void matches_mesen(const std::string& id, Sim sim = Sim::kDefault) {
 #define MATCHES_MESEN_EXT(id) \
     TEST_CASE(id " matches MesenCE's frame with its CHR ROM in the SDRAM") { matches_mesen(id, Sim::kExt); }
 
+// Another power-up: RAM all 0xFF, or another CPU/PPU alignment, against
+// MesenCE's frame at the same (tools/mesen/frames.py --ram, --lead). These are
+// ROMs whose frame changes with it.
+namespace {
+
+void matches_mesen_power(const std::string& id, const std::string& file, const rig::nes::PowerUp& p) {
+    auto [g, rom] = golden_rom(id, file);
+    auto link = rig::make_nes_sim();
+    auto r = rig::nes::rom_test(*link, g.check, rom, g.frames, RS_NES_BUILD_ID, false, p);
+    INFO(r.detail << " / " << r.notes);
+    CHECK(r.passed);
+    CHECK(r.crc32 == g.crc);
+}
+
+rig::nes::PowerUp ones() { rig::nes::PowerUp p; p.fill = rig::nes::PowerUp::kOnes; return p; }
+rig::nes::PowerUp lead(int dots) { rig::nes::PowerUp p; p.lead_dots = static_cast<uint8_t>(dots); return p; }
+
+} // namespace
+
+#define MATCHES_MESEN_ONES(id) \
+    TEST_CASE(id " matches MesenCE's frame with RAM powered up all 0xFF") { \
+        matches_mesen_power(id, RS_NES_FRAMES_ONES_GOLDEN, ones()); \
+    }
+#define MATCHES_MESEN_LEAD(id, dots) \
+    TEST_CASE(id " matches MesenCE's frame at the CPU/PPU alignment of " #dots " lead dots") { \
+        matches_mesen_power(id, RS_NES_FRAMES_LEAD##dots##_GOLDEN, lead(dots)); \
+    }
+
+MATCHES_MESEN_ONES("blargg_apu-01")
+MATCHES_MESEN_ONES("blargg_apu-07")
+MATCHES_MESEN_LEAD("full_palette", 6)
+MATCHES_MESEN_LEAD("full_palette", 7)
+
 MATCHES_MESEN_BRAM("oam_read")
 MATCHES_MESEN_BRAM("ppu_vbl_nmi-10")
 MATCHES_MESEN_BRAM("sprite_hit-09")
@@ -342,6 +375,42 @@ TEST_CASE("nestest passes on the sim backend with the CPU bench's trace CRC") {
     INFO(r.detail << " / " << r.notes);
     REQUIRE(r.passed);
     REQUIRE(r.crc32 == it->second);
+}
+
+TEST_CASE("the trace buffer holds nestest's last cycles as nestest.log has them") {
+    std::string path = std::string(RS_TESTROMS) + "/nes-test-roms/other/nestest.nes";
+    std::string log = std::string(RS_TESTROMS) + "/nes-test-roms/other/nestest.log";
+    if (!std::filesystem::exists(path)) SKIP(path << " not found: run testroms/fetch.py");
+    auto rom = rig::load_ines(path);
+    REQUIRE(std::holds_alternative<rig::NesRom>(rom));
+    auto link = rig::make_nes_sim();
+    // Stopped twice: early, and at the log's end.
+    for (uint32_t cycles : {5000u, rig::nes::kNestestCycles}) {
+        auto r = rig::nes::nestest(*link, std::get<rig::NesRom>(rom), cycles, RS_NES_BUILD_ID, log);
+        INFO(cycles << ": " << r.detail << " / " << r.notes);
+        REQUIRE(r.passed);
+        REQUIRE(r.notes.find("cycles match nestest.log") != std::string::npos);
+    }
+}
+
+TEST_CASE("compare_nestest_log finds a trace that differs from nestest.log") {
+    std::string log = std::string(RS_TESTROMS) + "/nes-test-roms/other/nestest.log";
+    if (!std::filesystem::exists(log)) SKIP(log << " not found: run testroms/fetch.py");
+    // nestest.log's first instructions: JMP $C5F5 at cycle 7, then LDX #$00 at 10.
+    using E = rig::nes::TraceEntry;
+    std::vector<E> t = {{7, 0xC000, 0x4C, false, true}, {8, 0xC001, 0xF5, false, false},
+                        {9, 0xC002, 0xC5, false, false}, {10, 0xC5F5, 0xA2, false, true}};
+    CHECK_FALSE(rig::nes::compare_nestest_log(t, log).has_value());
+    auto bad = t;
+    bad[3].addr = 0xC5F6;  // the wrong PC
+    CHECK(rig::nes::compare_nestest_log(bad, log).has_value());
+    bad = t;
+    bad[1].sync = true;  // a fetch where there's none
+    CHECK(rig::nes::compare_nestest_log(bad, log).has_value());
+    bad = t;
+    bad[3].sync = false;  // an instruction missed
+    CHECK(rig::nes::compare_nestest_log(bad, log).has_value());
+    CHECK(rig::nes::compare_nestest_log({}, log).has_value());
 }
 
 TEST_CASE("a test after nestest on the same system isn't held by the limits nestest left") {

@@ -4,6 +4,7 @@
 #include <algorithm>
 #include <chrono>
 #include <iterator>
+#include <map>
 #include <cstdio>
 #include <fstream>
 #include <sstream>
@@ -108,6 +109,34 @@ size_t chr_ext_offset(size_t a) {
     return (a & ~size_t{0xF}) | (a & 7) << 1 | (a >> 3 & 1);
 }
 
+std::optional<uint8_t> lead_dots_for(int ppu_offset, int cpu_offset) {
+    // The default, PPU 1 and CPU 0, is 5 dots; each 4 master clocks more of
+    // CPU offset than PPU is a dot later.
+    int d = cpu_offset - ppu_offset + 1;
+    if (d < 0 || d % 4 != 0 || d / 4 > 2) return std::nullopt;
+    return static_cast<uint8_t>(5 + d / 4);
+}
+
+namespace {
+
+// The bytes a memory powers up with.
+std::vector<uint8_t> power_up_fill(const PowerUp& p, size_t n, uint32_t salt) {
+    std::vector<uint8_t> v(n, p.fill == PowerUp::kOnes ? 0xFF : 0x00);
+    if (p.fill == PowerUp::kRandom) {
+        uint32_t x = p.seed * 2654435761u ^ salt;  // xorshift32, a stream for each memory
+        for (auto& b : v) {
+            x ^= x << 13;
+            x ^= x >> 17;
+            x ^= x << 5;
+            if (x == 0) x = 1;
+            b = static_cast<uint8_t>(x >> 24);
+        }
+    }
+    return v;
+}
+
+} // namespace
+
 std::optional<std::string> Console::load(const NesRom& rom, bool want_ext) {
     if (auto e = unsupported(rom)) return e;
     // Whatever ran before may have left limits, the vector override or a
@@ -133,8 +162,8 @@ std::optional<std::string> Console::load(const NesRom& rom, bool want_ext) {
     put32(kMapper, rom.mapper, 1);
     put32(kCart, (rom.mirroring == NesRom::Mirroring::kVertical ? 1 : 0) | (chr_ram ? 2 : 0) |
                      (prg_ram_size(rom) ? 4 : 0) | (ext ? 8 : 0), 1);
-    std::vector<uint8_t> zeros(8192, 0);
-    const std::vector<uint8_t>& chr = chr_ram ? zeros : rom.chr;
+    std::vector<uint8_t> chr_ram_fill = power_up_fill(power_up_, 8192, 1);
+    const std::vector<uint8_t>& chr = chr_ram ? chr_ram_fill : rom.chr;
     put32(kChrMask, static_cast<uint32_t>(chr.size() - 1), 3);
     if (ext) {
         std::vector<uint8_t> laid(chr.size());
@@ -149,11 +178,13 @@ std::optional<std::string> Console::load(const NesRom& rom, bool want_ext) {
         if (c_.crc(kChr, static_cast<uint32_t>(chr.size())) != [&] { Crc32 c; c.update(chr); return c.value(); }())
             return "uploaded CHR doesn't read back";
     }
-    // Power-up memory, all zeros: nametables, RAM, PRG RAM and OAM.
-    c_.write(kPpu + 0x2000, std::vector<uint8_t>(0x1000, 0));
-    c_.write(kCpu + 0x0000, std::vector<uint8_t>(0x800, 0));
-    c_.write(kCpu + 0x6000, zeros);
-    c_.write(kPpuState, std::vector<uint8_t>(256, 0));  // state words 0-63
+    // Power-up memory, as power_up_ says: nametables, RAM, PRG RAM and OAM.
+    // Then the CPU/PPU alignment, taken as the system leaves reset.
+    c_.write(kPpu + 0x2000, power_up_fill(power_up_, 0x1000, 2));
+    c_.write(kCpu + 0x0000, power_up_fill(power_up_, 0x800, 3));
+    c_.write(kCpu + 0x6000, power_up_fill(power_up_, 0x2000, 4));
+    c_.write(kPpuState, power_up_fill(power_up_, 256, 5));  // state words 0-63
+    put32(kLeadDots, power_up_.lead_dots, 1);
     return std::nullopt;
 }
 
@@ -186,6 +217,27 @@ uint32_t Console::cycles() { return get32(kCycles); }
 uint32_t Console::frames() { return get32(kFrames); }
 uint32_t Console::trace_crc() { return get32(kTraceCrc); }
 uint32_t Console::audio_crc() { return get32(kAudioCrc); }
+
+std::vector<TraceEntry> Console::trace() {
+    uint32_t depth = 1u << c_.read(kRegs + kTraceBits, 1)[0];
+    uint32_t count = get32(kTraceCount);
+    uint32_t filled = get32(kTraceFilled) & 0xFFFF;
+    // Oldest first: from ring index (count - filled) mod depth, wrapping once.
+    uint32_t first = (count - filled) % depth;
+    std::vector<uint8_t> raw;
+    uint32_t head = std::min(filled, depth - first);
+    if (head) raw = c_.read(kTrace + 4 * first, 4 * head);
+    if (filled > head) {
+        auto tail = c_.read(kTrace, 4 * (filled - head));
+        raw.insert(raw.end(), tail.begin(), tail.end());
+    }
+    std::vector<TraceEntry> t(filled);
+    for (uint32_t k = 0; k < filled; k++) {
+        const uint8_t* e = &raw[4 * k];
+        t[k] = {count - filled + k, static_cast<uint16_t>(e[0] | e[1] << 8), e[2], (e[3] & 1) != 0, (e[3] & 2) != 0};
+    }
+    return t;
+}
 uint32_t Console::mem_waits() { return get32(kMemWaits); }
 Console::CacheStats Console::cache_stats() { return {get32(kCacheHits), get32(kCacheMisses), get32(kCachePrefetches)}; }
 std::pair<uint32_t, uint32_t> Console::pcm() { return {get32(kPcmCrc), get32(kPcmCount)}; }
@@ -279,7 +331,50 @@ void Console::load_state(const std::vector<uint8_t>& state) {
     save_cmd(2);
 }
 
-TestResult nestest(Link& link, const NesRom& rom, uint32_t cycles, std::optional<uint32_t> build_id) {
+std::optional<std::string> compare_nestest_log(const std::vector<TraceEntry>& trace, const std::string& log) {
+    std::ifstream f(log);
+    if (!f) return "can't read " + log;
+    // Each instruction's cycle -> {PC, opcode}: a line starts "C000  4C F5 C5  JMP"
+    // and has "CYC:7" at its end.
+    std::map<uint32_t, std::pair<unsigned, unsigned>> ins;
+    std::string line;
+    while (std::getline(f, line)) {
+        unsigned pc = 0, op = 0;
+        unsigned long cyc = 0;
+        auto at = line.find("CYC:");
+        if (at == std::string::npos || std::sscanf(line.c_str(), "%4x %2x", &pc, &op) != 2 ||
+            std::sscanf(line.c_str() + at + 4, "%lu", &cyc) != 1)
+            continue;
+        ins[static_cast<uint32_t>(cyc)] = {pc, op};
+    }
+    if (trace.empty()) return "the trace buffer is empty";
+    uint32_t first = trace.front().cycle, last = trace.back().cycle;
+    size_t matched = 0;
+    for (const auto& e : trace) {
+        auto it = ins.find(e.cycle);
+        std::string at = "cycle " + std::to_string(e.cycle) + ": ";
+        if (it == ins.end()) {
+            if (e.sync) return at + "an opcode fetch at " + hex(e.addr, 4) + ", where nestest.log has none";
+            continue;
+        }
+        auto [pc, op] = it->second;
+        if (!e.sync || e.write || e.addr != pc || e.data != op)
+            return at + "nestest.log fetches " + hex(op, 2) + " at " + hex(pc, 4) + "; the trace has " +
+                   (e.write ? "a write of " : e.sync ? "a fetch of " : "a read of ") + hex(e.data, 2) + " at " +
+                   hex(e.addr, 4);
+        matched++;
+    }
+    // Every instruction in the covered cycles was in the trace (checked above), so
+    // the count must match too.
+    size_t want = static_cast<size_t>(std::distance(ins.lower_bound(first), ins.upper_bound(last)));
+    if (matched != want || matched == 0)
+        return "the trace's cycles " + std::to_string(first) + "-" + std::to_string(last) + " match " +
+               std::to_string(matched) + " of nestest.log's " + std::to_string(want) + " instructions there";
+    return std::nullopt;
+}
+
+TestResult nestest(Link& link, const NesRom& rom, uint32_t cycles, std::optional<uint32_t> build_id,
+                   const std::string& log) {
     TestResult r;
     r.name = "nestest";
     auto t0 = std::chrono::steady_clock::now();
@@ -343,6 +438,11 @@ TestResult nestest(Link& link, const NesRom& rom, uint32_t cycles, std::optional
         if (st & kHalted) return finish("the CPU halted at cycle " + std::to_string(ran));
         if (ran != cycles) return finish("stopped after " + std::to_string(ran) + " cycles, not " + std::to_string(cycles));
         if (codes[0] != 0 || codes[1] != 0) return finish("nestest reports errors");
+        if (!log.empty()) {
+            auto t = nes.trace();
+            if (auto e = compare_nestest_log(t, log)) return finish("the trace buffer: " + *e);
+            r.notes += "; the trace buffer's last " + std::to_string(t.size()) + " cycles match nestest.log";
+        }
         return finish("");
     } catch (const shell::StatusError& e) {
         return finish(e.what());
@@ -350,7 +450,7 @@ TestResult nestest(Link& link, const NesRom& rom, uint32_t cycles, std::optional
 }
 
 TestResult rom_test(Link& link, const RomCheck& check, const NesRom& rom, uint32_t frames,
-                    std::optional<uint32_t> build_id, bool chr_ext) {
+                    std::optional<uint32_t> build_id, bool chr_ext, const PowerUp& power) {
     TestResult r;
     r.name = check.id;
     auto t0 = std::chrono::steady_clock::now();
@@ -377,6 +477,7 @@ TestResult rom_test(Link& link, const RomCheck& check, const NesRom& rom, uint32
                           ": the wrong bitstream is loaded");
 
         nes.hold_reset();
+        nes.set_power_up(power);
         if (auto e = nes.load(rom, chr_ext)) return finish(*e);
         r.bytes = rom.prg.size() + rom.chr.size();
         nes.set_vector(std::nullopt);

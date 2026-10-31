@@ -3,6 +3,7 @@
 """Golden frame CRCs from MesenCE, for the NES core's frames to match.
 
 usage: tools/mesen/frames.py [--mesen PATH] [--roms DIR] [--out FILE] [--home DIR]
+                             [--ram zeros|ones] [--lead 5|6|7] [--only ID,...]
        tools/mesen/frames.py --dump ID FRAME [--mesen PATH] [--roms DIR] > frame.txt
 
 For each ROM in testroms/manifest.toml with a result to check (blargg,
@@ -20,6 +21,15 @@ MesenCE runs with its own settings in --home (default ~/.cache/retro-silicon/
 mesen-home): RAM and OAM zeroed at power-up, and a 512-colour palette whose
 every entry encodes its own index, so its screen buffer gives the PPU's output
 exactly. --dump prints one frame as rows of hex values, for tools/frame.py.
+
+--ram ones powers RAM up all 0xFF instead (MesenCE's AllOnes: RAM, PRG RAM,
+CHR RAM, nametables and OAM), the default output then
+harness/golden/nes_frames_ones_crc32.txt. --lead 6 or 7 runs at another
+CPU/PPU alignment, the core's lead dots (rig::nes::PowerUp): MesenCE only
+picks an alignment at random, so each ROM runs again until it picks one that
+is that many dots (its log says which), stopping at the first frame
+otherwise; the default output is then nes_frames_lead<N>_crc32.txt. --only
+limits the run to some ROMs.
 
 Needs MesenCE and xvfb-run.
 """
@@ -61,6 +71,16 @@ local function index(v)  -- the palette entry the pixel came from
   return ((v >> 8) & 0xFF) * 64 + (v & 0x3F)
 end
 local ended = 0
+-- With --lead, MesenCE's random alignment must be the one asked for: its log
+-- has "CPU/PPU alignment - PPU: p/3 CPU: c/11".
+local want_lead = {lead}
+local function lead_of_log()
+  local p, c = string.match(emu.getLogWindowLog(), "PPU: (%d+)/3 CPU: (%d+)/11")
+  if not p then return nil end
+  local d = tonumber(c) - tonumber(p) + 1
+  if d < 0 or d % 4 ~= 0 or d // 4 > 2 then return -1 end
+  return 5 + d // 4
+end
 local function pad(byte)
   local t = {{}}
   for i = 1, 8 do t[names[i]] = (byte >> (i - 1)) & 1 == 1 end
@@ -77,6 +97,11 @@ if #script > 0 then
 end
 emu.addEventCallback(function()
   ended = ended + 1
+  if ended == 1 and want_lead ~= 5 then
+    local got = lead_of_log()
+    print("lead " .. tostring(got))
+    if got ~= want_lead then emu.stop(3) return end
+  end
   if ended ~= want then return end
   local b = emu.getScreenBuffer()
   local c = 0xFFFFFFFF
@@ -103,13 +128,14 @@ def palette():
     return [(0x10 << 16) | (e << 8) | i for e in range(8) for i in range(64)]
 
 
-def setup_home(home: Path):
+def setup_home(home: Path, ram="zeros", lead=5):
     cfg = home / ".config" / "MesenCE"
     cfg.mkdir(parents=True, exist_ok=True)
     settings = cfg / "settings.json"
     # A standard controller in each port, for input scripts.
     pad = {"Type": "NesController"}
-    want = {"Nes": {"UserPalette": palette(), "RamPowerOnState": "AllZeros", "Port1": pad, "Port2": pad}}
+    want = {"Nes": {"UserPalette": palette(), "RamPowerOnState": {"zeros": "AllZeros", "ones": "AllOnes"}[ram],
+                    "RandomizeCpuPpuAlignment": lead != 5, "Port1": pad, "Port2": pad}}
     try:
         cur = json.loads(settings.read_text())
     except (OSError, ValueError):
@@ -126,9 +152,20 @@ def lua_script(entries):
     return "{" + ", ".join(f"{{{e[0]}, {e[1]}}}" for e in entries) + "}"
 
 
-def run(mesen, home, rom: Path, frames: int, dump: bool, scratch: Path, script=()):
+TRIES = 200  # runs of a ROM before giving up on MesenCE picking the alignment asked for
+
+
+def run(mesen, home, rom: Path, frames: int, dump: bool, scratch: Path, script=(), lead=5):
     lua = scratch / "frames.lua"
-    lua.write_text(LUA.format(want=frames, dump="true" if dump else "false", script=lua_script(script)))
+    lua.write_text(LUA.format(want=frames, dump="true" if dump else "false", script=lua_script(script), lead=lead))
+    for _ in range(TRIES):
+        out = run_once(mesen, home, rom, lua)
+        if lead == 5 or f"lead {lead}" in out:
+            return out
+    return ""
+
+
+def run_once(mesen, home, rom: Path, lua: Path):
     # MesenCE keeps battery-backed RAM between runs: start each from power-up,
     # as the core does.
     shutil.rmtree(home / ".config" / "MesenCE" / "Saves", ignore_errors=True)
@@ -146,11 +183,23 @@ def main():
     ap.add_argument("--out", type=Path, default=ROOT / "harness/golden/nes_frames_crc32.txt")
     ap.add_argument("--home", type=Path, default=Path.home() / ".cache/retro-silicon/mesen-home")
     ap.add_argument("--dump", nargs=2, metavar=("ID", "FRAME"))
+    ap.add_argument("--ram", choices=("zeros", "ones"), default="zeros")
+    ap.add_argument("--lead", type=int, choices=(5, 6, 7), default=5)
+    ap.add_argument("--only", help="comma-separated ROM ids")
     args = ap.parse_args()
+    if args.ram != "zeros" and args.lead != 5:
+        ap.error("--ram and --lead one at a time")
+    if args.out == ap.get_default("out"):
+        tag = "_ones" if args.ram == "ones" else f"_lead{args.lead}" if args.lead != 5 else ""
+        args.out = ROOT / f"harness/golden/nes_frames{tag}_crc32.txt"
+    if args.home == ap.get_default("home") and (args.ram != "zeros" or args.lead != 5):
+        tag = "-ones" if args.ram == "ones" else f"-lead{args.lead}"
+        args.home = args.home.with_name(args.home.name + tag)  # its own settings, to run beside the others
+    only = set(args.only.split(",")) if args.only else None
 
     manifest = tomllib.loads((ROOT / "testroms/manifest.toml").read_text())
     roms = {r["id"]: r for r in manifest["rom"]}
-    setup_home(args.home)
+    setup_home(args.home, args.ram, args.lead)
     scratch = args.home / "scratch"
     scratch.mkdir(exist_ok=True)
 
@@ -158,18 +207,22 @@ def main():
         rid, frame = args.dump
         r = roms[rid]
         out = run(args.mesen, args.home, args.roms / r["source"] / r["path"], int(frame) + 1, True, scratch,
-                  r.get("input", []))
+                  r.get("input", []), args.lead)
         for line in out.splitlines():
             if line.startswith("row "):
                 print(line[4:].split(" ", 1)[1])
         return 0
 
+    power = ("RAM powers up all 0xFF" if args.ram == "ones" else
+             f"the CPU/PPU alignment at {args.lead} lead dots" if args.lead != 5 else "")
     lines = ["# Golden frame CRCs from MesenCE: id, frames ended, CRC-32 of the last, check, result, path.",
-             "# Generated by tools/mesen/frames.py; don't edit by hand."]
+             "# Generated by tools/mesen/frames.py" + (f" ({power})" if power else "") + "; don't edit by hand."]
     worst = 0
     for r in manifest["rom"]:
         needs = {n.strip() for n in r["needs"].split(",")}
         if r["check"] not in ("blargg", "zeropage", "frame") or not needs <= SUPPORTED:
+            continue
+        if only is not None and r["id"] not in only:
             continue
         path = args.roms / r["source"] / r["path"]
         if not path.exists():
@@ -181,7 +234,7 @@ def main():
             continue
         frames = r["frames"] + MARGIN
         script = r.get("input", [])
-        out = run(args.mesen, args.home, path, frames, False, scratch, script)
+        out = run(args.mesen, args.home, path, frames, False, scratch, script, args.lead)
         m = re.search(r"^crc (\d+) ([0-9a-f]{8})$", out, re.M)
         if not m or int(m.group(1)) != frames:
             print(f"ERROR   {r['id']}: no CRC from MesenCE", file=sys.stderr)

@@ -29,6 +29,7 @@ constexpr uint32_t kCapture = 0x05001000;
 constexpr uint32_t kSaveBuffer = 0x06000000;
 constexpr uint32_t kInputScript = 0x07000000;  // the input player's script, 512 entries of 4 bytes
 constexpr uint32_t kChr = 0x08000000;    // all of CHR in block RAM, unbanked
+constexpr uint32_t kTrace = 0x09000000;  // the trace buffer's ring, 4 bytes an entry
 // CHR ROM too big for CHR's block RAM, on a board that can (kChrExt): in the
 // board's memory from here, up to 256 KB, laid out by chr_ext_offset.
 constexpr size_t kChrExtBase = 0x400000;
@@ -82,6 +83,10 @@ enum Reg : uint32_t {
     kCacheHits = 0x7C,  // 4 bytes each, read-only: a memory cache's hits, misses and prefetches (0 without one)
     kCacheMisses = 0x80,
     kCachePrefetches = 0x84,
+    kTraceCount = 0x88,   // 4 bytes, read-only: the trace buffer's next entry number (cycle n at ring index n mod depth)
+    kTraceFilled = 0x8C,  // 2 bytes, read-only: valid entries, up to its depth
+    kTraceBits = 0x8E,    // read-only: it holds 2^this entries
+    kLeadDots = 0x8F,     // PPU dots before the CPU's first cycle after a reset: the CPU/PPU alignment
 };
 
 enum Status : uint8_t {
@@ -104,6 +109,34 @@ struct Video {
 // Where CHR ROM byte `a` goes from kChrExtBase: each 16-byte tile's planes
 // interleaved, row r of plane p at 2r + p, so a 32-bit word holds two rows.
 size_t chr_ext_offset(size_t a);
+
+// How the console powers up: its memories' fill (RAM, PRG RAM, CHR RAM, the
+// nametables and OAM, as MesenCE fills them) and its CPU/PPU alignment.
+//
+// The alignment is the PPU dots before the CPU's first cycle. 5, the default,
+// is MesenCE's own (its PPU offset 1, CPU offset 0, in master clocks); 6 and 7
+// put the CPU a dot and two later, as MesenCE's random alignments do when its
+// CPU offset less its PPU offset is 3 or 7 master clocks. Its other random
+// alignments put the CPU part of a dot off, which this core can't (or, at 11,
+// a whole cycle later).
+struct PowerUp {
+    enum Fill { kZeros, kOnes, kRandom };
+    Fill fill = kZeros;
+    uint32_t seed = 0;  // for kRandom
+    uint8_t lead_dots = 5;
+};
+
+// MesenCE's alignment (its log's "PPU: p/3 CPU: c/11") as lead dots; nothing
+// if the core can't run it.
+std::optional<uint8_t> lead_dots_for(int ppu_offset, int cpu_offset);
+
+// One CPU cycle from the trace buffer: its number since reset, and the bus.
+struct TraceEntry {
+    uint32_t cycle;
+    uint16_t addr;
+    uint8_t data;  // read or written
+    bool write, sync;  // sync: an opcode fetch
+};
 
 // A frame as the PPU outputs it: 256 x 240 values, {emphasis BGR, colour}.
 using Frame = std::vector<uint16_t>;
@@ -138,6 +171,8 @@ public:
     // CHR ROM goes in the board's memory if it's too big for CHR's block RAM,
     // or with `chr_ext` set, if the system can take it from there.
     std::optional<std::string> load(const NesRom& rom, bool chr_ext = false);
+    // How the next load() powers the console up (from then on, until changed).
+    void set_power_up(const PowerUp& p) { power_up_ = p; }
     // Why this system can't run the ROM (an unsupported mapper or a size it
     // has no room for), or nothing if it can.
     std::optional<std::string> unsupported(const NesRom& rom);
@@ -157,6 +192,9 @@ public:
     uint32_t cycles();
     uint32_t frames();
     uint32_t trace_crc();
+    // The trace buffer's cycles, oldest first: the last ones before it
+    // stopped (as many as it holds). Read while stopped.
+    std::vector<TraceEntry> trace();
     uint32_t audio_crc();
     // Clocks the dots have waited for memory since reset (register 78).
     uint32_t mem_waits();
@@ -197,6 +235,7 @@ private:
     void put32(uint32_t reg, uint32_t v, int bytes = 4);
     uint32_t get32(uint32_t reg);
     shell::Client& c_;
+    PowerUp power_up_;
 };
 
 inline constexpr uint32_t kNestestCycles = 26554;  // the last line of nestest.log
@@ -206,8 +245,16 @@ inline constexpr uint32_t kNestestCycles = 26554;  // the last line of nestest.l
 // Passes when the CPU stopped on time, was never late, and nestest's error
 // codes at $02 and $03 are 0. The result's CRC32 is the CPU's bus trace CRC,
 // which must match the CPU bench's. Throws RigError if the link fails.
+// With `log` (nestest.log's path), the trace buffer's cycles must also match
+// it: an opcode fetch at each instruction's PC and cycle, with its opcode,
+// and no other.
 TestResult nestest(Link& link, const NesRom& rom, uint32_t cycles = kNestestCycles,
-                   std::optional<uint32_t> build_id = std::nullopt);
+                   std::optional<uint32_t> build_id = std::nullopt, const std::string& log = "");
+
+// Where `trace` differs from nestest.log (at `log`) over the cycles it
+// covers: each instruction's opcode fetch at its PC and CYC, with its first
+// byte, and no other opcode fetches. Nothing if they match.
+std::optional<std::string> compare_nestest_log(const std::vector<TraceEntry>& trace, const std::string& log);
 
 // How a test ROM reports (testroms/manifest.toml's `check`).
 struct RomCheck {
@@ -224,8 +271,10 @@ struct RomCheck {
 // the last frame, which must match the other backend's and MesenCE's for the
 // same frame; its audio CRC32 (the APU's levels through to that point) must
 // match the other backend's. Its notes carry the ROM's text report, if it has one.
+// `power` sets the memories' fill and the CPU/PPU alignment it powers up with.
 TestResult rom_test(Link& link, const RomCheck& check, const NesRom& rom, uint32_t frames,
-                    std::optional<uint32_t> build_id = std::nullopt, bool chr_ext = false);
+                    std::optional<uint32_t> build_id = std::nullopt, bool chr_ext = false,
+                    const PowerUp& power = {});
 
 // A save-state round trip. The ROM runs uninterrupted from power-up to frame
 // `frames`; then again, saved at the first frame boundary after

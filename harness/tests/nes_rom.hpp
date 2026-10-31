@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 #pragma once
-// A ROM from harness/golden/nes_frames_crc32.txt for a sim test, or a skip if
-// the test ROMs haven't been fetched.
+// A ROM from harness/golden/nes_frames_crc32.txt (or another golden file) for
+// a sim test, or a skip if the test ROMs haven't been fetched.
 
 #include <catch2/catch_test_macros.hpp>
 
@@ -14,8 +14,9 @@
 #include "rig/ines.hpp"
 #include "rig/nes.hpp"
 
-inline std::pair<rig::nes::GoldenRom, rig::NesRom> golden_rom(const std::string& id) {
-    auto golden = rig::nes::load_golden_roms(RS_NES_FRAMES_GOLDEN);
+inline std::pair<rig::nes::GoldenRom, rig::NesRom> golden_rom(const std::string& id,
+                                                              const std::string& file = RS_NES_FRAMES_GOLDEN) {
+    auto golden = rig::nes::load_golden_roms(file);
     auto g = std::find_if(golden.begin(), golden.end(), [&](auto& x) { return x.check.id == id; });
     REQUIRE(g != golden.end());
     std::string path = std::string(RS_TESTROMS) + "/" + g->path;

@@ -1,0 +1,30 @@
+CAPI=2:
+# SPDX-License-Identifier: Apache-2.0
+name: retro-silicon:debug:trace:0.1.0
+description: A trace buffer, the last 2^AW entries a system records, to read back after it stops
+
+filesets:
+  rtl:
+    files:
+      - rtl/trace_buffer.sv
+    file_type: systemVerilogSource
+
+targets:
+  default: &default
+    filesets: [rtl]
+    toplevel: trace_buffer
+  lint:
+    <<: *default
+    default_tool: verilator
+    tools:
+      verilator:
+        mode: lint-only
+        verilator_options: [-Wall]
+    parameters: [AW]
+
+parameters:
+  AW:
+    datatype: int
+    paramtype: vlogparam
+    default: 10
+    description: 2^AW entries
