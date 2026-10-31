@@ -49,7 +49,7 @@ module nes_bram #(
           .CHR_BANK_AW(BANK_AW < CHR_AW ? BANK_AW : CHR_AW), .BUILD_ID(BUILD_ID)) u_nes (
         .clk, .uart_rx, .uart_tx, .led,
         .mem_req(req), .mem_we(we), .mem_addr(addr), .mem_wdata(wdata),
-        .mem_ack(ack), .mem_rdata(rdata), .mem_rdata_w(32'h0), .mem_ready(ready), .mem_ref_hold(ref_hold),
+        .mem_ack(ack), .mem_rdata(rdata), .mem_rdata_w(32'h0), .mem_ready(ready), .mem_ref_hold(ref_hold), .mem_stats(96'h0),
         .pix_valid, .pix, .pix_x, .pix_y, .v_waiting, .v_req, .v_cap_t,
         .v_crc, .v_crc_ok, .v_crc_t, .v_shown, .v_late, .v_overrun,
         .a_valid, .a_pcm);

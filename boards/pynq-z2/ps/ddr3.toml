@@ -1,0 +1,38 @@
+# SPDX-License-Identifier: Apache-2.0
+# The PYNQ-Z2's DDR3, for boards/xilinx/zynq7/ps7_ddr3.py. From the board's
+# design parameters in the PYNQ project's v3.0.1 base design
+# (boards/Pynq-Z2/base/base.tcl, BSD-3-Clause), read for facts.
+
+ps_clk_mhz = 50          # PS_CLK
+pll_fdiv = 21            # DDR PLL: 1050 MHz
+ddr_3x_div = 2           # the DRAM clock: 525 MHz
+ddr_2x_div = 3           # the interconnect's: 350 MHz
+
+[dram]
+bus_width = 16           # one x16 device
+rows = 15
+cols = 10
+banks = 8
+cl = 7
+cwl = 6
+t_rcd_ns = 13.125
+t_rp_ns = 13.125
+t_ras_ns = 35.0
+t_rc_ns = 50.625
+t_faw_ns = 40.0
+t_rfc_ns = 260.0         # 4 Gbit
+t_refi_ns = 7800.0
+t_wr_ns = 15.0
+t_rtp_ns = 7.5
+t_wtr_ns = 7.5
+t_rrd_ns = 10.0
+t_xp_ns = 7.5
+t_cke_ns = 5.625
+t_cksre_ns = 10.0
+
+[board]
+vref = "external"
+# Per byte lane, in ns: the board's trace delay (DQS round trip is twice it)
+# and the DQS-to-CLK skew at the DRAM. Lanes 2 and 3 aren't connected.
+board_delay_ns = [0.223, 0.212]
+dqs_to_clk_ns = [0.040, 0.058]

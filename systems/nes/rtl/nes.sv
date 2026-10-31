@@ -84,6 +84,7 @@ module nes #(
     input  logic [31:0] mem_rdata_w,  // with CHR_EXT: a read's whole 32-bit word, byte lanes in address order
     input  logic        mem_ready,
     output logic        mem_ref_hold, // with CHR_EXT: keep the memory's refresh away now
+    input  logic [95:0] mem_stats,    // a memory cache's counts, for registers 7C-87 (0 without one)
 
     // The picture, to nes_video, and its pacing and checks (see nes_video).
     output logic        pix_valid,
@@ -178,6 +179,7 @@ module nes #(
     logic        vec_en;
     logic [31:0] stop_at, stop_frame, cycles, frames;
     logic        stopped, late;
+    logic [31:0] mem_waits;  // clocks the dots waited for memory since reset
     logic [31:0] trace_crc;
     logic        cap_en;
     logic [31:0] cap_frame;
@@ -1063,6 +1065,8 @@ module nes #(
             late <= 1'b1;  // a CHR read the cache didn't have
         if (frame_end)
             frames <= frames + 1'b1;
+        if (mem_wait && (cs == C_RUN || cs == C_END || go))
+            mem_waits <= mem_waits + 1'b1;
         if (st_we_sys)
             case (st_sys_w)
                 4'd0: cycles   <= st_wdata;
@@ -1077,6 +1081,7 @@ module nes #(
             frames   <= '0;
             late     <= 1'b0;
             open_bus <= '0;
+            mem_waits <= '0;
         end
     end
 
@@ -1386,6 +1391,12 @@ module nes #(
             8'h74:   reg_q <= 8'(CHR_AW);
             8'h75:   reg_q <= 8'(MEM_AW);
             8'h76:   reg_q <= {7'b0, CHR_EXT};
+            8'h78:   reg_q <= mem_waits[7:0];
+            8'h79:   reg_q <= mem_waits[15:8];
+            8'h7A:   reg_q <= mem_waits[23:16];
+            8'h7B:   reg_q <= mem_waits[31:24];
+            8'h7C, 8'h7D, 8'h7E, 8'h7F, 8'h80, 8'h81, 8'h82, 8'h83, 8'h84, 8'h85, 8'h86, 8'h87:
+                     reg_q <= mem_stats[8*(r - 8'h7C) +: 8];
             default: reg_q <= '0;
         endcase
         if (rst) begin

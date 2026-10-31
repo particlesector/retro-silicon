@@ -42,14 +42,15 @@ Built from `common/por`, `common/clock-enable`, `common/crc32`, `common/save-sta
 
 ## Memory
 
-`nes` takes the board's memory as a byte port, `memory/sdram`'s user port, which `memory/arbiter` shares between the CPU's PRG reads, first, and the shell. Two wrappers put memory behind it:
+`nes` takes the board's memory as a byte port, `memory/sdram`'s user port, which `memory/arbiter` shares between the CPU's PRG reads, first, and the shell. Three wrappers put memory behind it:
 
 | Module | Memory | Used by |
 | --- | --- | --- |
 | `nes_sdram` | `memory/sdram`, 8 MB; with `CHR_EXT`, CHR ROM too | The Tang Nano 20K (`boards/tang-nano-20k/rtl/nes_top.sv`, `CHR_EXT = 1`), and the sim |
-| `nes_bram` | `memory/bram`, 256 KB (`MEM_AW`) mirrored through the 8 MB window, and `CHR_AW` of CHR, both in banks of 2^`BANK_AW` | The Tang Console 138K (`boards/tang-console-138k/rtl/nes_top.sv`: 128 KB of CHR) and its sim; the PYNQ-Z2 (256 KB of PRG and 128 KB of CHR in 32 KB banks) |
+| `nes_bram` | `memory/bram`, 256 KB (`MEM_AW`) mirrored through the 8 MB window, and `CHR_AW` of CHR, both in banks of 2^`BANK_AW` | The Tang Console 138K (`boards/tang-console-138k/rtl/nes_top.sv`: 128 KB of CHR) and its sim |
+| `nes_axi` | An AXI memory's 8 MB from `BASE`, through `memory/cache` (32 KB, `CACHE_IDX`, with next-line prefetch), `memory/port-cdc` when `ASYNC` puts the AXI side on its own clock `aclk`, and `memory/axi-bridge`; `CHR_AW` of CHR in block RAM | The PYNQ-Z2 (`boards/pynq-z2/rtl/pynq_nes_top.sv`: the DDR3 through HP0 at 74.25 MHz, 256 KB of CHR in 32 KB banks), and the sim (`make_nes_axi_sim`, synchronous) |
 
-Both also hold `nes_video`, the HDMI output (below), with a pixel-clock input and the TMDS symbols out for the board's serializers.
+All three also hold `nes_video`, the HDMI output (below), with a pixel-clock input and the TMDS symbols out for the board's serializers.
 
 The system's behaviour doesn't depend on which, or on the clock: a CPU cycle's last dot waits for its PRG read, if it isn't back.
 
@@ -179,6 +180,8 @@ Anything else reads 0 and ignores writes. Multi-byte registers are little-endian
 | `74` | 1 | CHR's block RAM holds 2^this bytes (read-only: `CHR_AW`) |
 | `75` | 1 | The board's memory holds 2^this bytes (read-only: `MEM_AW`) |
 | `76` | 1 | Bit 0: CHR ROM can come from the board's memory (read-only: `CHR_EXT`) |
+| `78` | 4 | Clocks the dots have waited for memory since reset (read-only): a PRG read or CHR word not back in time. They change nothing the system does, but too many keep it from keeping pace with a display |
+| `7C` | 12 | A memory cache's counts since reset, 4 bytes each (read-only; 0 without one): reads it answered, reads that went to memory, lines it prefetched (`nes_axi`'s `memory/cache`) |
 
 The limits are levels: raising one lets the system run on from where it stopped. All registers are absolute, so a command the shell runs twice does no harm.
 
@@ -230,10 +233,10 @@ Save states (`rig::nes::state_test`): nmi_sync saved at a frame boundary while i
 
 Before the PPU, the nestest run caught three planted bugs: the shell taking the CPU's RAM slot, the CPU's read slot not reserved, and a CPU cycle too short for the SDRAM. The planted PPU bugs the ROMs catch are listed in the PPU's README.
 
-Mappers: Holy Mapperel's check of each mapper (NROM, UxROM, CNROM, AxROM, MMC1 with CHR RAM, 32 KB and 128 KB of CHR ROM and SUROM's 512 KB, MMC3 with CHR RAM and with 256 KB of CHR ROM), blargg's MMC3 IRQ tests (`mmc3_irq_tests` 1-4 and 6, `mmc3_test_2` 1, 2, 3 and 5) and his all-in-one MMC1 ROMs (`instr_test-v5` official, `cpu_interrupts`, `ppu_vbl_nmi`, `apu_test`) match MesenCE's frames in the sim and on both boards: all 103 golden ROMs on the Tang Nano 20K (CHR ROM over 8 KB from its SDRAM), and on the PYNQ-Z2 all but the two too big for its block RAM (SUROM's 512 KB of PRG, MMC3's 256 KB of CHR), which wait for its DDR3. In the sim, 8 KB CHR ROMs read from the SDRAM give the same frames as from block RAM, and save states keep MMC3's IRQ and MMC1's state.
+Mappers: Holy Mapperel's check of each mapper (NROM, UxROM, CNROM, AxROM, MMC1 with CHR RAM, 32 KB and 128 KB of CHR ROM and SUROM's 512 KB, MMC3 with CHR RAM and with 256 KB of CHR ROM), blargg's MMC3 IRQ tests (`mmc3_irq_tests` 1-4 and 6, `mmc3_test_2` 1, 2, 3 and 5) and his all-in-one MMC1 ROMs (`instr_test-v5` official, `cpu_interrupts`, `ppu_vbl_nmi`, `apu_test`) match MesenCE's frames in the sim and on both boards: all 103 golden ROMs on the Tang Nano 20K (CHR ROM over 8 KB from its SDRAM), and all 103 on the PYNQ-Z2 (PRG ROM from its DDR3 through the cache, which keeps the NES from waiting for memory: none in its HDMI runs, at most 26,000 clocks across a ROM's whole run). Seven of them, among them the 256 KB MMC1 and MMC3 ROMs, also match with their PRG ROM behind the sim's AXI memory. In the sim, 8 KB CHR ROMs read from the SDRAM give the same frames as from block RAM, and save states keep MMC3's IRQ and MMC1's state.
 
 Sound: the 34 APU and timing ROMs in the golden list pass in the sim and on both boards, each with the sim's audio CRC (`harness/golden/nes_audio_crc32.txt`). Through HDMI, the sim's receiver gets every 48 kHz sample the system made, and a monitor plays the 20K's sound.
 
 HDMI (`rig::nes::hdmi_test`): `oam_read` and `full_palette` run paced, and the CRC of the display frame showing each one's golden frame matches the sim's (`harness/golden/nes_hdmi_crc32.txt`), where a TMDS receiver model checks that frame's every pixel and sync; on the Tang Nano 20K the CRCs match, with every display frame whole and no late or overwritten lines.
 
-On the Tang Nano 20K, with HDMI, the APU and the mappers (`SAVE_STATE=0`): 15,800 LUTs and 2,700 ALUs (89% of a GW2A-18C's slots), 5,700 flip-flops and 38 of 46 block RAMs, with fmax 51 MHz against the 46.4 MHz system clock (seed 8). On the PYNQ-Z2: 15,300 LUTs (14%) and 108 of 140 36 Kb block RAMs, 40.6 MHz against 37.1. On the Tang Console 138K: 12,600 LUTs (9%) and 157 of 340 block RAMs (128 of them the 256 KB memory), with fmax 65 MHz against 50.
+On the Tang Nano 20K, with HDMI, the APU and the mappers (`SAVE_STATE=0`): 15,800 LUTs and 2,700 ALUs (89% of a GW2A-18C's slots), 5,700 flip-flops and 38 of 46 block RAMs, with fmax 51 MHz against the 46.4 MHz system clock (seed 8). On the PYNQ-Z2: 16,300 LUTs (15%) and 85 of 140 36 Kb block RAMs, 42.4 MHz against 37.1 (and 90 MHz for HP0's side against 74.25). On the Tang Console 138K: 12,600 LUTs (9%) and 157 of 340 block RAMs (128 of them the 256 KB memory), with fmax 65 MHz against 50.

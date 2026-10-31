@@ -76,6 +76,12 @@ All notable changes to this project are listed here. The format follows [Keep a 
 - `video/ppu-2c02`: `vaddr_next` and `vread_next`, the next dot's address and whether the PPU uses its data, for memory slower than a dot.
 - `memory/sdram`: `rdata_w`, a read's whole word, and `ref_hold`, to keep a refresh out of the way.
 - `memory/bram`: `BANK_AW`, for memories built from banks (openXC7 places at most 32 KB as one). The PYNQ-Z2's NES has 256 KB of PRG ROM and 128 KB of CHR, the Tang Console 138K's 128 KB of CHR.
+- `memory/cache`: a direct-mapped read cache for the byte port, in front of a memory that reads 8-byte lines, with next-line prefetch; byte-wide memories only. `memory/axi-bridge`: `rdata_d`, a read's whole 8-byte word.
+- `systems/nes`: `nes_axi`, the system with its memory behind an AXI port through `memory/cache` (the PYNQ-Z2's DDR3 through HP0); register `78` counts the clocks the dots waited for memory, and `7C` a memory cache's hits, misses and prefetches.
+- `memory/port-cdc`: the byte port across two clock domains by toggles, for a memory on its own clock. The PYNQ-Z2's NES runs HP0 and its AXI bridge on the 74.25 MHz pixel clock (`nes_axi`'s `ASYNC`), and all 103 golden ROMs run from its DDR3. `boards/xilinx/build.sh`: a seed whose clock buffers the router can't reach is skipped, as one with mixed clock edges is.
+- `boards/xilinx/zynq7`: DDR3 bring-up for the Zynq-7000 (`ps7_ddr3.py`), computed from a board description and AMD's TRM, as an OpenOCD script; `boards/pynq-z2/ps/ddr3.toml`, the PYNQ-Z2's DDR3. `boards/xilinx/rtl/ps7_hp0.sv`: the PS7 with its HP0 port for the fabric.
+- `systems/shell-axi`: the test shell with an 8 MB window of an AXI memory, through `memory/axi-bridge`; on the PYNQ-Z2 (`pynq_shell_ddr`), the board's DDR3 through HP0. `harness`: `make_shell_axi_sim`, with the bridge's AXI memory model (`axi_memory_model.hpp`).
+- `memory/axi-bridge`: `memory/sdram`'s byte port onto a 64-bit AXI master (single beats, valid AXI3 and AXI4), for memory behind a processor such as the Zynq-7000's DDR through its HP ports.
 - `harness`: NES 2.0 RAM sizes in `NesRom`; `Console::load` sets up the mapper and puts big CHR ROM in the board's memory; `Console::unsupported` says why a board can't run a ROM. Test ROMs: Holy Mapperel for each mapper (built from source), blargg's MMC3 IRQ tests and all-in-one MMC1 ROMs, and Holy Mapperel's larger CHR ROMs in the sim as the Tang Nano 20K runs them (`make_nes_ext_sim`).
 
 ### Changed

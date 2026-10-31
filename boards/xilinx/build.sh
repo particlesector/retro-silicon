@@ -75,6 +75,12 @@ for seed in $(seq 1 "$seeds"); do
       echo "seed $seed: this placement mixes clock edges in a slice (see $log)" >&2
       continue
     fi
+    # Some put a clock buffer where the router finds no dedicated path to it
+    # from its MMCM or PLL: another seed may place it where it can.
+    if grep -q "ERROR: Failed to route arc" "$log"; then
+      echo "seed $seed: the router found no path for a net (see $log)" >&2
+      continue
+    fi
     tail -20 "$log" >&2
     exit 1
   fi

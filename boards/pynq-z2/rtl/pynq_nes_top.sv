@@ -1,8 +1,14 @@
 // SPDX-License-Identifier: Apache-2.0
-// systems/nes on the PYNQ-Z2, with its memory in block RAM (nes_bram) and its
-// picture on the HDMI OUT connector at 720p. The memory is 32 KB, NROM's
-// largest PRG ROM: Yosys builds anything deeper from cascaded block RAM
-// pairs, which nextpnr-xilinx fails to place.
+// systems/nes on the PYNQ-Z2, with its PRG ROM in the board's DDR3 (nes_axi,
+// through the Zynq's HP0 port, from 0x10000000) and its picture on the HDMI
+// OUT connector at 720p. CHR is 256 KB of block RAM in 32 KB banks, the most
+// openXC7 places as one memory. The DDR must be set up first, over JTAG
+// (boards/xilinx/zynq7/ps7_ddr3.py); until HP0 is out of reset the system
+// waits. HP0 and the AXI bridge run on the 74.25 MHz pixel clock, across
+// memory/port-cdc from the system's 37.125: a DDR read through HP0 takes
+// fewer nanoseconds on a faster clock. (A fifth clock buffer, for 148.5 MHz
+// from the MMCM, left nextpnr-xilinx unable to route the MMCM's outputs to
+// their buffers at any seed.)
 //
 // Clocks: from the 125 MHz clock in two steps, because openXC7 sets an
 // MMCM's fractional dividers wrong (a board measured a fractional multiplier
@@ -67,12 +73,37 @@ module pynq_nes_top #(
     /* verilator lint_on UNUSEDSIGNAL */
     logic [9:0] tmds0, tmds1, tmds2;
 
-    // 256 KB of PRG ROM and 128 KB of CHR in 32 KB banks, the most openXC7
-    // places as one memory: 96 of the chip's 140 36 Kb block RAMs.
-    nes_bram #(.CLKS_PER_BIT(CLKS_PER_BIT), .IDLE_CLKS(371_250), .DOT_NUM(35), .DOT_DEN(242), .MEM_AW(18),
-               .CHR_AW(17), .BANK_AW(15), .PACE(1'b1), .BUILD_ID(BUILD_ID)) u_sys (
+    logic        aresetn;
+    logic [31:0] araddr, awaddr;
+    logic        arvalid, arready, rvalid, rready, rlast, awvalid, awready, wvalid, wready, wlast, bvalid, bready;
+    logic [3:0]  arlen, awlen, arcache, awcache;
+    logic [2:0]  arsize, awsize;
+    logic [1:0]  arburst, awburst, rresp, bresp;
+    logic [5:0]  arid, awid, wid;
+    logic [63:0] rdata, wdata;
+    logic [7:0]  wstrb;
+
+    nes_axi #(.CLKS_PER_BIT(CLKS_PER_BIT), .IDLE_CLKS(371_250), .DOT_NUM(35), .DOT_DEN(242), .CHR_AW(18),
+              .BANK_AW(15), .BASE(32'h1000_0000), .ASYNC(1'b1), .PACE(1'b1), .BUILD_ID(BUILD_ID)) u_sys (
         .clk(sclk), .uart_rx, .uart_tx, .led(sys_led),
-        .pclk, .tmds0, .tmds1, .tmds2);
+        .pclk, .tmds0, .tmds1, .tmds2, .aclk(pclk), .axi_ready(aresetn),
+        .m_araddr(araddr), .m_arvalid(arvalid), .m_arready(arready), .m_arlen(arlen), .m_arsize(arsize),
+        .m_arburst(arburst), .m_arcache(arcache), .m_arid(arid),
+        .m_rdata(rdata), .m_rvalid(rvalid), .m_rready(rready), .m_rresp(rresp), .m_rlast(rlast),
+        .m_awaddr(awaddr), .m_awvalid(awvalid), .m_awready(awready), .m_awlen(awlen), .m_awsize(awsize),
+        .m_awburst(awburst), .m_awcache(awcache), .m_awid(awid),
+        .m_wdata(wdata), .m_wstrb(wstrb), .m_wlast(wlast), .m_wid(wid), .m_wvalid(wvalid), .m_wready(wready),
+        .m_bresp(bresp), .m_bvalid(bvalid), .m_bready(bready));
+
+    ps7_hp0 u_ps (
+        .aclk(pclk), .aresetn,
+        .m_araddr(araddr), .m_arvalid(arvalid), .m_arready(arready), .m_arlen(arlen), .m_arsize(arsize),
+        .m_arburst(arburst), .m_arcache(arcache), .m_arid(arid),
+        .m_rdata(rdata), .m_rvalid(rvalid), .m_rready(rready), .m_rresp(rresp), .m_rlast(rlast),
+        .m_awaddr(awaddr), .m_awvalid(awvalid), .m_awready(awready), .m_awlen(awlen), .m_awsize(awsize),
+        .m_awburst(awburst), .m_awcache(awcache), .m_awid(awid),
+        .m_wdata(wdata), .m_wstrb(wstrb), .m_wlast(wlast), .m_wid(wid), .m_wvalid(wvalid), .m_wready(wready),
+        .m_bresp(bresp), .m_bvalid(bvalid), .m_bready(bready));
 
     tmds_phy_xc7 u_phy (
         .pclk, .fclk, .rst(!mlock), .tmds0, .tmds1, .tmds2,

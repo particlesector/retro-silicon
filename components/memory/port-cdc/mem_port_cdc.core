@@ -1,0 +1,24 @@
+CAPI=2:
+# SPDX-License-Identifier: Apache-2.0
+name: retro-silicon:memory:port-cdc:0.1.0
+description: memory/sdram's byte port across two clock domains
+
+filesets:
+  rtl:
+    files:
+      - rtl/mem_port_cdc.sv
+    file_type: systemVerilogSource
+    depend:
+      - retro-silicon:common:cdc
+
+targets:
+  default: &default
+    filesets: [rtl]
+    toplevel: mem_port_cdc
+  lint:
+    <<: *default
+    default_tool: verilator
+    tools:
+      verilator:
+        mode: lint-only
+        verilator_options: [-Wall]

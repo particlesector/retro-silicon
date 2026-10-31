@@ -17,3 +17,16 @@ TEST_CASE("the SDRAM test passes on the sim backend with the golden CRC") {
     REQUIRE(r.bytes == 65536);
     REQUIRE(r.crc32 == it->second);
 }
+
+TEST_CASE("the SDRAM test passes through memory/axi-bridge to an AXI memory, with the same CRC") {
+    auto golden = golden_crcs(RS_SDRAM_GOLDEN);
+    auto it = golden.find({65536, 1});
+    REQUIRE(it != golden.end());
+
+    auto link = rig::make_shell_axi_sim();
+    auto r = rig::sdram_test(*link, 65536, 1, RS_SHELL_AXI_BUILD_ID);
+    INFO(r.detail << " / " << r.notes);
+    REQUIRE(r.passed);
+    REQUIRE(r.bytes == 65536);
+    REQUIRE(r.crc32 == it->second);
+}
