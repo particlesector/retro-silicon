@@ -53,6 +53,7 @@ module shell_axi #(
     /* verilator lint_off UNUSEDSIGNAL */
     logic [31:0] bus_addr;  // only [22:0] is decoded: the window mirrors through the address space
     logic [31:0] rdata_w;   // the shell reads bytes
+    logic [63:0] rdata_d;
     /* verilator lint_on UNUSEDSIGNAL */
     logic        bus_req, bus_we, bus_ack;
     logic [7:0]  bus_wdata, bus_rdata;
@@ -72,7 +73,7 @@ module shell_axi #(
     axi_bridge #(.AW(23), .BASE(BASE)) u_bridge (
         .clk, .rst,
         .req(bus_req), .we(bus_we), .addr(bus_addr[22:0]), .wdata(bus_wdata),
-        .ack(bus_ack), .rdata(bus_rdata), .rdata_w, .ready, .axi_ready,
+        .ack(bus_ack), .rdata(bus_rdata), .rdata_w, .rdata_d, .ready, .axi_ready,
         .m_araddr, .m_arvalid, .m_arready, .m_arlen, .m_arsize, .m_arburst, .m_arcache, .m_arid,
         .m_rdata, .m_rvalid, .m_rready, .m_rresp, .m_rlast,
         .m_awaddr, .m_awvalid, .m_awready, .m_awlen, .m_awsize, .m_awburst, .m_awcache, .m_awid,

@@ -22,8 +22,8 @@ tools set it" below.
 a target with access to the system bus: the DAP's AHB access port (a mem_ap
 target, so the cores can be left alone) or a halted core. ps7_ddr3_init
 leaves DDR that's already running alone (changing its clock under a running
-controller hangs the bus) and only redoes the fabric's part; --list prints
-the writes. --compare decodes another
+controller hangs the bus) and only redoes the fabric's part; run
+ps7_fabric_off before configuring the fabric again. --list prints the writes. --compare decodes another
 init file's DDR table (one of AMD's generated ps7_init files, for a board with
 the same parameters) and prints where it differs, as a check of this code:
 it's read, never copied.
@@ -318,6 +318,15 @@ def tcl(seq, f_mhz, source):
         else:
             out.append(f"    sleep {max(1, value // 1000)} ;# {note}")
     out += ["}", "",
+            "# Before the fabric is configured again: its signals float while it configures, so the",
+            "# level shifters go off and its resets on (as AMD's boot flow does), or a floating HP port",
+            "# can leave the processor side's interconnect waiting on a transfer that never ends.",
+            "proc ps7_fabric_off {} {",
+            "    ps7_mask_write 0xF8000008 0x0000FFFF 0x0000DF0D ;# SLCR_UNLOCK",
+            "    ps7_mask_write 0xF8000900 0x0000000F 0x00000000 ;# LVL_SHFTR_EN: off",
+            "    ps7_mask_write 0xF8000240 0x0000000F 0x0000000F ;# FPGA_RST_CTRL: fabric resets on",
+            "    ps7_mask_write 0xF8000004 0x0000FFFF 0x0000767B ;# SLCR_LOCK",
+            "}", "",
             "# The DDR, unless it's already running (mode_sts normal), then the fabric's way to it.",
             "proc ps7_ddr3_init {} {",
             "    if {([read_memory 0xF8006054 32 1] & 7) != 1} { ps7_ddr }",

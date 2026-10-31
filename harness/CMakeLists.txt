@@ -13,6 +13,8 @@ get_property(shell_ram_id GLOBAL PROPERTY RS_SHELL_RAM_BUILD_ID)
 string(REPLACE "32'h" "0x" shell_ram_id_c ${shell_ram_id})
 get_property(shell_sdram_id GLOBAL PROPERTY RS_SHELL_SDRAM_BUILD_ID)
 string(REPLACE "32'h" "0x" shell_sdram_id_c ${shell_sdram_id})
+get_property(nes_axi_id GLOBAL PROPERTY RS_NES_AXI_BUILD_ID)
+string(REPLACE "32'h" "0x" nes_axi_id_c ${nes_axi_id})
 get_property(shell_axi_id GLOBAL PROPERTY RS_SHELL_AXI_BUILD_ID)
 string(REPLACE "32'h" "0x" shell_axi_id_c ${shell_axi_id})
 get_property(nes_id GLOBAL PROPERTY RS_NES_BUILD_ID)
@@ -38,12 +40,17 @@ rs_verilate(rs_sim_link COMPONENT nes_sdram PREFIX Vnes_hdmi_sim
 # The same without the display, for running ROMs whose CHR ROM is in the SDRAM.
 rs_verilate(rs_sim_link COMPONENT nes_sdram PREFIX Vnes_ext_sim
             PARAMS CLKS_PER_BIT=31 IDLE_CLKS=464063 FREQ_MHZ=47 DOT_NUM=14 DOT_DEN=121 CHR_EXT=1 BUILD_ID=${nes_id})
+# The NES as the PYNQ-Z2 runs it, its PRG in DDR3 through HP0 (an AXI memory
+# model here): 37.125 MHz (25 clocks a bit, dots at 35/242), 256 KB of CHR, no display.
+rs_verilate(rs_sim_link COMPONENT nes_axi PREFIX Vnes_axi_sim
+            PARAMS CLKS_PER_BIT=25 IDLE_CLKS=371250 DOT_NUM=35 DOT_DEN=242 CHR_AW=18 BUILD_ID=${nes_axi_id})
 target_include_directories(rs_sim_link PRIVATE ${PROJECT_SOURCE_DIR}/components/memory/sdram/sim
                                                ${PROJECT_SOURCE_DIR}/components/memory/axi-bridge/sim)
 # The build IDs the models and bitstreams report, for runners to check.
 target_compile_definitions(rs_sim_link PUBLIC RS_SHELL_RAM_BUILD_ID=${shell_ram_id_c}
                                               RS_SHELL_SDRAM_BUILD_ID=${shell_sdram_id_c}
                                               RS_SHELL_AXI_BUILD_ID=${shell_axi_id_c}
+                                              RS_NES_AXI_BUILD_ID=${nes_axi_id_c}
                                               RS_NES_BUILD_ID=${nes_id_c}
                                               RS_NES_BRAM_BUILD_ID=${nes_bram_id_c})
 

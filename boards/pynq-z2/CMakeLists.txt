@@ -9,7 +9,7 @@ rs_component(pynq_shell_ddr_top RTL rtl/pynq_shell_ddr_top.sv DEPENDS shell_axi 
              LINT ${PROJECT_SOURCE_DIR}/boards/xilinx/lint/xilinx_prims.sv)
 rs_component(tmds_phy_xc7 RTL ../xilinx/rtl/tmds_phy_xc7.sv
              LINT ${PROJECT_SOURCE_DIR}/boards/xilinx/lint/xilinx_prims.sv)
-rs_component(pynq_nes_top RTL rtl/pynq_nes_top.sv DEPENDS nes_bram tmds_phy_xc7
+rs_component(pynq_nes_top RTL rtl/pynq_nes_top.sv DEPENDS nes_axi ps7_hp0 tmds_phy_xc7
              LINT ${PROJECT_SOURCE_DIR}/boards/xilinx/lint/xilinx_prims.sv)
 add_subdirectory(../xilinx/sim xilinx_sim)
 
@@ -27,8 +27,9 @@ get_property(shell_axi_id GLOBAL PROPERTY RS_SHELL_AXI_BUILD_ID)
 # The DDR3 through HP0: the DDR must be set up over JTAG first (rig-run does).
 rs_board_bitstream(pynq_shell_ddr BUILD ${build} VENDOR xilinx COMPONENT pynq_shell_ddr_top CST pins.xdc
                    PARAMS BUILD_ID=${shell_axi_id})
-get_property(nes_bram_id GLOBAL PROPERTY RS_NES_BRAM_BUILD_ID)
+get_property(nes_axi_id GLOBAL PROPERTY RS_NES_AXI_BUILD_ID)
 # The NES makes its own clocks (rtl/pynq_nes_top.sv): 37.125 MHz for the
 # system, 74.25 MHz for the HDMI pixels and 371.25 MHz for their serializers.
+# Its PRG ROM is in the DDR3: rig-run sets that up over JTAG first.
 rs_board_bitstream(pynq_nes BUILD ${build} VENDOR xilinx COMPONENT pynq_nes_top CST nes.xdc
-                   PARAMS BUILD_ID=${nes_bram_id})
+                   PARAMS BUILD_ID=${nes_axi_id})

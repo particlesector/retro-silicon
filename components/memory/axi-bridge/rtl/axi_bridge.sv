@@ -2,8 +2,8 @@
 // memory/sdram's byte port onto an AXI master: a system's memory in a
 // processor's DDR, through a port such as the Zynq-7000's HP ports. Each
 // access is one single-beat AXI transfer of the aligned 64-bit word: a read
-// fetches the word and gives the byte (and its 32-bit half, rdata_w, as
-// memory/sdram does), a write sends the byte with its strobe and waits for
+// fetches the word and gives the byte (its 32-bit half on rdata_w, as
+// memory/sdram does, and the whole word on rdata_d, as memory/cache wants), a write sends the byte with its strobe and waits for
 // the write response. One access at a time, so they complete in order.
 // The transfers are valid AXI3 (WID, 4-bit lengths) and AXI4 alike.
 //
@@ -26,6 +26,7 @@ module axi_bridge #(
     output logic          ack,
     output logic [7:0]    rdata,
     output logic [31:0]   rdata_w,
+    output logic [63:0]   rdata_d,  // the whole 8-byte word, for a cache's line
     output logic          ready,
     input  logic          axi_ready,
 
@@ -112,6 +113,7 @@ module axi_bridge #(
         if (st == S_READ && m_rvalid) begin
             rdata   <= m_rdata[8*lane +: 8];
             rdata_w <= lane[2] ? m_rdata[63:32] : m_rdata[31:0];
+            rdata_d <= m_rdata;
             ack     <= 1'b1;
             st      <= S_IDLE;
         end

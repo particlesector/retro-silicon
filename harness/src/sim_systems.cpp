@@ -3,6 +3,7 @@
 
 #include "Vshell_ram_sim.h"
 #include "Vnes_bram_sim.h"
+#include "Vnes_axi_sim.h"
 #include "Vnes_ext_sim.h"
 #include "Vnes_hdmi_sim.h"
 #include "Vnes_sim.h"
@@ -62,6 +63,7 @@ public:
     bool tick(bool rx) override {
         m_.uart_rx = rx;
         m_.axi_ready = 1;
+        if constexpr (requires { m_.pclk; }) m_.pclk = 0;  // a system with a display: it isn't shown
         mem_.drive(m_);
         m_.clk = 0;
         m_.eval();
@@ -139,6 +141,10 @@ std::unique_ptr<SimLink> make_shell_sdram_sim() {
 
 std::unique_ptr<SimLink> make_shell_axi_sim() {
     return std::make_unique<SimLink>(std::make_unique<WithAxiMemory<Vshell_axi_sim>>(), SimLink::kClksPerBit, 64);
+}
+
+std::unique_ptr<SimLink> make_nes_axi_sim() {
+    return std::make_unique<SimLink>(std::make_unique<WithAxiMemory<Vnes_axi_sim>>(), 25, 64, 37'125'000);
 }
 
 std::unique_ptr<SimLink> make_nes_sim() { return std::make_unique<SimLink>(std::make_unique<WithSdram<Vnes_sim>>(), SimLink::kClksPerBit, 64); }

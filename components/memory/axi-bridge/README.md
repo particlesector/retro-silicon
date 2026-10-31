@@ -16,7 +16,7 @@ One access is out at a time, so they complete in order. How long one takes is up
 | --- | --- | --- | --- |
 | `clk`, `rst` | in | 1 | Clock, for the byte port and the AXI port alike; synchronous reset |
 | `req`, `we`, `addr`, `wdata` | in | 1, 1, AW, 8 | An access, held until `ack`; `req` may still be high while `ack` is |
-| `ack`, `rdata`, `rdata_w` | out | 1, 8, 32 | One-clock pulse when the access is done; a read's byte, and the 32-bit word it's in, with it |
+| `ack`, `rdata`, `rdata_w`, `rdata_d` | out | 1, 8, 32, 64 | One-clock pulse when the access is done; a read's byte, the 32-bit word it's in and the whole 8-byte word (for `memory/cache`), with it |
 | `ready` | out | 1 | Accesses may start: `axi_ready`, registered |
 | `axi_ready` | in | 1 | The AXI side is out of reset and the memory behind it is set up |
 | `m_ar*`, `m_r*` | | | AXI read address and data: `araddr`, `arvalid`, `arready`, `arlen`, `arsize`, `arburst`, `arcache`, `arid`; `rdata`, `rvalid`, `rready`, `rresp`, `rlast` |

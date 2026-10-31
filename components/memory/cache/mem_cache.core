@@ -1,0 +1,30 @@
+CAPI=2:
+# SPDX-License-Identifier: Apache-2.0
+name: retro-silicon:memory:cache:0.1.0
+description: A read cache for memory/sdram's byte port, in front of a memory that reads whole 8-byte lines
+
+filesets:
+  rtl:
+    files:
+      - rtl/mem_cache.sv
+    file_type: systemVerilogSource
+
+targets:
+  default: &default
+    filesets: [rtl]
+    toplevel: mem_cache
+  lint:
+    <<: *default
+    default_tool: verilator
+    tools:
+      verilator:
+        mode: lint-only
+        verilator_options: [-Wall]
+    parameters: [IDX]
+
+parameters:
+  IDX:
+    datatype: int
+    paramtype: vlogparam
+    default: 12
+    description: 2^IDX lines of 8 bytes

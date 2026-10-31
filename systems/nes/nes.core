@@ -11,6 +11,7 @@ filesets:
       - rtl/nes_video.sv
       - rtl/nes_sdram.sv
       - rtl/nes_bram.sv
+      - rtl/nes_axi.sv
     file_type: systemVerilogSource
     depend:
       - retro-silicon:common:por
@@ -23,6 +24,9 @@ filesets:
       - retro-silicon:memory:arbiter
       - retro-silicon:memory:sdram
       - retro-silicon:memory:bram
+      - retro-silicon:memory:axi-bridge
+      - retro-silicon:memory:cache
+      - retro-silicon:memory:port-cdc
       - retro-silicon:cpu:6502
       - retro-silicon:video:ppu-2c02
       - retro-silicon:audio:apu-2a03

@@ -14,6 +14,14 @@ namespace rig::nes {
 
 namespace {
 
+// The memory cache's counts, for a result's notes; nothing without a cache.
+std::string cache_note(Console& nes) {
+    auto c = nes.cache_stats();
+    if (c.hits + c.misses == 0) return "";
+    return "; cache " + std::to_string(c.hits) + " hits, " + std::to_string(c.misses) + " misses, " +
+           std::to_string(c.prefetches) + " prefetches";
+}
+
 std::string hex(uint32_t x, int digits) {
     char s[16];
     std::snprintf(s, sizeof s, "0x%0*x", digits, x);
@@ -178,6 +186,8 @@ uint32_t Console::cycles() { return get32(kCycles); }
 uint32_t Console::frames() { return get32(kFrames); }
 uint32_t Console::trace_crc() { return get32(kTraceCrc); }
 uint32_t Console::audio_crc() { return get32(kAudioCrc); }
+uint32_t Console::mem_waits() { return get32(kMemWaits); }
+Console::CacheStats Console::cache_stats() { return {get32(kCacheHits), get32(kCacheMisses), get32(kCachePrefetches)}; }
 std::pair<uint32_t, uint32_t> Console::pcm() { return {get32(kPcmCrc), get32(kPcmCount)}; }
 std::vector<uint8_t> Console::peek(uint16_t addr, uint16_t count) { return c_.peek(kCpu + addr, count); }
 
@@ -377,7 +387,8 @@ TestResult rom_test(Link& link, const RomCheck& check, const NesRom& rom, uint32
         auto crc = nes.frame_crc();
         if (crc) r.crc32 = crc->first;
         r.audio_crc32 = nes.audio_crc();
-        r.notes = std::to_string(nes.frames()) + " frames, " + std::to_string(nes.cycles()) + " CPU cycles";
+        r.notes = std::to_string(nes.frames()) + " frames, " + std::to_string(nes.cycles()) + " CPU cycles, " +
+                  std::to_string(nes.mem_waits()) + " clocks waiting for memory" + cache_note(nes);
         std::optional<std::string> fail;
         if (check.kind == RomCheck::kBlargg) {
             // Status at $6000, DE B0 61 once it's valid, a text report from $6004.
@@ -542,7 +553,9 @@ TestResult hdmi_test(Link& link, const std::string& name, const NesRom& rom, uin
             v = nes.video();
         }
         r.crc32 = v.crc;
-        r.notes = "shown " + std::to_string(static_cast<uint16_t>(v.shown - before.shown)) + " display frames";
+        r.notes = "shown " + std::to_string(static_cast<uint16_t>(v.shown - before.shown)) + " display frames, " +
+                  std::to_string(v.late - before.late) + " lines late; " + std::to_string(nes.mem_waits()) +
+                  " clocks waiting for memory" + cache_note(nes);
         if (!v.valid) return finish("no video CRC for frame " + std::to_string(frames - 1));
         if (!v.whole) return finish("the display frame showing frame " + std::to_string(frames - 1) + " wasn't whole");
         if (v.late != before.late || v.overrun != before.overrun)

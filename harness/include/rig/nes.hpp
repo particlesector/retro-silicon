@@ -78,6 +78,10 @@ enum Reg : uint32_t {
     kChrBits = 0x74,    // read-only: CHR holds 2^this bytes
     kMemBits = 0x75,    // read-only: the board's memory, for PRG ROM, holds 2^this bytes
     kChrExt = 0x76,     // read-only: bit 0, CHR ROM can come from the board's memory
+    kMemWaits = 0x78,   // 4 bytes, read-only: clocks the dots waited for memory since reset
+    kCacheHits = 0x7C,  // 4 bytes each, read-only: a memory cache's hits, misses and prefetches (0 without one)
+    kCacheMisses = 0x80,
+    kCachePrefetches = 0x84,
 };
 
 enum Status : uint8_t {
@@ -154,6 +158,12 @@ public:
     uint32_t frames();
     uint32_t trace_crc();
     uint32_t audio_crc();
+    // Clocks the dots have waited for memory since reset (register 78).
+    uint32_t mem_waits();
+    // A memory cache's reads answered, reads that went to memory, and lines
+    // prefetched, since reset (all 0 without a cache).
+    struct CacheStats { uint32_t hits, misses, prefetches; };
+    CacheStats cache_stats();
     // The 48 kHz sound since reset: its samples' CRC and count.
     std::pair<uint32_t, uint32_t> pcm();
     // The last whole frame's CRC and index; nothing if no frame has ended.

@@ -63,6 +63,12 @@ TEST_CASE("axi_bridge: random byte reads and writes match a byte array through a
             uint32_t base = addr & ~3u;
             for (int b = 3; b >= 0; b--) w = w << 8 | static_cast<uint32_t>(ref[base + b] >= 0 ? ref[base + b] : 0);
             CHECK(m.rdata_w == w);  // the 32-bit word the byte is in
+            uint64_t d = 0;
+            for (int b = 7; b >= 0; b--) {
+                int v = ref[(addr & ~7u) + b];
+                d = d << 8 | static_cast<uint64_t>(v >= 0 ? v : 0);
+            }
+            CHECK(m.rdata_d == d);  // and the whole 8-byte word
             checked++;
         }
         // req stays high the clock after ack, as a registered requester's would: no second access.

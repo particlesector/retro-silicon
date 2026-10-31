@@ -34,5 +34,10 @@ std::unique_ptr<SimLink> make_nes_hdmi_sim(std::function<void(uint32_t)> on_symb
 // SDRAM included, but without the display: no pacing, and no pixel clock.
 // Reports RS_NES_BUILD_ID.
 std::unique_ptr<SimLink> make_nes_ext_sim();
+// The NES as the PYNQ-Z2 runs it: PRG ROM in its DDR3 (here an AXI memory
+// model that stalls at random, memory/axi-bridge's), 37.125 MHz (25 clocks a
+// bit, dots at 35/242), 256 KB of CHR in block RAM, without the display.
+// Reports RS_NES_AXI_BUILD_ID.
+std::unique_ptr<SimLink> make_nes_axi_sim();
 
 } // namespace rig

@@ -77,13 +77,17 @@ namespace {
 
 // Runs a ROM in the sim to its golden frame: it must pass its own check and
 // show MesenCE's frame. `bram` runs it as the Tang Console 138K does.
-enum class Sim { kDefault, kBram, kExt };
+enum class Sim { kDefault, kBram, kExt, kAxi };
 
 void matches_mesen(const std::string& id, Sim sim = Sim::kDefault) {
     auto [g, rom] = golden_rom(id);
     bool bram = sim == Sim::kBram;
-    auto link = bram ? rig::make_nes_bram_sim() : sim == Sim::kExt ? rig::make_nes_ext_sim() : rig::make_nes_sim();
-    auto r = rig::nes::rom_test(*link, g.check, rom, g.frames, bram ? RS_NES_BRAM_BUILD_ID : RS_NES_BUILD_ID);
+    auto link = bram ? rig::make_nes_bram_sim()
+                : sim == Sim::kExt ? rig::make_nes_ext_sim()
+                : sim == Sim::kAxi ? rig::make_nes_axi_sim()
+                                   : rig::make_nes_sim();
+    uint32_t build_id = bram ? RS_NES_BRAM_BUILD_ID : sim == Sim::kAxi ? RS_NES_AXI_BUILD_ID : RS_NES_BUILD_ID;
+    auto r = rig::nes::rom_test(*link, g.check, rom, g.frames, build_id);
     INFO(r.detail << " / " << r.notes);
     CHECK(r.passed);
     CHECK(r.crc32 == g.crc);
@@ -293,6 +297,21 @@ MATCHES_MESEN_EXT("mapperel-cnrom")
 MATCHES_MESEN_EXT("mapperel-mmc1-c32k")
 MATCHES_MESEN_EXT("mapperel-mmc1-c128k")
 MATCHES_MESEN_EXT("mapperel-mmc3-c256k")
+// As the PYNQ-Z2 runs it, PRG ROM in its DDR3 (an AXI memory model that
+// stalls at random): the largest ROMs, and timing-sensitive ones.
+#define MATCHES_MESEN_AXI(id) \
+    TEST_CASE(id " matches MesenCE's frame with its PRG ROM behind AXI, as in the PYNQ-Z2's DDR3") { \
+        matches_mesen(id, Sim::kAxi); \
+    }
+MATCHES_MESEN_AXI("mapperel-mmc1-p512k")
+MATCHES_MESEN_AXI("mapperel-mmc3-c256k")
+MATCHES_MESEN_AXI("mmc3_irq-4")
+MATCHES_MESEN_AXI("oam_read")
+MATCHES_MESEN_AXI("cpu_interrupts-5")
+// 256 KB MMC1 ROMs, whose bank switches the cache and its prefetch have to follow.
+MATCHES_MESEN_AXI("ppu_vbl_nmi")
+MATCHES_MESEN_AXI("instr_test-official")
+
 // And ROMs with 8 KB of CHR ROM put there on purpose: the same frames as
 // from block RAM.
 #define MATCHES_MESEN_IN_SDRAM(id) \
