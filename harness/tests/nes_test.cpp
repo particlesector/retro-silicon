@@ -344,6 +344,42 @@ TEST_CASE("nestest passes on the sim backend with the CPU bench's trace CRC") {
     REQUIRE(r.crc32 == it->second);
 }
 
+TEST_CASE("the trace buffer holds nestest's last cycles as nestest.log has them") {
+    std::string path = std::string(RS_TESTROMS) + "/nes-test-roms/other/nestest.nes";
+    std::string log = std::string(RS_TESTROMS) + "/nes-test-roms/other/nestest.log";
+    if (!std::filesystem::exists(path)) SKIP(path << " not found: run testroms/fetch.py");
+    auto rom = rig::load_ines(path);
+    REQUIRE(std::holds_alternative<rig::NesRom>(rom));
+    auto link = rig::make_nes_sim();
+    // Stopped twice: early, and at the log's end.
+    for (uint32_t cycles : {5000u, rig::nes::kNestestCycles}) {
+        auto r = rig::nes::nestest(*link, std::get<rig::NesRom>(rom), cycles, RS_NES_BUILD_ID, log);
+        INFO(cycles << ": " << r.detail << " / " << r.notes);
+        REQUIRE(r.passed);
+        REQUIRE(r.notes.find("cycles match nestest.log") != std::string::npos);
+    }
+}
+
+TEST_CASE("compare_nestest_log finds a trace that differs from nestest.log") {
+    std::string log = std::string(RS_TESTROMS) + "/nes-test-roms/other/nestest.log";
+    if (!std::filesystem::exists(log)) SKIP(log << " not found: run testroms/fetch.py");
+    // nestest.log's first instructions: JMP $C5F5 at cycle 7, then LDX #$00 at 10.
+    using E = rig::nes::TraceEntry;
+    std::vector<E> t = {{7, 0xC000, 0x4C, false, true}, {8, 0xC001, 0xF5, false, false},
+                        {9, 0xC002, 0xC5, false, false}, {10, 0xC5F5, 0xA2, false, true}};
+    CHECK_FALSE(rig::nes::compare_nestest_log(t, log).has_value());
+    auto bad = t;
+    bad[3].addr = 0xC5F6;  // the wrong PC
+    CHECK(rig::nes::compare_nestest_log(bad, log).has_value());
+    bad = t;
+    bad[1].sync = true;  // a fetch where there's none
+    CHECK(rig::nes::compare_nestest_log(bad, log).has_value());
+    bad = t;
+    bad[3].sync = false;  // an instruction missed
+    CHECK(rig::nes::compare_nestest_log(bad, log).has_value());
+    CHECK(rig::nes::compare_nestest_log({}, log).has_value());
+}
+
 TEST_CASE("a test after nestest on the same system isn't held by the limits nestest left") {
     std::string path = std::string(RS_TESTROMS) + "/nes-test-roms/other/nestest.nes";
     if (!std::filesystem::exists(path)) SKIP(path << " not found: run testroms/fetch.py");

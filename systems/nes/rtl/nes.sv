@@ -67,6 +67,7 @@ module nes #(
     parameter int          CHR_BANK_AW  = CHR_AW,   // ...built from banks of 2^CHR_BANK_AW (see memory/bram)
     parameter int          MEM_AW       = 23,       // the board's memory: 2^MEM_AW bytes, for PRG ROM
     parameter bit          CHR_EXT      = 1'b0,     // CHR ROM can come from the board's memory
+    parameter int          TRACE_AW     = 10,       // the trace buffer keeps the last 2^TRACE_AW CPU cycles
     parameter logic [31:0] BUILD_ID     = '0
 ) (
     input  logic        clk,
@@ -169,6 +170,7 @@ module nes #(
     assign sel_ssbuf = s_addr[31:24] == 8'h06;
     wire sel_input = s_addr[31:24] == 8'h07;
     wire sel_chr   = s_addr[31:24] == 8'h08;
+    wire sel_trace = s_addr[31:24] == 8'h09;
 
     // ---- Control registers ----
     logic        ctrl_run, ctrl_reset, mirror_v, chr_ram, wram_on, chr_ext;
@@ -979,6 +981,16 @@ module nes #(
     crc32 u_trace (.clk, .rst(sys_rst), .en(tr_n != '0), .data(tr[7:0]), .crc(trace_crc),
                    .st_we(st_we_sys && st_sys_w == 4'd2), .st_wdata);
 
+    // The same 4 bytes go into the trace buffer, the last 2^TRACE_AW cycles:
+    // cycle n at ring index n mod 2^TRACE_AW (a state loaded sets the count).
+    logic [31:0]       tb_count, tb_rdata;
+    logic [TRACE_AW:0] tb_filled;
+
+    trace_buffer #(.W(32), .AW(TRACE_AW)) u_tbuf (
+        .clk, .rst(sys_rst), .en(ce), .data({6'b0, bus_sync, bus_we, bus_we ? bus_wdata : cpu_din, bus_addr}),
+        .set(st_we_sys && st_sys_w == 4'd0), .set_count(st_wdata), .count(tb_count), .filled(tb_filled),
+        .raddr(s_addr[TRACE_AW+1:2]), .rdata(tb_rdata));
+
     // The audio CRC: each CPU cycle's channel levels as 3 bytes, {pulse 2,
     // pulse 1}, {noise, triangle}, DMC.
     logic [31:0] audio_crc;
@@ -1172,7 +1184,7 @@ module nes #(
     logic [7:0]  sp_q;
     logic        sp_ack;
     logic [31:0] sys_st, st_q;
-    wire         sp_issue = s_new && (sel_state || sel_probe || sel_ssbuf) && sp_wait == '0 && !sp_ack;
+    wire         sp_issue = s_new && (sel_state || sel_probe || sel_ssbuf || sel_trace) && sp_wait == '0 && !sp_ack;
     assign       paused   = ctrl_reset || ((cs == C_START || cs == C_LEAD) && !go);
     wire  [1:0]  st_sel   = s_addr[13:12];  // CPU, PPU, the system's, APU
     wire         st_commit = sp_issue && sel_state && s_we && paused && s_addr[1:0] == 2'd3;
@@ -1237,6 +1249,8 @@ module nes #(
         if (sp_wait == 2'd1) begin
             if (sel_ssbuf)
                 sp_q <= s_addr[23:15] == '0 ? ss_hq : '0;
+            else if (sel_trace)
+                sp_q <= s_addr[23:TRACE_AW+2] == '0 ? tb_rdata[8*s_addr[1:0] +: 8] : '0;
             else if (sel_state)
                 sp_q <= st_q[8*s_addr[1:0] +: 8];
             else if (!s_addr[12])
@@ -1397,6 +1411,13 @@ module nes #(
             8'h7B:   reg_q <= mem_waits[31:24];
             8'h7C, 8'h7D, 8'h7E, 8'h7F, 8'h80, 8'h81, 8'h82, 8'h83, 8'h84, 8'h85, 8'h86, 8'h87:
                      reg_q <= mem_stats[8*(r - 8'h7C) +: 8];
+            8'h88:   reg_q <= tb_count[7:0];
+            8'h89:   reg_q <= tb_count[15:8];
+            8'h8A:   reg_q <= tb_count[23:16];
+            8'h8B:   reg_q <= tb_count[31:24];
+            8'h8C:   reg_q <= 8'(tb_filled);
+            8'h8D:   reg_q <= 8'(tb_filled >> 8);
+            8'h8E:   reg_q <= 8'(TRACE_AW);
             default: reg_q <= '0;
         endcase
         if (rst) begin
@@ -1429,7 +1450,7 @@ module nes #(
 
     always_ff @(posedge clk)
         none_ack <= s_new && !(sel_sdram || sel_reg || sel_mem || sel_vram || sel_state || sel_probe || sel_ssbuf || sel_input
-                              || sel_chr)
+                              || sel_chr || sel_trace)
                     && !none_ack && !rst;
 
     assign s_ack = sh_sd_ack || sh_m_ack || sh_v_ack || sp_ack || reg_ack || none_ack || in_ack;

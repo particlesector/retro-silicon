@@ -20,6 +20,7 @@ filesets:
       - retro-silicon:common:cdc
       - retro-silicon:debug:test-shell
       - retro-silicon:debug:video-probe
+      - retro-silicon:debug:trace
       - retro-silicon:common:save-state
       - retro-silicon:memory:arbiter
       - retro-silicon:memory:sdram

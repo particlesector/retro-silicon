@@ -136,6 +136,7 @@ The clock-enable's phase isn't state: it only sets how many clocks pass before t
 | `0x06000000`–`0x06007FFF` | The save-state buffer; while no command runs |
 | `0x07000000`–`0x070007FF` | The input script, 512 entries of 4 bytes; write-only (reads give 0). An entry is written when its byte 3 is |
 | `0x08000000`– | All of CHR's block RAM, unbanked: 2^`CHR_AW` bytes, mirrored |
+| `0x09000000`– | The trace buffer's ring (`debug/trace`): 2^`TRACE_AW` entries of 4 bytes, the trace CRC's bytes for one CPU cycle; cycle n is at entry n mod 2^`TRACE_AW`. Read while stopped |
 
 Anything else reads 0 and ignores writes. Multi-byte registers are little-endian. A save-state word is written when its byte 3 is written, using bytes 0-2 written before it. State writes count only while the system is held in reset or stopped between cycles, and the system's own words only out of reset.
 
@@ -182,6 +183,9 @@ Anything else reads 0 and ignores writes. Multi-byte registers are little-endian
 | `76` | 1 | Bit 0: CHR ROM can come from the board's memory (read-only: `CHR_EXT`) |
 | `78` | 4 | Clocks the dots have waited for memory since reset (read-only): a PRG read or CHR word not back in time. They change nothing the system does, but too many keep it from keeping pace with a display |
 | `7C` | 12 | A memory cache's counts since reset, 4 bytes each (read-only; 0 without one): reads it answered, reads that went to memory, lines it prefetched (`nes_axi`'s `memory/cache`) |
+| `88` | 4 | The trace buffer's count (read-only): the number of the cycle it records next; a state loaded sets it to the state's cycle |
+| `8C` | 2 | How many of the trace buffer's entries are valid (read-only), up to 2^`TRACE_AW`: cycles `88` - this to `88` - 1 |
+| `8E` | 1 | The trace buffer holds 2^this cycles (read-only: `TRACE_AW`) |
 
 The limits are levels: raising one lets the system run on from where it stopped. All registers are absolute, so a command the shell runs twice does no harm.
 
@@ -215,6 +219,7 @@ The limits are levels: raising one lets the system run on from where it stopped.
 | `CHR_AW`, `CHR_BANK_AW` | 13, `CHR_AW` | CHR's block RAM: 2^`CHR_AW` bytes, in banks of 2^`CHR_BANK_AW` (`nes_bram`'s `CHR_AW` and `BANK_AW`) |
 | `MEM_AW` | 23 | The board's memory's size, for the harness (`nes_bram` passes its own) |
 | `CHR_EXT` | 0 | CHR ROM can come from the board's memory (`nes_sdram`'s too); needs 8 or more clocks a dot |
+| `TRACE_AW` | 10 | The trace buffer keeps the last 2^`TRACE_AW` CPU cycles (4 bytes each, in byte-wide block RAM) |
 | `SAVE_STATE` | 1 | 0 builds the system without save states (the CPU's, PPU's, APU's and resampler's ports do nothing; OAM can still be cleared): the Tang Nano 20K's NES, which fits only so with the APU and HDMI audio |
 | `BUILD_ID` | 0 | Reported by INFO; the CMake build sets it from the RTL's SHA-256 |
 
