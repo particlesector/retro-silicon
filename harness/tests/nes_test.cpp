@@ -114,6 +114,39 @@ void matches_mesen(const std::string& id, Sim sim = Sim::kDefault) {
 #define MATCHES_MESEN_EXT(id) \
     TEST_CASE(id " matches MesenCE's frame with its CHR ROM in the SDRAM") { matches_mesen(id, Sim::kExt); }
 
+// Another power-up: RAM all 0xFF, or another CPU/PPU alignment, against
+// MesenCE's frame at the same (tools/mesen/frames.py --ram, --lead). These are
+// ROMs whose frame changes with it.
+namespace {
+
+void matches_mesen_power(const std::string& id, const std::string& file, const rig::nes::PowerUp& p) {
+    auto [g, rom] = golden_rom(id, file);
+    auto link = rig::make_nes_sim();
+    auto r = rig::nes::rom_test(*link, g.check, rom, g.frames, RS_NES_BUILD_ID, false, p);
+    INFO(r.detail << " / " << r.notes);
+    CHECK(r.passed);
+    CHECK(r.crc32 == g.crc);
+}
+
+rig::nes::PowerUp ones() { rig::nes::PowerUp p; p.fill = rig::nes::PowerUp::kOnes; return p; }
+rig::nes::PowerUp lead(int dots) { rig::nes::PowerUp p; p.lead_dots = static_cast<uint8_t>(dots); return p; }
+
+} // namespace
+
+#define MATCHES_MESEN_ONES(id) \
+    TEST_CASE(id " matches MesenCE's frame with RAM powered up all 0xFF") { \
+        matches_mesen_power(id, RS_NES_FRAMES_ONES_GOLDEN, ones()); \
+    }
+#define MATCHES_MESEN_LEAD(id, dots) \
+    TEST_CASE(id " matches MesenCE's frame at the CPU/PPU alignment of " #dots " lead dots") { \
+        matches_mesen_power(id, RS_NES_FRAMES_LEAD##dots##_GOLDEN, lead(dots)); \
+    }
+
+MATCHES_MESEN_ONES("blargg_apu-01")
+MATCHES_MESEN_ONES("blargg_apu-07")
+MATCHES_MESEN_LEAD("full_palette", 6)
+MATCHES_MESEN_LEAD("full_palette", 7)
+
 MATCHES_MESEN_BRAM("oam_read")
 MATCHES_MESEN_BRAM("ppu_vbl_nmi-10")
 MATCHES_MESEN_BRAM("sprite_hit-09")

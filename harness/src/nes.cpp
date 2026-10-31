@@ -109,6 +109,34 @@ size_t chr_ext_offset(size_t a) {
     return (a & ~size_t{0xF}) | (a & 7) << 1 | (a >> 3 & 1);
 }
 
+std::optional<uint8_t> lead_dots_for(int ppu_offset, int cpu_offset) {
+    // The default, PPU 1 and CPU 0, is 5 dots; each 4 master clocks more of
+    // CPU offset than PPU is a dot later.
+    int d = cpu_offset - ppu_offset + 1;
+    if (d < 0 || d % 4 != 0 || d / 4 > 2) return std::nullopt;
+    return static_cast<uint8_t>(5 + d / 4);
+}
+
+namespace {
+
+// The bytes a memory powers up with.
+std::vector<uint8_t> power_up_fill(const PowerUp& p, size_t n, uint32_t salt) {
+    std::vector<uint8_t> v(n, p.fill == PowerUp::kOnes ? 0xFF : 0x00);
+    if (p.fill == PowerUp::kRandom) {
+        uint32_t x = p.seed * 2654435761u ^ salt;  // xorshift32, a stream for each memory
+        for (auto& b : v) {
+            x ^= x << 13;
+            x ^= x >> 17;
+            x ^= x << 5;
+            if (x == 0) x = 1;
+            b = static_cast<uint8_t>(x >> 24);
+        }
+    }
+    return v;
+}
+
+} // namespace
+
 std::optional<std::string> Console::load(const NesRom& rom, bool want_ext) {
     if (auto e = unsupported(rom)) return e;
     // Whatever ran before may have left limits, the vector override or a
@@ -134,8 +162,8 @@ std::optional<std::string> Console::load(const NesRom& rom, bool want_ext) {
     put32(kMapper, rom.mapper, 1);
     put32(kCart, (rom.mirroring == NesRom::Mirroring::kVertical ? 1 : 0) | (chr_ram ? 2 : 0) |
                      (prg_ram_size(rom) ? 4 : 0) | (ext ? 8 : 0), 1);
-    std::vector<uint8_t> zeros(8192, 0);
-    const std::vector<uint8_t>& chr = chr_ram ? zeros : rom.chr;
+    std::vector<uint8_t> chr_ram_fill = power_up_fill(power_up_, 8192, 1);
+    const std::vector<uint8_t>& chr = chr_ram ? chr_ram_fill : rom.chr;
     put32(kChrMask, static_cast<uint32_t>(chr.size() - 1), 3);
     if (ext) {
         std::vector<uint8_t> laid(chr.size());
@@ -150,11 +178,13 @@ std::optional<std::string> Console::load(const NesRom& rom, bool want_ext) {
         if (c_.crc(kChr, static_cast<uint32_t>(chr.size())) != [&] { Crc32 c; c.update(chr); return c.value(); }())
             return "uploaded CHR doesn't read back";
     }
-    // Power-up memory, all zeros: nametables, RAM, PRG RAM and OAM.
-    c_.write(kPpu + 0x2000, std::vector<uint8_t>(0x1000, 0));
-    c_.write(kCpu + 0x0000, std::vector<uint8_t>(0x800, 0));
-    c_.write(kCpu + 0x6000, zeros);
-    c_.write(kPpuState, std::vector<uint8_t>(256, 0));  // state words 0-63
+    // Power-up memory, as power_up_ says: nametables, RAM, PRG RAM and OAM.
+    // Then the CPU/PPU alignment, taken as the system leaves reset.
+    c_.write(kPpu + 0x2000, power_up_fill(power_up_, 0x1000, 2));
+    c_.write(kCpu + 0x0000, power_up_fill(power_up_, 0x800, 3));
+    c_.write(kCpu + 0x6000, power_up_fill(power_up_, 0x2000, 4));
+    c_.write(kPpuState, power_up_fill(power_up_, 256, 5));  // state words 0-63
+    put32(kLeadDots, power_up_.lead_dots, 1);
     return std::nullopt;
 }
 
@@ -420,7 +450,7 @@ TestResult nestest(Link& link, const NesRom& rom, uint32_t cycles, std::optional
 }
 
 TestResult rom_test(Link& link, const RomCheck& check, const NesRom& rom, uint32_t frames,
-                    std::optional<uint32_t> build_id, bool chr_ext) {
+                    std::optional<uint32_t> build_id, bool chr_ext, const PowerUp& power) {
     TestResult r;
     r.name = check.id;
     auto t0 = std::chrono::steady_clock::now();
@@ -447,6 +477,7 @@ TestResult rom_test(Link& link, const RomCheck& check, const NesRom& rom, uint32
                           ": the wrong bitstream is loaded");
 
         nes.hold_reset();
+        nes.set_power_up(power);
         if (auto e = nes.load(rom, chr_ext)) return finish(*e);
         r.bytes = rom.prg.size() + rom.chr.size();
         nes.set_vector(std::nullopt);

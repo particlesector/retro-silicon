@@ -203,6 +203,7 @@ module nes #(
     logic       ppu_ce_q;  // the clock after ppu_ce, when the PPU's new address is out
     logic [1:0] dn;    // dots so far in this CPU cycle
     logic [2:0] lead;
+    logic [2:0] lead_dots;  // register 8F: the lead after a reset, the CPU/PPU alignment
 
     // Stops are levels, so raising a limit runs on from where it stopped.
     assign stopped   = (stop_at != '0 && cycles >= stop_at) || (stop_frame != '0 && frames >= stop_frame);
@@ -259,8 +260,8 @@ module nes #(
             v_hold <= 1'b0;
             ppu_ce <= 1'b0;
             reg_ce <= 1'b0;
-            cs     <= LEAD_DOTS == 0 ? C_START : C_LEAD;
-            lead   <= 3'(LEAD_DOTS);
+            cs     <= lead_dots == '0 ? C_START : C_LEAD;
+            lead   <= lead_dots;
             dn     <= '0;
         end
     end
@@ -1313,6 +1314,7 @@ module nes #(
                 8'h70: chr_mask[7:0]     <= s_wdata;
                 8'h71: chr_mask[15:8]    <= s_wdata;
                 8'h72: chr_mask[17:16]   <= s_wdata[1:0];
+                8'h8F: lead_dots         <= s_wdata[2:0];
                 default: ;
             endcase
         case (r)
@@ -1418,6 +1420,7 @@ module nes #(
             8'h8C:   reg_q <= 8'(tb_filled);
             8'h8D:   reg_q <= 8'(tb_filled >> 8);
             8'h8E:   reg_q <= 8'(TRACE_AW);
+            8'h8F:   reg_q <= {5'b0, lead_dots};
             default: reg_q <= '0;
         endcase
         if (rst) begin
@@ -1442,6 +1445,7 @@ module nes #(
             in_len     <= '0;
             live1      <= '0;
             live2      <= '0;
+            lead_dots  <= 3'(LEAD_DOTS);
         end
     end
 

@@ -86,6 +86,7 @@ enum Reg : uint32_t {
     kTraceCount = 0x88,   // 4 bytes, read-only: the trace buffer's next entry number (cycle n at ring index n mod depth)
     kTraceFilled = 0x8C,  // 2 bytes, read-only: valid entries, up to its depth
     kTraceBits = 0x8E,    // read-only: it holds 2^this entries
+    kLeadDots = 0x8F,     // PPU dots before the CPU's first cycle after a reset: the CPU/PPU alignment
 };
 
 enum Status : uint8_t {
@@ -108,6 +109,26 @@ struct Video {
 // Where CHR ROM byte `a` goes from kChrExtBase: each 16-byte tile's planes
 // interleaved, row r of plane p at 2r + p, so a 32-bit word holds two rows.
 size_t chr_ext_offset(size_t a);
+
+// How the console powers up: its memories' fill (RAM, PRG RAM, CHR RAM, the
+// nametables and OAM, as MesenCE fills them) and its CPU/PPU alignment.
+//
+// The alignment is the PPU dots before the CPU's first cycle. 5, the default,
+// is MesenCE's own (its PPU offset 1, CPU offset 0, in master clocks); 6 and 7
+// put the CPU a dot and two later, as MesenCE's random alignments do when its
+// CPU offset less its PPU offset is 3 or 7 master clocks. Its other random
+// alignments put the CPU part of a dot off, which this core can't (or, at 11,
+// a whole cycle later).
+struct PowerUp {
+    enum Fill { kZeros, kOnes, kRandom };
+    Fill fill = kZeros;
+    uint32_t seed = 0;  // for kRandom
+    uint8_t lead_dots = 5;
+};
+
+// MesenCE's alignment (its log's "PPU: p/3 CPU: c/11") as lead dots; nothing
+// if the core can't run it.
+std::optional<uint8_t> lead_dots_for(int ppu_offset, int cpu_offset);
 
 // One CPU cycle from the trace buffer: its number since reset, and the bus.
 struct TraceEntry {
@@ -150,6 +171,8 @@ public:
     // CHR ROM goes in the board's memory if it's too big for CHR's block RAM,
     // or with `chr_ext` set, if the system can take it from there.
     std::optional<std::string> load(const NesRom& rom, bool chr_ext = false);
+    // How the next load() powers the console up (from then on, until changed).
+    void set_power_up(const PowerUp& p) { power_up_ = p; }
     // Why this system can't run the ROM (an unsupported mapper or a size it
     // has no room for), or nothing if it can.
     std::optional<std::string> unsupported(const NesRom& rom);
@@ -212,6 +235,7 @@ private:
     void put32(uint32_t reg, uint32_t v, int bytes = 4);
     uint32_t get32(uint32_t reg);
     shell::Client& c_;
+    PowerUp power_up_;
 };
 
 inline constexpr uint32_t kNestestCycles = 26554;  // the last line of nestest.log
@@ -247,8 +271,10 @@ struct RomCheck {
 // the last frame, which must match the other backend's and MesenCE's for the
 // same frame; its audio CRC32 (the APU's levels through to that point) must
 // match the other backend's. Its notes carry the ROM's text report, if it has one.
+// `power` sets the memories' fill and the CPU/PPU alignment it powers up with.
 TestResult rom_test(Link& link, const RomCheck& check, const NesRom& rom, uint32_t frames,
-                    std::optional<uint32_t> build_id = std::nullopt, bool chr_ext = false);
+                    std::optional<uint32_t> build_id = std::nullopt, bool chr_ext = false,
+                    const PowerUp& power = {});
 
 // A save-state round trip. The ROM runs uninterrupted from power-up to frame
 // `frames`; then again, saved at the first frame boundary after

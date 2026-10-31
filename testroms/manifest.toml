@@ -10,6 +10,8 @@
 # in zero page: 1 for a pass, 2 and up an error code.
 # check = "frame": no result of its own; the core's frame `frames` must match
 # MesenCE's (tools/mesen/frames.py).
+# mesen: for check = "frame", what that frame shows in MesenCE, so the
+# expected result is on record.
 # check = "trace": compare a CPU trace against the reference log.
 # input: an input script for player 1, [[frame, buttons], ...] in frame order,
 # the buttons (bit 0 A, B, Select, Start, Up, Down, Left, bit 7 Right) held
@@ -922,6 +924,751 @@ covers = "When a length reload takes effect"
 check = "zeropage"
 result = 0xF0
 frames = 20
+
+# The sweep (milestone 10a, Oct 31): the rest of nes-test-roms' ROMs for the
+# mappers the core has and an automatic result, each run in MesenCE first.
+
+[[rom]]
+id = "instr_test-01"
+source = "nes-test-roms"
+path = "instr_test-v5/rom_singles/01-basics.nes"
+sha256 = "4dd1cdd406bc3f747972e7da314ce8ca89321eb7a836c1ced569ee54ae44a384"
+needs = "cpu"
+covers = "Basic instructions, first (instr_test-v5, single)"
+check = "blargg"
+frames = 19
+
+[[rom]]
+id = "instr_test-02"
+source = "nes-test-roms"
+path = "instr_test-v5/rom_singles/02-implied.nes"
+sha256 = "1c4d4fa130cf6feebc072543a5cd3627ae71063b56b08642bf43e9a6c6f44996"
+needs = "cpu"
+covers = "Implied-mode instructions (instr_test-v5, single)"
+check = "blargg"
+frames = 98
+
+[[rom]]
+id = "instr_test-03"
+source = "nes-test-roms"
+path = "instr_test-v5/rom_singles/03-immediate.nes"
+sha256 = "6f7ad8ff31c762c37deaee0f323df03eb94025cf1f3b0343ebe6fe567da0e943"
+needs = "cpu"
+covers = "Immediate-mode instructions (instr_test-v5, single)"
+check = "blargg"
+frames = 88
+
+[[rom]]
+id = "instr_test-04"
+source = "nes-test-roms"
+path = "instr_test-v5/rom_singles/04-zero_page.nes"
+sha256 = "7a8feada4bb4460250c8f05401e5d728878bbe71956756d0b11d488e57eb12fd"
+needs = "cpu"
+covers = "Zero-page instructions (instr_test-v5, single)"
+check = "blargg"
+frames = 118
+
+[[rom]]
+id = "instr_test-05"
+source = "nes-test-roms"
+path = "instr_test-v5/rom_singles/05-zp_xy.nes"
+sha256 = "767f422dc4e651e331456b207f7c6d60d19329fde0c0827e83591dbd91ae5e23"
+needs = "cpu"
+covers = "Zero-page,X and ,Y instructions (instr_test-v5, single)"
+check = "blargg"
+frames = 261
+
+[[rom]]
+id = "instr_test-06"
+source = "nes-test-roms"
+path = "instr_test-v5/rom_singles/06-absolute.nes"
+sha256 = "98df36dc4fcc4f37d9eb0539c71283020776b1e5dc6a6ce58671739a8d6534af"
+needs = "cpu"
+covers = "Absolute instructions (instr_test-v5, single)"
+check = "blargg"
+frames = 112
+
+[[rom]]
+id = "instr_test-07"
+source = "nes-test-roms"
+path = "instr_test-v5/rom_singles/07-abs_xy.nes"
+sha256 = "9ff58d77d8d384cc918fcd3ed877898c5e7330cd475ed2dafb11cbe80ff32eff"
+needs = "cpu"
+covers = "Absolute,X and ,Y instructions (instr_test-v5, single)"
+check = "blargg"
+frames = 367
+
+[[rom]]
+id = "instr_test-08"
+source = "nes-test-roms"
+path = "instr_test-v5/rom_singles/08-ind_x.nes"
+sha256 = "2ec6f5d4a8caee5d8295cebe563f203c26ea9bc05f1dbc967feb88f5dc4f261f"
+needs = "cpu"
+covers = "(Indirect,X) instructions (instr_test-v5, single)"
+check = "blargg"
+frames = 148
+
+[[rom]]
+id = "instr_test-09"
+source = "nes-test-roms"
+path = "instr_test-v5/rom_singles/09-ind_y.nes"
+sha256 = "0fbc8b228d5daa83a4a083bf87ae3a61b5247ebdd91a6b91c8cf8c42784804ac"
+needs = "cpu"
+covers = "(Indirect),Y instructions (instr_test-v5, single)"
+check = "blargg"
+frames = 138
+
+[[rom]]
+id = "instr_test-10"
+source = "nes-test-roms"
+path = "instr_test-v5/rom_singles/10-branches.nes"
+sha256 = "63ab768e88931db6f7dfcfafe43d5e29ebc3dcb80da8fc7fcda8c930f34aef54"
+needs = "cpu"
+covers = "Branches (instr_test-v5, single)"
+check = "blargg"
+frames = 42
+
+[[rom]]
+id = "instr_test-11"
+source = "nes-test-roms"
+path = "instr_test-v5/rom_singles/11-stack.nes"
+sha256 = "c534191fe3ea4c8940944fda98dd58eb42710268d453f97e8e2c4ae7f15f9cdb"
+needs = "cpu"
+covers = "Stack instructions (instr_test-v5, single)"
+check = "blargg"
+frames = 165
+
+[[rom]]
+id = "instr_test-12"
+source = "nes-test-roms"
+path = "instr_test-v5/rom_singles/12-jmp_jsr.nes"
+sha256 = "f5b4652690fc04e6b573a2b3b54a29407ad0615d3c264e7cb618b6694b50de55"
+needs = "cpu"
+covers = "JMP and JSR (instr_test-v5, single)"
+check = "blargg"
+frames = 18
+
+[[rom]]
+id = "instr_test-13"
+source = "nes-test-roms"
+path = "instr_test-v5/rom_singles/13-rts.nes"
+sha256 = "b711d25bc55585c252046a1304a0bc64c13cacce7c96a1bac5c8e91f9fc2597f"
+needs = "cpu"
+covers = "RTS (instr_test-v5, single)"
+check = "blargg"
+frames = 16
+
+[[rom]]
+id = "instr_test-14"
+source = "nes-test-roms"
+path = "instr_test-v5/rom_singles/14-rti.nes"
+sha256 = "f084b00605be1840946b53935032581e68abe1bb24479942751cfe46ddfcb280"
+needs = "cpu"
+covers = "RTI (instr_test-v5, single)"
+check = "blargg"
+frames = 15
+
+[[rom]]
+id = "instr_test-15"
+source = "nes-test-roms"
+path = "instr_test-v5/rom_singles/15-brk.nes"
+sha256 = "da7ae9a191c4483b540771e15b1f6f18df68f1d1ecd717b59ea8b1ee3596ec3e"
+needs = "cpu"
+covers = "BRK (instr_test-v5, single)"
+check = "blargg"
+frames = 26
+
+[[rom]]
+id = "instr_test-16"
+source = "nes-test-roms"
+path = "instr_test-v5/rom_singles/16-special.nes"
+sha256 = "7d03410b61784e49920901e84b00a4f31a19078391f20005c6fac9036d2190f7"
+needs = "cpu"
+covers = "Special cases: JMP ($xxFF), dummy cycles (instr_test-v5, single)"
+check = "blargg"
+frames = 14
+
+[[rom]]
+id = "instr_test_v3-all"
+source = "nes-test-roms"
+path = "instr_test-v3/all_instrs.nes"
+sha256 = "0c276c84b578ac43b7bce7f611c29a4d77e8d06b2336b362ae4024a67fefbe02"
+needs = "cpu"
+covers = "Every instruction, the unofficial ones too (instr_test-v3)"
+check = "blargg"
+frames = 2329
+
+[[rom]]
+id = "instr_test_v3-official"
+source = "nes-test-roms"
+path = "instr_test-v3/official_only.nes"
+sha256 = "5f331a713ff60c496e9d0173332dd37365080c62158ffc71ba2d9f8bbdc62c99"
+needs = "cpu"
+covers = "Every official instruction (instr_test-v3)"
+check = "blargg"
+frames = 1798
+
+[[rom]]
+id = "instr_test_v3-01"
+source = "nes-test-roms"
+path = "instr_test-v3/rom_singles/01-implied.nes"
+sha256 = "3093a51eb7f5c7c6af138ab74486e79df2488e6a0814e67e415ae67e1975a367"
+needs = "cpu"
+covers = "Implied-mode instructions (instr_test-v3, the older version)"
+check = "blargg"
+frames = 98
+
+[[rom]]
+id = "instr_test_v3-02"
+source = "nes-test-roms"
+path = "instr_test-v3/rom_singles/02-immediate.nes"
+sha256 = "5ce057d05b17f7a1548cbb13c80a22a9e9ed46e715f228110fb3c169f98210c8"
+needs = "cpu"
+covers = "Immediate-mode instructions (instr_test-v3, the older version)"
+check = "blargg"
+frames = 89
+
+[[rom]]
+id = "instr_test_v3-03"
+source = "nes-test-roms"
+path = "instr_test-v3/rom_singles/03-zero_page.nes"
+sha256 = "cf6b1f841b593a58e80d607dee25d2826cb2a26e39ff4eb082f21cde7946f96e"
+needs = "cpu"
+covers = "Zero-page instructions (instr_test-v3, the older version)"
+check = "blargg"
+frames = 117
+
+[[rom]]
+id = "instr_test_v3-04"
+source = "nes-test-roms"
+path = "instr_test-v3/rom_singles/04-zp_xy.nes"
+sha256 = "248fc480302c9d97aaff693e50fc6658eb3dfc38e17374b91a6b47fcd84d784a"
+needs = "cpu"
+covers = "Zero-page,X and ,Y instructions (instr_test-v3, the older version)"
+check = "blargg"
+frames = 261
+
+[[rom]]
+id = "instr_test_v3-05"
+source = "nes-test-roms"
+path = "instr_test-v3/rom_singles/05-absolute.nes"
+sha256 = "eb396171be156bdb82caa1f447d883fac95f6e037d25b28c6c1970469caf981b"
+needs = "cpu"
+covers = "Absolute instructions (instr_test-v3, the older version)"
+check = "blargg"
+frames = 111
+
+[[rom]]
+id = "instr_test_v3-06"
+source = "nes-test-roms"
+path = "instr_test-v3/rom_singles/06-abs_xy.nes"
+sha256 = "9267bde58135ac34b959b0b299f4ac7a65a66813edce2266d9d5532b162afa3f"
+needs = "cpu"
+covers = "Absolute,X and ,Y instructions (instr_test-v3, the older version)"
+check = "blargg"
+frames = 366
+
+[[rom]]
+id = "instr_test_v3-07"
+source = "nes-test-roms"
+path = "instr_test-v3/rom_singles/07-ind_x.nes"
+sha256 = "9640c36982ad8021a69725926adb410370ac630738d2cfce37f9c143d6ee4c19"
+needs = "cpu"
+covers = "(Indirect,X) instructions (instr_test-v3, the older version)"
+check = "blargg"
+frames = 148
+
+[[rom]]
+id = "instr_test_v3-08"
+source = "nes-test-roms"
+path = "instr_test-v3/rom_singles/08-ind_y.nes"
+sha256 = "2154f645e4d58defef3e7023b7456a8d367b381f192a32fcc6a1d7e36c39546e"
+needs = "cpu"
+covers = "(Indirect),Y instructions (instr_test-v3, the older version)"
+check = "blargg"
+frames = 138
+
+[[rom]]
+id = "instr_test_v3-09"
+source = "nes-test-roms"
+path = "instr_test-v3/rom_singles/09-branches.nes"
+sha256 = "1ac05f2864cb72824269e3352d2591ad9cadab8d294bbc883a5ba1c29bd6c1d0"
+needs = "cpu"
+covers = "Branches (instr_test-v3, the older version)"
+check = "blargg"
+frames = 42
+
+[[rom]]
+id = "instr_test_v3-10"
+source = "nes-test-roms"
+path = "instr_test-v3/rom_singles/10-stack.nes"
+sha256 = "16c523a892125d3e496c976c1b5ce239b01a630316c57d47999f11d6dd831883"
+needs = "cpu"
+covers = "Stack instructions (instr_test-v3, the older version)"
+check = "blargg"
+frames = 166
+
+[[rom]]
+id = "instr_test_v3-11"
+source = "nes-test-roms"
+path = "instr_test-v3/rom_singles/11-jmp_jsr.nes"
+sha256 = "903e341e4e460f8e4633e6bd1d169a865d34008d533fa2561319d88f24d38171"
+needs = "cpu"
+covers = "JMP and JSR (instr_test-v3, the older version)"
+check = "blargg"
+frames = 19
+
+[[rom]]
+id = "instr_test_v3-12"
+source = "nes-test-roms"
+path = "instr_test-v3/rom_singles/12-rts.nes"
+sha256 = "e6e08c5169adf685188ddef5f36a5b433c628ab2e818a329f9537e3de3fffb69"
+needs = "cpu"
+covers = "RTS (instr_test-v3, the older version)"
+check = "blargg"
+frames = 15
+
+[[rom]]
+id = "instr_test_v3-13"
+source = "nes-test-roms"
+path = "instr_test-v3/rom_singles/13-rti.nes"
+sha256 = "5a834bae00aede3ee9e066338207ca4cbf5d91131fe069f1bf498b8be757dd0e"
+needs = "cpu"
+covers = "RTI (instr_test-v3, the older version)"
+check = "blargg"
+frames = 15
+
+[[rom]]
+id = "instr_test_v3-14"
+source = "nes-test-roms"
+path = "instr_test-v3/rom_singles/14-brk.nes"
+sha256 = "f803978b90094bda7e7e7194ae7dcb814167733c0baa1e35a6985ee23f650c66"
+needs = "cpu"
+covers = "BRK (instr_test-v3, the older version)"
+check = "blargg"
+frames = 26
+
+[[rom]]
+id = "instr_test_v3-15"
+source = "nes-test-roms"
+path = "instr_test-v3/rom_singles/15-special.nes"
+sha256 = "7b2f490c2fadf0e2ff6e1582c857e6a75e7c90405fce2b7131d74f9ab73de45d"
+needs = "cpu"
+covers = "Special cases: JMP ($xxFF), dummy cycles (instr_test-v3, the older version)"
+check = "blargg"
+frames = 15
+
+[[rom]]
+id = "nes_instr_test-01"
+source = "nes-test-roms"
+path = "nes_instr_test/rom_singles/01-implied.nes"
+sha256 = "7b2c08954fc82a0cd1796b02ec79afed598d951356921a3a09b47906781ce5f2"
+needs = "cpu"
+covers = "Implied-mode instructions (nes_instr_test, the oldest version)"
+check = "blargg"
+frames = 64
+
+[[rom]]
+id = "nes_instr_test-02"
+source = "nes-test-roms"
+path = "nes_instr_test/rom_singles/02-immediate.nes"
+sha256 = "514f9114a1fe95c2baa086a84a962ae83947997517003da849e336838e841399"
+needs = "cpu"
+covers = "Immediate-mode instructions (nes_instr_test, the oldest version)"
+check = "blargg"
+frames = 58
+
+[[rom]]
+id = "nes_instr_test-03"
+source = "nes-test-roms"
+path = "nes_instr_test/rom_singles/03-zero_page.nes"
+sha256 = "1454d1b3b6ba0d3781b9136ba70173590388216790dcbe6f234f6b5507ebfbaf"
+needs = "cpu"
+covers = "Zero-page instructions (nes_instr_test, the oldest version)"
+check = "blargg"
+frames = 76
+
+[[rom]]
+id = "nes_instr_test-04"
+source = "nes-test-roms"
+path = "nes_instr_test/rom_singles/04-zp_xy.nes"
+sha256 = "e36cba0e33f8b659b7e07911b1e411c5ca8070e7149560ae64e6614e3d5d004a"
+needs = "cpu"
+covers = "Zero-page,X and ,Y instructions (nes_instr_test, the oldest version)"
+check = "blargg"
+frames = 175
+
+[[rom]]
+id = "nes_instr_test-05"
+source = "nes-test-roms"
+path = "nes_instr_test/rom_singles/05-absolute.nes"
+sha256 = "d72284f5e2a0b495f50a6207b424bd59b5a1d7bc651ac48a04c761e85442dfb0"
+needs = "cpu"
+covers = "Absolute instructions (nes_instr_test, the oldest version)"
+check = "blargg"
+frames = 72
+
+[[rom]]
+id = "nes_instr_test-06"
+source = "nes-test-roms"
+path = "nes_instr_test/rom_singles/06-abs_xy.nes"
+sha256 = "f02d67978b30a693e9d6ebd8a31b9f5dbdf92c180366458e18197024a1e9c108"
+needs = "cpu"
+covers = "Absolute,X and ,Y instructions (nes_instr_test, the oldest version)"
+check = "blargg"
+frames = 244
+
+[[rom]]
+id = "nes_instr_test-07"
+source = "nes-test-roms"
+path = "nes_instr_test/rom_singles/07-ind_x.nes"
+sha256 = "1b1d89c04ccd7fa938315c6e98dc35d7b943514ed97f501ea6aa1b8091d99597"
+needs = "cpu"
+covers = "(Indirect,X) instructions (nes_instr_test, the oldest version)"
+check = "blargg"
+frames = 107
+
+[[rom]]
+id = "nes_instr_test-08"
+source = "nes-test-roms"
+path = "nes_instr_test/rom_singles/08-ind_y.nes"
+sha256 = "6e458dbb0f78dd5adcdef20a92a911e58804554478994432fc83e70616296a61"
+needs = "cpu"
+covers = "(Indirect),Y instructions (nes_instr_test, the oldest version)"
+check = "blargg"
+frames = 99
+
+[[rom]]
+id = "nes_instr_test-09"
+source = "nes-test-roms"
+path = "nes_instr_test/rom_singles/09-branches.nes"
+sha256 = "6d675caa8f29a9c695f616b82b6c7cb968fc7e2ca6282035e7255fe42085c8ff"
+needs = "cpu"
+covers = "Branches (nes_instr_test, the oldest version)"
+check = "blargg"
+frames = 34
+
+[[rom]]
+id = "nes_instr_test-10"
+source = "nes-test-roms"
+path = "nes_instr_test/rom_singles/10-stack.nes"
+sha256 = "799160a3c982702638b41f5a115bc4286a036ac3f233184dd302aefe1afea6b5"
+needs = "cpu"
+covers = "Stack instructions (nes_instr_test, the oldest version)"
+check = "blargg"
+frames = 128
+
+[[rom]]
+id = "nes_instr_test-11"
+source = "nes-test-roms"
+path = "nes_instr_test/rom_singles/11-special.nes"
+sha256 = "1abc8c2164ff09fbaf11e3e302f5783ddef6dea037ba65694fdfd8c5fc8a9966"
+needs = "cpu"
+covers = "Special cases: JMP ($xxFF), dummy cycles (nes_instr_test, the oldest version)"
+check = "blargg"
+frames = 11
+
+[[rom]]
+id = "cpu_dummy_writes-oam"
+source = "nes-test-roms"
+path = "cpu_dummy_writes/cpu_dummy_writes_oam.nes"
+sha256 = "7c1d71a38b2e873d0874add8b823ff39b99151bb29f50096d8021787020c566c"
+needs = "cpu, ppu"
+covers = "Read-modify-write instructions write twice: seen through $2004"
+check = "blargg"
+frames = 327
+
+[[rom]]
+id = "cpu_dummy_writes-ppumem"
+source = "nes-test-roms"
+path = "cpu_dummy_writes/cpu_dummy_writes_ppumem.nes"
+sha256 = "f59ac329f4872277ccbeff9dd595b901d861af8d53e8a43dcca93bb86752a6b3"
+needs = "cpu, ppu"
+covers = "Read-modify-write instructions write twice: seen through $2007"
+check = "blargg"
+frames = 220
+
+[[rom]]
+id = "cpu_exec_space-apu"
+source = "nes-test-roms"
+path = "cpu_exec_space/test_cpu_exec_space_apu.nes"
+sha256 = "9036b3d64b7f4e0ac7d44ed85eafb4b2f93ffd2ca2ddecc19f1e0d2bec3574fe"
+needs = "cpu, apu"
+covers = "Code running from the APU registers and open bus"
+check = "blargg"
+frames = 300
+
+[[rom]]
+id = "cpu_exec_space-ppuio"
+source = "nes-test-roms"
+path = "cpu_exec_space/test_cpu_exec_space_ppuio.nes"
+sha256 = "9f7f24d420033e032f5da0e1eb721cce1d843e032b31973acddb0255ef479251"
+needs = "cpu, ppu"
+covers = "Code running from the PPU registers"
+check = "blargg"
+frames = 44
+
+[[rom]]
+id = "oam_stress"
+source = "nes-test-roms"
+path = "oam_stress/oam_stress.nes"
+sha256 = "95882d72a7acabe928fd277e3b3e0372f21ef3d41e36d7d8fb17fc017a356f70"
+needs = "ppu"
+covers = "OAM reads and writes through $2003 and $2004, at random"
+check = "blargg"
+frames = 1709
+
+[[rom]]
+id = "ppu_read_buffer"
+source = "nes-test-roms"
+path = "ppu_read_buffer/test_ppu_read_buffer.nes"
+sha256 = "230a52fc557c098eba163801d1b6bbf9f57fe8c5ff79a3f968c804dedb1290ba"
+needs = "cpu, ppu"
+covers = "$2007's read buffer, through every way to read and write it"
+check = "blargg"
+frames = 1271
+
+[[rom]]
+id = "cpu_test5-cpu"
+source = "nes-test-roms"
+path = "blargg_nes_cpu_test5/cpu.nes"
+sha256 = "782b97d45ade98f642893341277bf161d6ff0f973fd0de0de3753d844e931940"
+needs = "cpu, ppu"
+covers = "Every instruction, the unofficial ones too, by checksum (blargg's nes_cpu_test5)"
+check = "frame"
+mesen = "All tests complete"
+frames = 1000
+
+[[rom]]
+id = "cpu_test5-official"
+source = "nes-test-roms"
+path = "blargg_nes_cpu_test5/official.nes"
+sha256 = "5b412b3940abe3f9ed562b86b93cf660688bee95eba927c4dacd53c9da89fe9a"
+needs = "cpu, ppu"
+covers = "Every official instruction, by checksum (blargg's nes_cpu_test5)"
+check = "frame"
+mesen = "All tests complete"
+frames = 660
+
+[[rom]]
+id = "branch_timing-1"
+source = "nes-test-roms"
+path = "branch_timing_tests/1.Branch_Basics.nes"
+sha256 = "7b69e3044eaeb86317147a900d1f4a467b666f59d375ec1ba6658233f23786cd"
+needs = "cpu, ppu"
+covers = "Branch timing: the basics"
+check = "frame"
+mesen = "PASSED"
+frames = 40
+
+[[rom]]
+id = "branch_timing-2"
+source = "nes-test-roms"
+path = "branch_timing_tests/2.Backward_Branch.nes"
+sha256 = "f7966e9b86b04b4adb987439a442e926e9cfe6bb71436dd5dd56f41f9eb029a4"
+needs = "cpu, ppu"
+covers = "Branch timing: taken backward, across pages"
+check = "frame"
+mesen = "PASSED"
+frames = 40
+
+[[rom]]
+id = "branch_timing-3"
+source = "nes-test-roms"
+path = "branch_timing_tests/3.Forward_Branch.nes"
+sha256 = "d0fbc6b1899bc948172c45f37a981eb0dade212d7e807cc56efedae93d6f9c9b"
+needs = "cpu, ppu"
+covers = "Branch timing: taken forward, across pages"
+check = "frame"
+mesen = "PASSED"
+frames = 40
+
+[[rom]]
+id = "cpu_dummy_reads"
+source = "nes-test-roms"
+path = "cpu_dummy_reads/cpu_dummy_reads.nes"
+sha256 = "db4f91b80c5fbc123e7dcb420fb7fea9b8a18613edf4de7f3d1e3ed95e3117c9"
+needs = "cpu, ppu"
+covers = "Dummy reads of indexed addressing, seen through $2002"
+check = "frame"
+mesen = "Passed"
+frames = 80
+
+[[rom]]
+id = "cpu_timing_test6"
+source = "nes-test-roms"
+path = "cpu_timing_test6/cpu_timing_test.nes"
+sha256 = "6ab4fe8af23b12ca0dfccfc030de3d4069bf2498e3ef20ddcf1ca75555065b85"
+needs = "cpu, ppu"
+covers = "Every official instruction's cycle count"
+check = "frame"
+mesen = "PASSED"
+frames = 640
+
+[[rom]]
+id = "dmc_dma-2007_read"
+source = "nes-test-roms"
+path = "dmc_dma_during_read4/dma_2007_read.nes"
+sha256 = "a2e0fa3f6f155cbe0b8c9517b2f6a57f1fd68f13711c11d6d2fe5676c522d7b2"
+needs = "cpu, ppu, apu"
+covers = "A DMC DMA during a $2007 read: the reads it repeats"
+check = "frame"
+mesen = "a CRC, 159A7A8F, one of several a console can give"
+frames = 60
+
+[[rom]]
+id = "dmc_dma-2007_write"
+source = "nes-test-roms"
+path = "dmc_dma_during_read4/dma_2007_write.nes"
+sha256 = "54c75d491c685fb4cfff281bcf3e199a41e95f6c523e2b0607d67ba039f19f84"
+needs = "cpu, ppu, apu"
+covers = "A DMC DMA during a $2007 write"
+check = "frame"
+mesen = "Passed"
+frames = 60
+
+[[rom]]
+id = "dmc_dma-4016_read"
+source = "nes-test-roms"
+path = "dmc_dma_during_read4/dma_4016_read.nes"
+sha256 = "c6af72e11c197b449129921a9992db2351d9121bb593b3d0ab71895b646b0ebe"
+needs = "cpu, ppu, apu, controllers"
+covers = "A DMC DMA during a $4016 read: the extra reads it makes"
+check = "frame"
+mesen = "Passed"
+frames = 60
+
+[[rom]]
+id = "dmc_dma-double_2007_read"
+source = "nes-test-roms"
+path = "dmc_dma_during_read4/double_2007_read.nes"
+sha256 = "779e6e7db863a7405a3dda8723b8517a23d271e78ce4802970fb0a7d3039ce6b"
+needs = "cpu, ppu, apu"
+covers = "A DMC DMA during two $2007 reads in a row"
+check = "frame"
+mesen = "a CRC, F018C257, one of several a console can give"
+frames = 60
+
+[[rom]]
+id = "dmc_dma-read_write_2007"
+source = "nes-test-roms"
+path = "dmc_dma_during_read4/read_write_2007.nes"
+sha256 = "bc5281ca3f12a6d0ac9fe1a5e727ecc3cac5fc6a47f45ac130d644f0dbd522cf"
+needs = "cpu, ppu, apu"
+covers = "A DMC DMA during a read-modify-write of $2007"
+check = "frame"
+mesen = "Passed"
+frames = 60
+
+[[rom]]
+id = "mmc3_irq-5"
+source = "nes-test-roms"
+path = "mmc3_irq_tests/5.MMC3_rev_A.nes"
+sha256 = "6b662c2d08ee4094d89b6d1ddde330e47f81929fb642dc217b6e4c33f8926944"
+needs = "cpu, ppu, mmc3"
+covers = "The MMC3 revision A's IRQ counter: MesenCE runs revision B, so it fails, as the core should"
+check = "frame"
+mesen = "FAILED #3"
+frames = 60
+
+[[rom]]
+id = "mmc3_test_v1-1"
+source = "nes-test-roms"
+path = "mmc3_test/1-clocking.nes"
+sha256 = "57c77c66edde8c45e17bda02691dd3c7fd0b270c1ec024dff4e11a7778dfaa37"
+needs = "cpu, ppu, mmc3"
+covers = "MMC3 IRQ counter clocking (mmc3_test, the older version)"
+check = "frame"
+mesen = "Passed"
+frames = 60
+
+[[rom]]
+id = "mmc3_test_v1-2"
+source = "nes-test-roms"
+path = "mmc3_test/2-details.nes"
+sha256 = "89e1f16514aafeee90b5ab849dd73dbf1456dbd363ec2e3b798461125a33068a"
+needs = "cpu, ppu, mmc3"
+covers = "MMC3 IRQ counter details (mmc3_test)"
+check = "frame"
+mesen = "Passed"
+frames = 60
+
+[[rom]]
+id = "mmc3_test_v1-3"
+source = "nes-test-roms"
+path = "mmc3_test/3-A12_clocking.nes"
+sha256 = "dc6779b3d64e27b8d3b2b6dee7a1b528b9b6401ac0e6a9a1d5ab928dcd8ad6bb"
+needs = "cpu, ppu, mmc3"
+covers = "MMC3 counter clocked by PPU A12 (mmc3_test)"
+check = "frame"
+mesen = "Passed"
+frames = 60
+
+[[rom]]
+id = "mmc3_test_v1-4"
+source = "nes-test-roms"
+path = "mmc3_test/4-scanline_timing.nes"
+sha256 = "0474550dbf811bf1acda2178bf355edd5c100088479a09d881f84994c1690b82"
+needs = "cpu, ppu, mmc3"
+covers = "MMC3 IRQ timing within a scanline (mmc3_test)"
+check = "frame"
+mesen = "Passed"
+frames = 340
+
+[[rom]]
+id = "mmc3_test_v1-5"
+source = "nes-test-roms"
+path = "mmc3_test/5-MMC3.nes"
+sha256 = "f714089b5d056a50d63854a8d13359914d20d6144d8b25e48f880116ae73d8fd"
+needs = "cpu, ppu, mmc3"
+covers = "MMC3 behaviour at a counter reload of 0 (mmc3_test)"
+check = "frame"
+mesen = "Passed"
+frames = 60
+
+[[rom]]
+id = "mmc3_test_v1-6"
+source = "nes-test-roms"
+path = "mmc3_test/6-MMC6.nes"
+sha256 = "e6bdbadf46cc4bf7b26e496ecab44e60a8b1279c1b9cf16df090c9832adf6943"
+needs = "cpu, ppu, mmc3"
+covers = "The MMC6's behaviour, which an iNES mapper-4 MMC3 doesn't have: MesenCE fails it, as the core should"
+check = "frame"
+mesen = "Failed #3"
+frames = 60
+
+[[rom]]
+id = "scanline"
+source = "nes-test-roms"
+path = "scanline/scanline.nes"
+sha256 = "cde711acf138fa8287c7173f2d4862ae17f898d76ca282b12511dbeec1c264ff"
+needs = "cpu, ppu"
+covers = "Mid-scanline writes to $2001, $2000 and $2005/$2006 land where they should; stars mark errors"
+check = "frame"
+mesen = "its screen, no stars"
+frames = 120
+
+[[rom]]
+id = "scanline-a1"
+source = "nes-test-roms"
+path = "scanline-a1/scanline.nes"
+sha256 = "cde711acf138fa8287c7173f2d4862ae17f898d76ca282b12511dbeec1c264ff"
+needs = "cpu, ppu"
+covers = "The same, an alternative build"
+check = "frame"
+mesen = "its screen, no stars"
+frames = 120
+
+[[rom]]
+id = "scrolltest"
+source = "nes-test-roms"
+path = "scrolltest/scroll.nes"
+sha256 = "04ebe8b768ffc31fc1fa18a21f2e1884d0d3df2588f5efee53e881a339874db7"
+needs = "cpu, ppu"
+covers = "Multi-directional scrolling"
+check = "frame"
+mesen = "its scrolling screen"
+frames = 120
 
 # Homebrew built from source (fetch.py clones each at its commit and runs its
 # build: it needs ca65 from cc65, GNU Make and Python 3 with Pillow). Free
