@@ -253,6 +253,98 @@ TEST_CASE("6502 ANC, ALR and ARR AND with the operand first, as on real chips") 
     }
 }
 
+TEST_CASE("6502 XAA, LAX #imm and LAS behave as MesenCE runs them") {
+    {   // XAA #imm: A = (A | $EE) & X & imm
+        Program p({0xA9, 0x5A, 0xA2, 0xC3, 0x8B, 0xF0});
+        for (int i = 0; i < 3; i++) p.instruction();
+        REQUIRE(p.regs().a == 0xC0);
+        REQUIRE((p.regs().p & 0x82) == 0x80);  // N set, Z clear
+    }
+    {   // LAX #imm: A = X = imm
+        Program p({0xA9, 0x12, 0xAB, 0x84});
+        p.instruction();
+        auto c = p.instruction();
+        REQUIRE(c.size() == 2);
+        REQUIRE(p.regs().a == 0x84);
+        REQUIRE(p.regs().x == 0x84);
+    }
+    {   // LAS abs,Y: A = X = S = memory & S; a page cross takes a cycle more
+        Program p({0xA2, 0xF0, 0x9A, 0xA0, 0x01, 0xBB, 0x00, 0x30, 0xA0, 0x20, 0xBB, 0xF0, 0x30});
+        p.ram[0x3001] = 0x3C;
+        p.ram[0x3110] = 0xFF;
+        for (int i = 0; i < 3; i++) p.instruction();
+        auto c = p.instruction();
+        REQUIRE(c.size() == 4);
+        REQUIRE(p.regs().a == 0x30);
+        REQUIRE(p.regs().x == 0x30);
+        REQUIRE(p.regs().s == 0x30);
+        p.instruction();  // LDY #$20
+        c = p.instruction();
+        REQUIRE(c.size() == 5);
+        REQUIRE(p.regs().s == 0x30);  // $FF & $30
+    }
+}
+
+TEST_CASE("6502 SHY, SHX, AHX and TAS store the register ANDed with the address's high byte + 1") {
+    struct Case {
+        std::initializer_list<uint8_t> code;  // ends with the store
+        int setup;                            // instructions before it
+        uint16_t dummy, at;                   // its dummy read and its write
+        uint8_t value;
+        int cycles;
+    };
+    const Case cases[] = {
+        // SHY $3010,X: Y & $31
+        {{0xA0, 0xFF, 0xA2, 0x01, 0x9C, 0x10, 0x30}, 2, 0x3011, 0x3011, 0x31, 5},
+        // SHY $30F0,X across a page: the address's high byte is ANDed with the value too
+        {{0xA0, 0x0F, 0xA2, 0x20, 0x9C, 0xF0, 0x30}, 2, 0x3010, 0x0110, 0x01, 5},
+        // SHX $4400,Y: X & $45
+        {{0xA2, 0xF5, 0xA0, 0x02, 0x9E, 0x00, 0x44}, 2, 0x4402, 0x4402, 0x45, 5},
+        // AHX $1000,Y: A & X & $11
+        {{0xA9, 0xF3, 0xA2, 0x3F, 0xA0, 0x04, 0x9F, 0x00, 0x10}, 3, 0x1004, 0x1004, 0x11, 5},
+        // AHX ($10),Y, pointing at $2000: A & X & $21
+        {{0xA9, 0xFF, 0xA2, 0xFF, 0xA0, 0x05, 0x93, 0x10}, 3, 0x2005, 0x2005, 0x21, 6},
+        // TAS $0600,Y: S = A & X, and stores S & $07
+        {{0xA9, 0xF3, 0xA2, 0x3F, 0xA0, 0x01, 0x9B, 0x00, 0x06}, 3, 0x0601, 0x0601, 0x03, 5},
+    };
+    for (auto& c : cases) {
+        Program p(c.code);
+        p.ram[0x0010] = 0x00;
+        p.ram[0x0011] = 0x20;
+        for (int i = 0; i < c.setup; i++) p.instruction();
+        auto bus = p.instruction();
+        CAPTURE(int(p.ram[kStart + 2 * c.setup]));
+        REQUIRE(int(bus.size()) == c.cycles);
+        REQUIRE(bus[bus.size() - 2].addr == c.dummy);
+        REQUIRE_FALSE(bus[bus.size() - 2].write);
+        REQUIRE(bus.back().write);
+        REQUIRE(bus.back().addr == c.at);
+        REQUIRE(bus.back().data == c.value);
+        if (p.ram[kStart + 2 * c.setup] == 0x9B) REQUIRE(p.regs().s == 0x33);
+    }
+}
+
+TEST_CASE("6502 SHY stores the register whole when a DMA holds its dummy read") {
+    // As MesenCE: a DMA right before the dummy read leaves the value un-ANDed.
+    Program p({0xA0, 0xFF, 0xA2, 0x01, 0x9C, 0x10, 0x30});
+    p.instruction();
+    p.instruction();
+    p.cycle();  // opcode
+    p.cycle();  // low
+    p.cycle();  // high; the next cycle is the dummy read
+    p.rdy = false;
+    p.cycle();
+    p.cycle();
+    p.rdy = true;
+    auto d = p.cycle();
+    REQUIRE_FALSE(d.write);
+    REQUIRE(d.addr == 0x3011);
+    auto w = p.cycle();
+    REQUIRE(w.write);
+    REQUIRE(w.addr == 0x3011);
+    REQUIRE(w.data == 0xFF);
+}
+
 TEST_CASE("6502 stops on a JAM opcode until reset") {
     Program p({0xEA, 0x02, 0xEA});
     p.instruction();

@@ -28,7 +28,7 @@ A mapper write takes effect where the CPU's PPU register access falls in its cyc
 - While `$4016`'s bit 0, the strobe, is set, they keep loading their buttons.
 - Each read of `$4016` or `$4017` then gives the next button in bit 0, in the order A, B, Select, Start, Up, Down, Left, Right, and 1s after the eighth.
 - Bits 4-1 read 0 and bits 7-5 open bus.
-- Every read cycle counts, a DMA's repeated read included, as on the console.
+- Every CPU read cycle counts, and a DMA's halt cycle, but not its dummy cycles after: on an NES (not a Famicom), `/OE` stays low through them, so a read a DMA halts clocks the pads once more, as MesenCE runs it.
 
 The buttons the pads hold change only at a frame's end, line 240, so a run's input is the same on any board and in the sim. With the input player on (register `60`), they come from the input script at `0x07000000`:
 - 512 entries of 4 bytes, {pad 1, pad 2, frame low, frame high}, in frame order;
@@ -70,7 +70,7 @@ The system's behaviour doesn't depend on which, or on the clock: a CPU cycle's l
   - on an even CPU cycle (counted from reset), the DMC's read, once it has had a halt cycle and a dummy cycle;
   - otherwise on an even cycle, OAM DMA's read;
   - on an odd cycle, OAM DMA's write to `$2004` if it has a byte;
-  - otherwise a dummy cycle that repeats the CPU's read.
+  - otherwise a dummy cycle that repeats the CPU's read (the pads don't see it: above).
 
   OAM DMA's cycles count as the DMC's halt and dummy cycles, and OAM DMA alone takes 513 or 514 cycles. A DMC request cancelled before its halt cycle never starts; one cancelled during its halt cycle stops after it. Not modelled: MesenCE's DMA reads of `$4000`-`$401F` while the CPU's address is there, and the restart of OAM DMA's count when a DMC request comes during a DMC read.
 

@@ -927,7 +927,10 @@ module nes #(
             if (bus_we ? c_pad1 && bus_wdata[0] : strobe) begin
                 sr1 <= pads[7:0];
                 sr2 <= pads[15:8];
-            end else if (!bus_we) begin
+            end else if (!bus_we && (dk == D_NONE || dk == D_HALT)) begin
+                // A DMA's halt cycle reads the CPU's address too, but its
+                // dummy cycles after don't clock the pads: on an NES (not a
+                // Famicom) /OE stays low through them, so the pad sees one read.
                 if (c_pad1)
                     sr1 <= {1'b1, sr1[7:1]};
                 if (c_pad2)

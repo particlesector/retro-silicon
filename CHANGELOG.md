@@ -98,6 +98,9 @@ All notable changes to this project are listed here. The format follows [Keep a 
 
 ### Fixed
 
+- `cpu/6502`: the unstable unofficial opcodes (XAA, LAX `#imm`, LAS, SHY, SHX, AHX, TAS) run as MesenCE runs them, instead of halting.
+- `systems/nes`: a DMA's dummy cycles no longer clock the pads during a `$4016`/`$4017` read; only its halt cycle does, as on an NES.
+- `video/ppu-2c02`: dot 0 of a visible line presents the pattern address of dot 339's nametable byte, so an MMC3 with the background at `$1000` doesn't count a second A12 rise in a line.
 - `tools/mesen/frames.py`: MesenCE's battery saves are cleared before each run; a ROM with battery-backed PRG RAM got a different frame the second time.
 - `testroms/manifest.toml`: blargg's all-in-one ROMs say they need MMC1, and `instr_misc` and `instr_timing` unstable opcodes.
 - `video/line-scaler`: the ring is in memories of 8 bits or fewer, so no toolchain has to use block RAM parity bits; with openXC7 a 9-bit ring lost its ninth bit (the NES's emphasis) on a PYNQ-Z2.

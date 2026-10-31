@@ -10,9 +10,9 @@
 // read's data must be on `din` by the clock edge that ends the cycle, and a
 // write takes effect on that edge.
 //
-// Covers every official opcode and the stable unofficial ones (LAX, SAX, DCP,
-// ISC, SLO, RLA, SRE, RRA, ANC, ALR, ARR, AXS, SBC $EB, the NOPs). JAM opcodes
-// and the unstable ones (XAA, LAX #imm, AHX, SHX, SHY, TAS, LAS) stop the CPU
+// Covers every official opcode and the unofficial ones (LAX, SAX, DCP, ISC,
+// SLO, RLA, SRE, RRA, ANC, ALR, ARR, AXS, SBC $EB, the NOPs, and the unstable
+// XAA, LAX #imm, AHX, SHX, SHY, TAS and LAS as MesenCE runs them). JAM opcodes stop the CPU
 // with `halted` set until reset.
 //
 // Save state (docs/conventions.md): four words, readable and writable while
@@ -69,6 +69,7 @@ module cpu_6502 #(
         A_LDA, A_LDX, A_LDY, A_LAX, A_AND, A_ORA, A_EOR, A_ADC, A_SBC,
         A_CMP, A_CPX, A_CPY, A_BIT, A_NOP, A_ANC, A_ALR, A_ARR, A_AXS,
         A_STA, A_STX, A_STY, A_SAX,
+        A_XAA, A_LAS, A_SHY, A_SHX, A_AHX, A_TAS,  // unstable unofficial ones
         A_TAX, A_TAY, A_TXA, A_TYA, A_TSX, A_TXS, A_INX, A_INY, A_DEX, A_DEY,
         A_CLC, A_SEC, A_CLI, A_SEI, A_CLV, A_CLD, A_SED, A_ACC,
         A_PHA, A_PHP, A_PLA, A_PLP
@@ -143,11 +144,13 @@ module cpu_6502 #(
                         3'd3:       d_alu = A_ARR;
                         3'd6:       d_alu = A_AXS;
                         3'd7:       d_alu = A_SBC;
-                        default:    d_mode = M_HALT;  // XAA, LAX #imm: unstable
+                        3'd4:       d_alu = A_XAA;
+                        default:    d_alu = A_LAX;  // LAX #imm: A = X = imm, as MesenCE
                     endcase
                 end
-                // AHX, TAS, LAS: unstable
-                if (ir == 8'h93 || ir == 8'h9F || ir == 8'h9B || ir == 8'hBB) d_mode = M_HALT;
+                if (ir == 8'h93 || ir == 8'h9F) d_alu = A_AHX;  // (zp),Y and abs,Y
+                if (ir == 8'h9B) begin d_mode = M_ABY; d_alu = A_TAS; end
+                if (ir == 8'hBB) begin d_mode = M_ABY; d_alu = A_LAS; end
             end
             2'b10: begin  // ASL ROL LSR ROR STX LDX DEC INC, transfers, NOPs
                 case (ir[7:5])
@@ -190,11 +193,10 @@ module cpu_6502 #(
                         d_rmw  = R_NONE;
                         d_alu  = ir == 8'h9A ? A_TXS : ir == 8'hBA ? A_TSX : A_NOP;
                     end
-                    default:
-                        if (ir == 8'h9E)
-                            d_mode = M_HALT;  // SHX: unstable
-                        else
-                            d_mode = ir == 8'hBE ? M_ABY : M_ABX;
+                    default: begin
+                        d_mode = ir == 8'hBE || ir == 8'h9E ? M_ABY : M_ABX;
+                        if (ir == 8'h9E) d_alu = A_SHX;
+                    end
                 endcase
             end
             default: begin  // 2'b00: control, BIT, LDY/STY/CPY/CPX, NOPs
@@ -227,7 +229,7 @@ module cpu_6502 #(
                         endcase
                         if (ir == 8'h4C) d_mode = M_JMP;
                         if (ir == 8'h6C) d_mode = M_JMPI;
-                        if (ir == 8'h9C) d_mode = M_HALT;  // SHY: unstable
+                        if (ir == 8'h9C) d_alu = A_SHY;
                         if (ir == 8'h94) d_mode = M_ZPX;   // STY zp,X
                     end
                     3'd2:
@@ -331,6 +333,8 @@ module cpu_6502 #(
             A_LDX:  begin e_x = m; e_n = m[7]; e_z = m == '0; end
             A_LDY:  begin e_y = m; e_n = m[7]; e_z = m == '0; end
             A_LAX:  begin e_a = m; e_x = m; e_n = m[7]; e_z = m == '0; end
+            A_XAA:  begin e_a = (a | 8'hEE) & x & m; e_n = e_a[7]; e_z = e_a == '0; end
+            A_LAS:  begin e_a = m & s; e_x = e_a; e_s = e_a; e_n = e_a[7]; e_z = e_a == '0; end
             A_AND:  begin e_a = a & m; e_n = e_a[7]; e_z = e_a == '0; end
             A_ORA:  begin e_a = a | m; e_n = e_a[7]; e_z = e_a == '0; end
             A_EOR:  begin e_a = a ^ m; e_n = e_a[7]; e_z = e_a == '0; end
@@ -437,8 +441,16 @@ module cpu_6502 #(
             A_STX:   store_val = x;
             A_STY:   store_val = y;
             A_SAX:   store_val = a & x;
+            A_SHY, A_SHX, A_AHX, A_TAS: store_val = dl;  // worked out on the dummy read, below
             default: store_val = a;
         endcase
+
+    // SHY, SHX, AHX and TAS store a register ANDed with the base address's high
+    // byte + 1, and across a page the address's high byte is ANDed with that
+    // register too; a DMA holding the dummy read before leaves it un-ANDed.
+    wire       shx_op  = d_alu == A_SHY || d_alu == A_SHX || d_alu == A_AHX || d_alu == A_TAS;
+    wire [7:0] shx_reg = d_alu == A_SHY ? y : d_alu == A_SHX ? x : a & x;
+    logic      stalled;  // this read cycle is being repeated: RDY held it
 
     // Branch condition: bits 7-6 pick N, V, C or Z; bit 5 is the value that takes it.
     logic taken;
@@ -500,7 +512,12 @@ module cpu_6502 #(
             addr = ad;
             case (d_kind)
                 K_READ: begin exec = 1'b1; last = 1'b1; end
-                K_WRITE: begin we = 1'b1; dout = store_val; last = 1'b1; end
+                K_WRITE: begin
+                    we = 1'b1;
+                    dout = store_val;
+                    last = 1'b1;
+                    if (d_alu == A_TAS) n_s = a & x;
+                end
                 default:
                     case (t)
                         3'd0: n_dl = din;
@@ -601,6 +618,11 @@ module cpu_6502 #(
                             last = 1'b1;
                         end else begin
                             n_ad[15:8] = ad[15:8] + {7'b0, page_x};
+                            if (shx_op) begin
+                                if (page_x)
+                                    n_ad[15:8] = (ad[15:8] + 8'd1) & shx_reg;
+                                n_dl = stalled ? shx_reg : shx_reg & (ad[15:8] + 8'd1);
+                            end
                             n_phase = P_DATA;
                             n_t = 3'd0;
                         end
@@ -739,6 +761,9 @@ module cpu_6502 #(
                 nmi_pend <= 1'b1;
         end
 
+        if (ce)
+            stalled <= !(rdy || we);
+
         if (ce && (rdy || we)) begin
             phase    <= n_phase;
             t        <= n_t;
@@ -783,7 +808,7 @@ module cpu_6502 #(
                 fz <= e_z;
                 fc <= e_c;
                 fi <= e_i;
-                if (d_alu == A_TXS)
+                if (d_alu == A_TXS || d_alu == A_LAS)
                     s <= e_s;
             end
         end
@@ -806,6 +831,7 @@ module cpu_6502 #(
             t        <= '0;
             int_go   <= 1'b1;
             int_src  <= I_RESET;
+            stalled  <= 1'b0;
             s        <= 8'h00;  // three dummy pushes later: $FD, as on a powered-up NES
             a        <= '0;
             x        <= '0;
