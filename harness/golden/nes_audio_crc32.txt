@@ -114,3 +114,5 @@ mmc3_test_v1-4 370 0x409907ff
 cpu_reset-registers 192 0x907856a1
 apu_reset-len_ctrs_enabled 73 0x50d64a47
 apu_reset-4017_written 99 0x3380b191
+instr_misc-04 172 0x87b80d78
+instr_misc 260 0x3df480ed
