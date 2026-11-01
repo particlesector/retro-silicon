@@ -44,6 +44,7 @@ module ppu_2c02 #(
 ) (
     input  logic        clk,
     input  logic        rst,  // synchronous; the power-up state
+    input  logic        soft_rst,  // the reset button: the same, but VBL, sprite 0, overflow, v and the memories kept
     input  logic        ce,   // one dot
 
     // CPU registers $2000-$2007.
@@ -879,11 +880,15 @@ module ppu_2c02 #(
         pix_valid <= 1'b0;
         frame_end <= 1'b0;
 
-        if (rst) begin
+        if (rst || soft_rst) begin
+            // A reset leaves the status flags and v as they were, as MesenCE's.
+            if (rst) begin
+                vbl <= 1'b0; s0hit <= 1'b0; ovf <= 1'b0;
+                v <= '0;
+            end
             ctrl <= '0; mask <= '0;
-            vbl <= 1'b0; s0hit <= 1'b0; ovf <= 1'b0;
             oamaddr <= '0;
-            v <= '0; t <= '0; fx <= '0; w <= 1'b0;
+            t <= '0; fx <= '0; w <= 1'b0;
             rdbuf <= '0;
             io <= '0;
             io_age <= {8{3'd1}};

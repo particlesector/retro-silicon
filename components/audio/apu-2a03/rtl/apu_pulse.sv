@@ -45,7 +45,7 @@ module apu_pulse #(
     logic [13:0] env_st;
 
     apu_length u_len (
-        .clk, .rst, .ce,
+        .clk, .rst, .soft_rst(1'b0), .ce,
         .wr_halt(wr && wreg == 2'd0), .halt_val(wdata[5]),
         .wr_load(wr && wreg == 2'd3), .load_val,
         .wr_en, .en_val, .half, .active(len_active), .active_next(len_next), .halt,

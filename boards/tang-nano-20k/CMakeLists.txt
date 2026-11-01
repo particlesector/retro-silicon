@@ -26,7 +26,9 @@ get_property(nes_id GLOBAL PROPERTY RS_NES_BUILD_ID)
 # timing fail on the chip: with HDMI audio, seeds 2 and 3 gave wrong HDMI
 # frames, while 1, 4 and 5 matched the sim (and with the APU alone, seed 1
 # lost palette bits). With the controllers, seed 5 missed timing by 0.4 MHz
-# (a long path in the APU's sweep); seed 8's passes every board test.
+# (a long path in the APU's sweep); seed 8 passed every board test until the
+# reset button (Oct 31), when it gave a wrong HDMI frame and a late line; seed 1
+# passes every board test again.
 # Re-check on the board whenever the RTL changes.
 rs_board_bitstream(nes BUILD ${build} COMPONENT nes_top CST nes.cst PARAMS BUILD_ID=${nes_id}
-                   CLOCKS sclk=46.40625 pclk=74.25 fclk=371.25 SEED 8)
+                   CLOCKS sclk=46.40625 pclk=74.25 fclk=371.25 SEED 1)

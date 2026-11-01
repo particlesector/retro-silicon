@@ -39,8 +39,17 @@ public:
         m.irq_n = 1;
         m.nmi_n = 1;
         m.rst = 1;
+        m.soft_rst = 0;
         clock();
         m.rst = 0;
+        m.eval();
+    }
+
+    // The reset button: the reset sequence again, the registers kept.
+    void soft_reset() {
+        m.soft_rst = 1;
+        clock();
+        m.soft_rst = 0;
         m.eval();
     }
 

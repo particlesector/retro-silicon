@@ -208,6 +208,16 @@ module nes #(
     // Stops are levels, so raising a limit runs on from where it stopped.
     assign stopped   = (stop_at != '0 && cycles >= stop_at) || (stop_frame != '0 && frames >= stop_frame);
     assign sys_rst   = rst || ctrl_reset;
+    // The reset button (registers 90-97): pressed at the end of a chosen frame,
+    // at the next boundary between CPU cycles. As in MesenCE, it restarts the
+    // console's timing as a power-up does (the CPU's reset sequence, the PPU
+    // at the pre-render line, the CPU/PPU alignment, DMA, the cycle count and
+    // with it the APU's parity), but RAM, the mapper, the counts of frames, the
+    // CRCs and the CPU, PPU and APU state MesenCE keeps (below) stay.
+    logic        sreset, sreset_pend;
+    logic [31:0] reset_at[2];  // frames ended when the button is pressed; 0 never
+    wire         boot = sys_rst || sreset;
+    assign sreset = sreset_pend && cs == C_START && !sys_rst;  // between CPU cycles
     logic       chr_cold;  // CHR from the board's memory has to be fetched before the system runs
     assign go        = ctrl_run && !ctrl_reset && !stopped && mem_ready && !cap_held && !ss_hold && !pace_wait
                        && !chr_cold;
@@ -221,7 +231,7 @@ module nes #(
     logic mem_wait;
 
     clock_enable #(.NUM(DOT_NUM), .DEN(DOT_DEN)) u_dot (
-        .clk, .rst(sys_rst), .en((cs == C_RUN || cs == C_END || go) && !mem_wait), .ce(dot_slot));
+        .clk, .rst(boot), .en((cs == C_RUN || cs == C_END || go) && !mem_wait), .ce(dot_slot));
 
     logic        st_we_cpu, st_we_ppu, st_we_sys, st_we_apu, st_we_cart;  // save-state writes, below
     logic [3:0]  st_sys_w;
@@ -256,7 +266,7 @@ module nes #(
             cs   <= cstate_t'(st_wdata[5:4]);
             lead <= st_wdata[8:6];
         end
-        if (sys_rst) begin
+        if (boot) begin
             v_hold <= 1'b0;
             ppu_ce <= 1'b0;
             reg_ce <= 1'b0;
@@ -278,7 +288,7 @@ module nes #(
     /* verilator lint_on UNUSEDSIGNAL */
 
     cpu_6502 #(.DECIMAL(0), .SAVE_STATE(SAVE_STATE)) u_cpu (
-        .clk, .rst(sys_rst), .ce,
+        .clk, .rst(sys_rst), .soft_rst(sreset), .ce,
         .addr(cpu_addr), .we(cpu_we), .dout(cpu_dout), .din(cpu_din),
         .rdy(cpu_rdy), .irq_n, .nmi_n,
         .sync(cpu_sync), .halted,
@@ -440,7 +450,7 @@ module nes #(
             {spr_cnt[8], ev_stop, ev_start, in_dma, need_dummy, dmc_abort} <= st_wdata[14:9];
         if (st_we_sys && st_sys_w == 4'd4)
             {dmc_run, spr_on, need_halt} <= st_wdata[2:0];
-        if (sys_rst) begin
+        if (boot) begin
             need_halt  <= 1'b0;
             need_dummy <= 1'b0;
             dmc_run    <= 1'b0;
@@ -497,7 +507,7 @@ module nes #(
     /* verilator lint_on UNUSEDSIGNAL */
 
     ppu_2c02 #(.SAVE_STATE(SAVE_STATE)) u_ppu (
-        .clk, .rst(sys_rst), .ce(ppu_ce),
+        .clk, .rst(sys_rst), .soft_rst(sreset), .ce(ppu_ce),
         .reg_ce(reg_ce && c_ppu), .reg_we(bus_we), .reg_addr(bus_addr[2:0]), .reg_wdata(bus_wdata),
         .reg_rdata(ppu_rdata), .nmi_n,
         .vaddr, .vaddr_next, .vread_next, .vwe, .vwdata, .vrdata,
@@ -523,13 +533,13 @@ module nes #(
     wire         apu_extra = apu_pre == 2'd1;
 
     always_ff @(posedge clk)
-        if (sys_rst)
+        if (boot)
             apu_pre <= 2'd2;
         else if (apu_pre != '0)
             apu_pre <= apu_pre - 2'd1;
 
     apu_2a03 #(.SAVE_STATE(SAVE_STATE)) u_apu (
-        .clk, .rst(sys_rst), .ce(ce || apu_extra), .odd(!cycles[0]),
+        .clk, .rst(sys_rst), .soft_rst(sreset), .ce(ce || apu_extra), .odd(!cycles[0]),
         .wr(bus_we && c_apu && !apu_extra), .rd_status(!bus_we && c_4015 && !apu_extra),
         .addr(bus_addr[4:0]), .wdata(bus_wdata),
         .status(apu_status), .irq_n(apu_irq_n),
@@ -584,7 +594,7 @@ module nes #(
             chr_l  <= cart_chr_m;
             ci10_l <= ci_a10(cart_mirror, vaddr[11:10]);
         end
-        if (sys_rst)
+        if (boot)
             ppu_ce_q <= 1'b0;
     end
 
@@ -992,7 +1002,7 @@ module nes #(
 
     trace_buffer #(.W(32), .AW(TRACE_AW)) u_tbuf (
         .clk, .rst(sys_rst), .en(ce), .data({6'b0, bus_sync, bus_we, bus_we ? bus_wdata : cpu_din, bus_addr}),
-        .set(st_we_sys && st_sys_w == 4'd0), .set_count(st_wdata), .count(tb_count), .filled(tb_filled),
+        .set((st_we_sys && st_sys_w == 4'd0) || sreset), .set_count(sreset ? '0 : st_wdata), .count(tb_count), .filled(tb_filled),
         .raddr(s_addr[TRACE_AW+1:2]), .rdata(tb_rdata));
 
     // The audio CRC: each CPU cycle's channel levels as 3 bytes, {pulse 2,
@@ -1079,8 +1089,14 @@ module nes #(
         end
         if (ppu_ce && cw_ext_q && vread_l && !cw_hit_q)
             late <= 1'b1;  // a CHR read the cache didn't have
-        if (frame_end)
+        if (frame_end) begin
             frames <= frames + 1'b1;
+            for (int i = 0; i < 2; i++)
+                if (reset_at[i] != '0 && frames + 1'b1 == reset_at[i])
+                    sreset_pend <= 1'b1;
+        end
+        if (sreset)
+            sreset_pend <= 1'b0;
         if (mem_wait && (cs == C_RUN || cs == C_END || go))
             mem_waits <= mem_waits + 1'b1;
         if (st_we_sys)
@@ -1091,7 +1107,10 @@ module nes #(
                 4'd4: late     <= st_wdata[3];
                 default: ;
             endcase
+        if (sreset)
+            cycles   <= '0;
         if (sys_rst) begin
+            sreset_pend <= 1'b0;
             tr_n     <= '0;
             cycles   <= '0;
             frames   <= '0;
@@ -1318,6 +1337,8 @@ module nes #(
                 8'h71: chr_mask[15:8]    <= s_wdata;
                 8'h72: chr_mask[17:16]   <= s_wdata[1:0];
                 8'h8F: lead_dots         <= s_wdata[2:0];
+                8'h90, 8'h91, 8'h92, 8'h93, 8'h94, 8'h95, 8'h96, 8'h97:
+                    reset_at[r[2]][8*r[1:0] +: 8] <= s_wdata;
                 default: ;
             endcase
         case (r)
@@ -1424,6 +1445,8 @@ module nes #(
             8'h8D:   reg_q <= 8'(tb_filled >> 8);
             8'h8E:   reg_q <= 8'(TRACE_AW);
             8'h8F:   reg_q <= {5'b0, lead_dots};
+            8'h90, 8'h91, 8'h92, 8'h93, 8'h94, 8'h95, 8'h96, 8'h97:
+                     reg_q <= reset_at[r[2]][8*r[1:0] +: 8];
             default: reg_q <= '0;
         endcase
         if (rst) begin
@@ -1449,6 +1472,8 @@ module nes #(
             live1      <= '0;
             live2      <= '0;
             lead_dots  <= 3'(LEAD_DOTS);
+            reset_at[0] <= '0;
+            reset_at[1] <= '0;
         end
     end
 

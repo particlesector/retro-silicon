@@ -187,6 +187,7 @@ Anything else reads 0 and ignores writes. Multi-byte registers are little-endian
 | `8C` | 2 | How many of the trace buffer's entries are valid (read-only), up to 2^`TRACE_AW`: cycles `88` - this to `88` - 1 |
 | `8E` | 1 | The trace buffer holds 2^this cycles (read-only: `TRACE_AW`) |
 | `8F` | 1 | The CPU/PPU alignment: PPU dots after a reset before the CPU's first cycle, 1-7 (power-up `LEAD_DOTS`), taken as the system leaves reset. 5 is MesenCE's default alignment; 6 and 7 put the CPU a dot and two later, as two of MesenCE's random ones do |
+| `90` | 8 | The reset button: pressed as the frame these two words count (frames ended since power-up; 0 never) ends, at the next boundary between CPU cycles. As in MesenCE, it restarts the timing as a power-up does (the CPU's reset sequence, the PPU at the pre-render line, the alignment, DMA, the cycle count) and keeps RAM, the mapper, the frame count, the CRCs, and what the CPU, PPU and APU keep (`soft_rst` in their READMEs) |
 
 The limits are levels: raising one lets the system run on from where it stopped. All registers are absolute, so a command the shell runs twice does no harm.
 
@@ -227,6 +228,8 @@ The limits are levels: raising one lets the system run on from where it stopped.
 ## Status
 
 `rig::nes::nestest` runs nestest's automated mode for 26,554 cycles while the host reads memory; the trace CRC is still `0xebba51ce`, in the sim (both memories) and on both boards, and the trace buffer's last 1024 cycles match nestest.log, instruction by instruction.
+
+**The reset button (Oct 31).** blargg's apu_reset and cpu_reset ROMs (8) ask for it, MesenCE presses it 10 frames later, and the core presses it at the same frames: all 8 match MesenCE in the sim and on both boards, 183 golden ROMs in all.
 
 **The sweep (Oct 31).** The golden list has 175 ROMs: the 103 before and 72 more from nes-test-roms (every ROM there for these mappers with a result MesenCE gives automatically). 165 match MesenCE in the sim, on the Tang Nano 20K and on the PYNQ-Z2, with the same CRCs. The same 10 fail on all three, to be fixed in milestone 10b:
 - eight instruction tests that use the unstable unofficial opcodes (XAA, LAX `#imm`, AHX, SHX, SHY, TAS, LAS), which halt `cpu/6502` (`instr_test-03` and `-07`, `instr_test_v3-02`, `-06` and `-all`, `nes_instr_test-02` and `-06`, `cpu_test5-cpu`);

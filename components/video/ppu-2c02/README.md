@@ -18,6 +18,7 @@ Module `ppu_2c02` (the folder name can't start a module name), and `ppu_2c02_rgb
 | Port | Dir | Width | Meaning |
 | --- | --- | --- | --- |
 | `clk`, `rst` | in | 1 | Clock; synchronous reset to the power-up state |
+| `soft_rst` | in | 1 | The reset button: the same, but VBL, sprite 0 hit, overflow, `v`, OAM and the palette are kept, as MesenCE's |
 | `ce` | in | 1 | One dot |
 | `reg_ce`, `reg_we`, `reg_addr`, `reg_wdata` | in | 1, 1, 3, 8 | A register access ($2000 + `reg_addr`) |
 | `reg_rdata` | out | 8 | The last read's data |

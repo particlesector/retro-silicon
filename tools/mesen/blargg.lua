@@ -17,9 +17,17 @@ local function text()
   end
 end
 
+-- The reset button, when the ROM asks for it ($81): pressed 10 frames later,
+-- once each time it asks, as tools/mesen/frames.py presses it.
+local press, armed = -1, true
+
 emu.addEventCallback(function()
   if done then return end
   frames = frames + 1
+  local st = emu.read(0x6000, mt)
+  if st == 0x81 and armed then armed = false; press = frames + 10 end
+  if not armed and press < 0 and st ~= 0x81 then armed = true end
+  if frames == press then emu.reset(); press = -1 end
   local valid = emu.read(0x6001, mt) == 0xDE and emu.read(0x6002, mt) == 0xB0 and emu.read(0x6003, mt) == 0x61
   local status = emu.read(0x6000, mt)
   if valid and status < 0x80 then

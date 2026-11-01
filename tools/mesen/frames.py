@@ -16,6 +16,9 @@ and input the ROM's input script, if it has one (`frame:pad 1` entries, the
 buttons held from that frame on; MesenCE plays it through setInput),
 frames being how many frames have ended, so the CRC is of frame frames-1
 (counting from 0), and result the zero-page address for check = "zeropage".
+A ROM that asks for the reset button (blargg's: $81 at $6000) gets it 10
+frames later, once each time it asks; reset= lists the frames, which the
+core presses at too.
 
 MesenCE runs with its own settings in --home (default ~/.cache/retro-silicon/
 mesen-home): RAM and OAM zeroed at power-up, and a 512-colour palette whose
@@ -45,7 +48,7 @@ import tomllib
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
-SUPPORTED = {"cpu", "ppu", "apu", "apu frame counter", "controllers",  # what systems/nes has so far
+SUPPORTED = {"cpu", "ppu", "apu", "apu frame counter", "controllers", "reset",  # what systems/nes has so far
              "uxrom", "cnrom", "axrom", "mmc1", "mmc3"}
 MAPPERS = {0, 1, 2, 3, 4, 7}  # NROM, MMC1, UxROM, CNROM, MMC3, AxROM
 MARGIN = 30                 # frames after MesenCE's result before the golden frame
@@ -95,8 +98,20 @@ if #script > 0 then
     emu.setInput(pad(p1), 0)
   end, emu.eventType.inputPolled)
 end
+-- The reset button, as blargg's ROMs ask for it ($81 at $6000): pressed 10
+-- frames later, once for each time they ask.
+local press, armed = -1, true
 emu.addEventCallback(function()
   ended = ended + 1
+  local st = emu.read(0x6000, emu.memType.nesMemory)
+  local valid = emu.read(0x6001, emu.memType.nesMemory) == 0xDE and emu.read(0x6002, emu.memType.nesMemory) == 0xB0
+  if valid and st == 0x81 and armed then armed = false; press = ended + 10 end
+  if not armed and press < 0 and st ~= 0x81 then armed = true end
+  if ended == press then
+    print("reset at " .. ended)
+    emu.reset()
+    press = -1
+  end
   if ended == 1 and want_lead ~= 5 then
     local got = lead_of_log()
     print("lead " .. tostring(got))
@@ -245,6 +260,13 @@ def main():
         line = f"{r['id']} {frames} 0x{m.group(2)} {r['check']} {result} {r['source']}/{r['path']}"
         if script:
             line += " input=" + ",".join(f"{e[0]}:{e[1]}" for e in script)
+        presses = re.findall(r"^reset at (\d+)$", out, re.M)
+        if len(presses) > 2:
+            print(f"ERROR   {r['id']}: MesenCE pressed reset {len(presses)} times; the core takes 2", file=sys.stderr)
+            worst = 2
+            continue
+        if presses:
+            line += " reset=" + ",".join(presses)
         lines.append(line)
     args.out.write_text("\n".join(lines) + "\n")
     return worst

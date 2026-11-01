@@ -17,11 +17,17 @@
 // The clock after reset runs the first CPU cycle's tick, with no access, as
 // MesenCE ticks the APU at the start of each cycle: so `ce` mustn't come on
 // that clock.
+//
+// soft_rst is the console's reset button, as MesenCE runs it: as a power-up,
+// but the frame counter keeps its mode (and acts as if $4017 were written
+// with it), the DMC keeps its sample address and length, and the triangle's
+// length counter keeps its count and halt flag.
 module apu_2a03 #(
     parameter bit SAVE_STATE = 1'b1  // 0 leaves out the save-state port's logic: writes do nothing, reads give 0
 ) (
     input  logic        clk,
     input  logic        rst,
+    input  logic        soft_rst,  // the reset button, as MesenCE runs it (below)
     input  logic        ce,        // one CPU cycle
     input  logic        odd,       // this cycle's count is odd: the CPU's cycle parity
     // The CPU's access in this cycle
@@ -78,7 +84,7 @@ module apu_2a03 #(
     // The first cycle's tick, on the clock after reset.
     logic t0, tick, w, rd, done;
     always_ff @(posedge clk)
-        t0 <= rst;
+        t0 <= rst || soft_rst;
     assign tick = ce || t0;
     assign w    = wr && !t0;
     assign rd   = rd_status && !t0;
@@ -87,36 +93,36 @@ module apu_2a03 #(
     assign wr_en = w && addr == 5'h15;
 
     apu_frame u_frame (
-        .clk, .rst, .ce(tick), .odd, .wr(w && addr == 5'h17), .wdata(wdata[7:6]), .rd_status(rd),
+        .clk, .rst, .soft_rst, .ce(tick), .odd, .wr(w && addr == 5'h17), .wdata(wdata[7:6]), .rd_status(rd),
         .quarter, .half, .irq_flag(frame_irq_flag), .irq(frame_irq), .irq_now(frame_irq_now),
         .st(st_frame), .st_we(st_wr && st_addr == 5'd0), .st_wdata);
 
     apu_pulse #(.CH1(1'b1)) u_pulse1 (
-        .clk, .rst, .ce(tick), .wr(w && addr[4:2] == 3'd0), .wreg(addr[1:0]), .wdata,
+        .clk, .rst(rst || soft_rst), .ce(tick), .wr(w && addr[4:2] == 3'd0), .wreg(addr[1:0]), .wdata,
         .wr_en, .en_val(wdata[0]), .load_val, .quarter, .half, .active(a1), .out(pulse1),
         .st_addr(st_addr[1:0] - 2'd1), .st_words(st_p1),
         .st_we(st_wr && st_addr >= 5'd1 && st_addr <= 5'd3), .st_wdata);
 
     apu_pulse #(.CH1(1'b0)) u_pulse2 (
-        .clk, .rst, .ce(tick), .wr(w && addr[4:2] == 3'd1), .wreg(addr[1:0]), .wdata,
+        .clk, .rst(rst || soft_rst), .ce(tick), .wr(w && addr[4:2] == 3'd1), .wreg(addr[1:0]), .wdata,
         .wr_en, .en_val(wdata[1]), .load_val, .quarter, .half, .active(a2), .out(pulse2),
         .st_addr(2'(st_addr - 5'd4)), .st_words(st_p2),
         .st_we(st_wr && st_addr >= 5'd4 && st_addr <= 5'd6), .st_wdata);
 
     apu_triangle u_triangle (
-        .clk, .rst, .ce(tick), .wr(w && addr[4:2] == 3'd2), .wreg(addr[1:0]), .wdata,
+        .clk, .rst, .soft_rst, .ce(tick), .wr(w && addr[4:2] == 3'd2), .wreg(addr[1:0]), .wdata,
         .wr_en, .en_val(wdata[2]), .load_val, .quarter, .half, .active(at), .out(triangle),
         .st_addr(2'(st_addr - 5'd7)), .st_words(st_tri),
         .st_we(st_wr && st_addr >= 5'd7 && st_addr <= 5'd9), .st_wdata);
 
     apu_noise u_noise (
-        .clk, .rst, .ce(tick), .wr(w && addr[4:2] == 3'd3), .wreg(addr[1:0]), .wdata,
+        .clk, .rst(rst || soft_rst), .ce(tick), .wr(w && addr[4:2] == 3'd3), .wreg(addr[1:0]), .wdata,
         .wr_en, .en_val(wdata[3]), .load_val, .quarter, .half, .active(an), .out(noise),
         .st_addr(2'(st_addr - 5'd10)), .st_words(st_noise),
         .st_we(st_wr && st_addr >= 5'd10 && st_addr <= 5'd12), .st_wdata);
 
     apu_dmc u_dmc (
-        .clk, .rst, .ce(tick), .odd, .wr(w && addr[4:2] == 3'd4), .wreg(addr[1:0]), .wdata,
+        .clk, .rst, .soft_rst, .ce(tick), .odd, .wr(w && addr[4:2] == 3'd4), .wreg(addr[1:0]), .wdata,
         .wr_en, .en_val(wdata[4]), .dma_done(done), .dma_data, .dma_req, .dma_cancel, .dma_addr,
         .active(ad), .irq(dmc_irq), .irq_now(dmc_irq_now), .out(dmc),
         .st_addr(2'(st_addr - 5'd13)), .st_words(st_dmc),

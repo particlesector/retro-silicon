@@ -1670,6 +1670,89 @@ check = "frame"
 mesen = "its scrolling screen"
 frames = 120
 
+# The reset button (milestone 10b): blargg's ROMs that ask for it ($81 at
+# $6000), pressed 10 frames later (tools/mesen/frames.py, blargg.lua).
+
+[[rom]]
+id = "apu_reset-4015_cleared"
+source = "nes-test-roms"
+path = "apu_reset/4015_cleared.nes"
+sha256 = "ef83bc2831f0ddb9e563ac5cbcfa21b129f092911ef42adabae7d47b3e990d95"
+needs = "cpu, apu, reset"
+covers = "At reset, $4015 is cleared: every channel off"
+check = "blargg"
+frames = 38
+
+[[rom]]
+id = "apu_reset-4017_timing"
+source = "nes-test-roms"
+path = "apu_reset/4017_timing.nes"
+sha256 = "0e6072c6dcee98fb73dc7f3af2e48face78be300e8510515ed48dc75d15c1f13"
+needs = "cpu, apu, apu frame counter, reset"
+covers = "At reset, $4017 acts as if written 9-12 cycles before the first instruction"
+check = "blargg"
+frames = 53
+
+[[rom]]
+id = "apu_reset-4017_written"
+source = "nes-test-roms"
+path = "apu_reset/4017_written.nes"
+sha256 = "022bd3b45a733179d9a0a9bf0311d09ca81419d7e7434e6f559e42650b39616b"
+needs = "cpu, apu, apu frame counter, reset"
+covers = "At reset, $4017 is written again with the last value written (two resets)"
+check = "blargg"
+frames = 69
+
+[[rom]]
+id = "apu_reset-irq_flag_cleared"
+source = "nes-test-roms"
+path = "apu_reset/irq_flag_cleared.nes"
+sha256 = "e2435b213bf21065b7c9c645359500c1c860a7395d12d051232ab14dad1b0bb5"
+needs = "cpu, apu, apu frame counter, reset"
+covers = "At reset, the frame IRQ flag is cleared"
+check = "blargg"
+frames = 38
+
+[[rom]]
+id = "apu_reset-len_ctrs_enabled"
+source = "nes-test-roms"
+path = "apu_reset/len_ctrs_enabled.nes"
+sha256 = "e05546cbfaa1414d9193b0212084b324ea6b13130af5f171a34c9e574f5ac373"
+needs = "cpu, apu, reset"
+covers = "At reset, the length counters are enabled; the triangle's is unaffected"
+check = "blargg"
+frames = 43
+
+[[rom]]
+id = "apu_reset-works_immediately"
+source = "nes-test-roms"
+path = "apu_reset/works_immediately.nes"
+sha256 = "c750113762ee375319b1bfbf65c457875dbb194649d7e7b3594fba38eb8eefa1"
+needs = "cpu, apu, apu frame counter, reset"
+covers = "The APU works right after reset"
+check = "blargg"
+frames = 42
+
+[[rom]]
+id = "cpu_reset-ram_after_reset"
+source = "nes-test-roms"
+path = "cpu_reset/ram_after_reset.nes"
+sha256 = "f1802a5618aaaa0c4d592caa45b0b13c54082af93fc311bda0c27bceacbc7c7f"
+needs = "cpu, reset"
+covers = "RAM keeps its contents through reset"
+check = "blargg"
+frames = 158
+
+[[rom]]
+id = "cpu_reset-registers"
+source = "nes-test-roms"
+path = "cpu_reset/registers.nes"
+sha256 = "a30f33fb6c9f56012fba38dc85ddc3dccc06bfc0b25fef7711b63f8207279715"
+needs = "cpu, reset"
+covers = "Reset sets I and takes 3 from S, nothing more"
+check = "blargg"
+frames = 162
+
 # Homebrew built from source (fetch.py clones each at its commit and runs its
 # build: it needs ca65 from cc65, GNU Make and Python 3 with Pillow). Free
 # software by their authors, credited wherever their frames or sound appear.

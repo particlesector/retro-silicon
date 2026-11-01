@@ -87,6 +87,7 @@ enum Reg : uint32_t {
     kTraceFilled = 0x8C,  // 2 bytes, read-only: valid entries, up to its depth
     kTraceBits = 0x8E,    // read-only: it holds 2^this entries
     kLeadDots = 0x8F,     // PPU dots before the CPU's first cycle after a reset: the CPU/PPU alignment
+    kResetAt = 0x90,      // 2 x 4 bytes: frames ended when the reset button is pressed; 0 never
 };
 
 enum Status : uint8_t {
@@ -184,6 +185,9 @@ public:
     void set_input_script(const std::vector<InputEntry>& script);
     // The buttons while the player is off, taken at each frame's end.
     void set_live_input(uint8_t pad1, uint8_t pad2 = 0);
+    // The reset button: pressed as each of these frames ends (counting from
+    // power-up; two at most), as tools/mesen/frames.py presses it in MesenCE.
+    void set_reset_presses(const std::vector<uint32_t>& frames);
     void stop_at(uint32_t cycles);
     void stop_frame(uint32_t frames);
     void run();  // releases reset and runs
@@ -263,6 +267,7 @@ struct RomCheck {
     Kind kind = kBlargg;
     uint16_t result = 0;  // kZeroPage: where the ROM leaves 1 for a pass
     std::vector<InputEntry> input;  // played from reset, if any
+    std::vector<uint32_t> reset;    // frames ended when the reset button is pressed, if any
 };
 
 // A test ROM run from power-up until `frames` frames have ended. Passes when

@@ -288,6 +288,11 @@ MATCHES_MESEN("nes_instr_test-06")
 MATCHES_MESEN("dmc_dma-4016_read")
 // The older MMC3 test's IRQ timing within a scanline.
 MATCHES_MESEN("mmc3_test_v1-4")
+// The reset button, pressed where MesenCE presses it: the CPU's registers
+// and the APU's state through it, and a ROM that asks for it twice.
+MATCHES_MESEN("cpu_reset-registers")
+MATCHES_MESEN("apu_reset-len_ctrs_enabled")
+MATCHES_MESEN("apu_reset-4017_written")
 MATCHES_MESEN("instr_misc-01")
 MATCHES_MESEN("instr_misc-02")
 MATCHES_MESEN("instr_misc-03")

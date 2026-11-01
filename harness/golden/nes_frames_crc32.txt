@@ -152,6 +152,14 @@ mmc3_test_v1-6 90 0x767a4670 frame - nes-test-roms/mmc3_test/6-MMC6.nes
 scanline 150 0xcd6c1ac1 frame - nes-test-roms/scanline/scanline.nes
 scanline-a1 150 0xcd6c1ac1 frame - nes-test-roms/scanline-a1/scanline.nes
 scrolltest 150 0x45f4c895 frame - nes-test-roms/scrolltest/scroll.nes
+apu_reset-4015_cleared 68 0xc85ab237 blargg - nes-test-roms/apu_reset/4015_cleared.nes reset=22
+apu_reset-4017_timing 83 0xcb0eac6d blargg - nes-test-roms/apu_reset/4017_timing.nes reset=30
+apu_reset-4017_written 99 0xa3e897cd blargg - nes-test-roms/apu_reset/4017_written.nes reset=24,50
+apu_reset-irq_flag_cleared 68 0x7456ee95 blargg - nes-test-roms/apu_reset/irq_flag_cleared.nes reset=22
+apu_reset-len_ctrs_enabled 73 0x6b0d7884 blargg - nes-test-roms/apu_reset/len_ctrs_enabled.nes reset=24
+apu_reset-works_immediately 72 0xe913b0f7 blargg - nes-test-roms/apu_reset/works_immediately.nes reset=24
+cpu_reset-ram_after_reset 188 0x843326bb blargg - nes-test-roms/cpu_reset/ram_after_reset.nes reset=145
+cpu_reset-registers 192 0x574b9194 blargg - nes-test-roms/cpu_reset/registers.nes reset=147
 thwaite 630 0x222d9416 frame - thwaite/thwaite.nes
 croom 630 0xf50af05b frame - croom/croom.nes
 thwaite-play 600 0x4f9725b0 frame - thwaite/thwaite.nes input=100:8,110:0,200:8,210:0
