@@ -5,6 +5,7 @@
 #include "Vnes_bram_sim.h"
 #include "Vnes_axi_sim.h"
 #include "Vnes_ext_sim.h"
+#include "Vnes_bram_hdmi_sim.h"
 #include "Vnes_hdmi_sim.h"
 #include "Vnes_sim.h"
 #include "Vshell_axi_sim.h"
@@ -125,6 +126,39 @@ private:
     uint64_t t_sys_ = 0, t_pix_ = 0;
 };
 
+// The NES as the Tang Console 138K runs it with HDMI: block RAM, the system
+// clock at half the pixel clock, both from one PLL: a pixel clock on every
+// system clock's edge, and one between.
+class NesBramHdmi : public SimModel {
+public:
+    explicit NesBramHdmi(std::function<void(uint32_t)> on_symbol) : on_symbol_(std::move(on_symbol)) {}
+
+    bool tick(bool rx) override {
+        m_.uart_rx = rx;
+        m_.clk = 0;
+        m_.pclk = 0;
+        m_.eval();
+        m_.clk = 1;
+        m_.pclk = 1;
+        m_.eval();
+        symbol();
+        m_.pclk = 0;
+        m_.eval();
+        m_.pclk = 1;
+        m_.eval();
+        symbol();
+        return m_.uart_tx;
+    }
+
+private:
+    void symbol() {
+        if (on_symbol_) on_symbol_(m_.tmds0 | m_.tmds1 << 10 | static_cast<uint32_t>(m_.tmds2) << 20);
+    }
+
+    Vnes_bram_hdmi_sim m_;
+    std::function<void(uint32_t)> on_symbol_;
+};
+
 } // namespace
 
 std::unique_ptr<SimLink> make_uart_echo_sim() {
@@ -156,6 +190,10 @@ std::unique_ptr<SimLink> make_nes_ext_sim() {
 
 std::unique_ptr<SimLink> make_nes_bram_sim() {
     return std::make_unique<SimLink>(std::make_unique<Verilated<Vnes_bram_sim>>(), 33, 64, 50'000'000);
+}
+
+std::unique_ptr<SimLink> make_nes_bram_hdmi_sim(std::function<void(uint32_t)> on_symbol) {
+    return std::make_unique<SimLink>(std::make_unique<NesBramHdmi>(std::move(on_symbol)), 25, 64, 37'187'500);
 }
 
 std::unique_ptr<SimLink> make_nes_hdmi_sim(std::function<void(uint32_t)> on_symbol) {

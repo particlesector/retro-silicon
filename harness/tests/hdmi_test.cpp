@@ -221,3 +221,16 @@ TEST_CASE("HDMI: a receiver sees full_palette's every colour as the 2C02 palette
     REQUIRE(golden.count("full_palette"));
     CHECK(crc == golden["full_palette"]);
 }
+
+TEST_CASE("HDMI: the Tang Console 138K's system runs two ROMs in a row, keeping pace, with the 20K's video CRCs") {
+    // As rig-run's hdmi test runs them on the board: one link, one ROM after another.
+    auto golden = golden_video();
+    auto link = rig::make_nes_bram_hdmi_sim();
+    for (const char* id : {"oam_read", "full_palette"}) {
+        auto [g, rom] = golden_rom(id);
+        auto r = rig::nes::hdmi_test(*link, id, rom, g.frames, RS_NES_BRAM_BUILD_ID);
+        INFO(id << ": " << r.detail << " / " << r.notes);
+        REQUIRE(r.passed);
+        CHECK(r.crc32 == golden[id]);
+    }
+}

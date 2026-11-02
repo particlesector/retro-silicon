@@ -309,7 +309,10 @@ uint8_t Console::wait_stopped() {
         uint32_t now = cycles();
         still = now == last ? still + 1 : 0;
         last = now;
-        if (still > 50) throw RigError("the CPU stopped counting cycles at " + std::to_string(now));
+        // Keeping pace with a display, it can wait up to a display frame at a
+        // frame's end (16.7 ms), longer than 50 polls take on a fast link.
+        int limit = st & kPaceWait ? 5000 : 50;
+        if (still > limit) throw RigError("the CPU stopped counting cycles at " + std::to_string(now));
     }
 }
 

@@ -16,8 +16,8 @@ endif()
 option(RS_BITSTREAMS "Build the boards' bitstreams" ${rs_have_pnr})
 
 # rs_board_bitstream(<name> BUILD <board build.sh> COMPONENT <c> CST <file> [TOP <module>]
-#                    [VENDOR gowin|xilinx] [PARAMS <NAME=VALUE>...] [CLOCKS <net=MHz>...]
-#                    [SEED <n>])
+#                    [VENDOR gowin|gowin-eda|xilinx] [PARAMS <NAME=VALUE>...] [CLOCKS <net=MHz>...]
+#                    [SEED <n>] [OPTIONS <OPTION=VALUE>...])
 #
 # Builds ${CMAKE_BINARY_DIR}/fpga/<name>/<top>.fs (Gowin, the default) or
 # <top>.bit (Xilinx) with a board's build script (CST, the pin constraints,
@@ -25,9 +25,11 @@ option(RS_BITSTREAMS "Build the boards' bitstreams" ${rs_have_pnr})
 # BITSTREAM property holds that path. CLOCKS constrains clock nets the board
 # makes (PLL and divider outputs; Gowin only, as Xilinx boards put them in
 # their XDC). SEED fixes nextpnr's placement seed (Gowin only: the Xilinx
-# build tries seeds itself). A missed timing constraint fails the build.
+# build tries seeds itself). VENDOR gowin-eda is Gowin's own tools
+# (boards/gowin-eda), whose OPTIONS are Gowin set_option settings. A missed
+# timing constraint fails the build.
 function(rs_board_bitstream name)
-    cmake_parse_arguments(PARSE_ARGV 1 arg "" "BUILD;COMPONENT;CST;TOP;VENDOR;SEED" "PARAMS;CLOCKS")
+    cmake_parse_arguments(PARSE_ARGV 1 arg "" "BUILD;COMPONENT;CST;TOP;VENDOR;SEED" "PARAMS;CLOCKS;OPTIONS")
     if(NOT arg_VENDOR)
         set(arg_VENDOR gowin)
     endif()
@@ -47,6 +49,9 @@ function(rs_board_bitstream name)
     endforeach()
     foreach(c IN LISTS arg_CLOCKS)
         list(APPEND params -k ${c})
+    endforeach()
+    foreach(o IN LISTS arg_OPTIONS)
+        list(APPEND params -x ${o})
     endforeach()
     if(arg_SEED)
         if(NOT arg_VENDOR STREQUAL "gowin")

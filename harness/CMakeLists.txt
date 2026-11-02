@@ -37,6 +37,10 @@ rs_verilate(rs_sim_link COMPONENT nes_bram PREFIX Vnes_bram_sim
 # parameters): 46.40625 MHz, and keeping pace with its display.
 rs_verilate(rs_sim_link COMPONENT nes_sdram PREFIX Vnes_hdmi_sim
             PARAMS CLKS_PER_BIT=31 IDLE_CLKS=464063 FREQ_MHZ=47 DOT_NUM=14 DOT_DEN=121 PACE=1 CHR_EXT=1 BUILD_ID=${nes_id})
+# The NES as the Tang Console 138K runs it with HDMI (boards/tang-console-138k/rtl/nes_top.sv):
+# block RAM, the system at half the pixel clock (25 clocks a bit, dots at 35/242), keeping pace.
+rs_verilate(rs_sim_link COMPONENT nes_bram PREFIX Vnes_bram_hdmi_sim
+            PARAMS CLKS_PER_BIT=25 IDLE_CLKS=371875 DOT_NUM=35 DOT_DEN=242 CHR_AW=17 PACE=1 BUILD_ID=${nes_bram_id})
 # The same without the display, for running ROMs whose CHR ROM is in the SDRAM.
 rs_verilate(rs_sim_link COMPONENT nes_sdram PREFIX Vnes_ext_sim
             PARAMS CLKS_PER_BIT=31 IDLE_CLKS=464063 FREQ_MHZ=47 DOT_NUM=14 DOT_DEN=121 CHR_EXT=1 BUILD_ID=${nes_id})
