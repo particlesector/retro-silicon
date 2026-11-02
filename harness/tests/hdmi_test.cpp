@@ -310,3 +310,16 @@ TEST_CASE("HDMI: the NES makes a frame in at most 98% of a display frame, leavin
     INFO(frames << " NES frames in " << shown << " display frames");
     CHECK(shown <= 0.98 * frames + 0.05);  // + the last frame's part, read late
 }
+
+TEST_CASE("HDMI: the Tang Console 138K's system runs two ROMs in a row, keeping pace, with the 20K's video CRCs") {
+    // As rig-run's hdmi test runs them on the board: one link, one ROM after another.
+    auto golden = golden_video();
+    auto link = rig::make_nes_bram_hdmi_sim();
+    for (const char* id : {"oam_read", "full_palette"}) {
+        auto [g, rom] = golden_rom(id);
+        auto r = rig::nes::hdmi_test(*link, id, rom, g.frames, RS_NES_BRAM_BUILD_ID);
+        INFO(id << ": " << r.detail << " / " << r.notes);
+        REQUIRE(r.passed);
+        CHECK(r.crc32 == golden[id]);
+    }
+}
