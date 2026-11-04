@@ -17,7 +17,7 @@ option(RS_BITSTREAMS "Build the boards' bitstreams" ${rs_have_pnr})
 
 # rs_board_bitstream(<name> BUILD <board build.sh> COMPONENT <c> CST <file> [TOP <module>]
 #                    [VENDOR gowin|gowin-eda|xilinx] [PARAMS <NAME=VALUE>...] [CLOCKS <net=MHz>...]
-#                    [SEED <n>] [OPTIONS <OPTION=VALUE>...])
+#                    [SEED <n>] [OPTIONS <OPTION=VALUE>...] [SDC <file>])
 #
 # Builds ${CMAKE_BINARY_DIR}/fpga/<name>/<top>.fs (Gowin, the default) or
 # <top>.bit (Xilinx) with a board's build script (CST, the pin constraints,
@@ -26,10 +26,11 @@ option(RS_BITSTREAMS "Build the boards' bitstreams" ${rs_have_pnr})
 # makes (PLL and divider outputs; Gowin only, as Xilinx boards put them in
 # their XDC). SEED fixes nextpnr's placement seed (Gowin only: the Xilinx
 # build tries seeds itself). VENDOR gowin-eda is Gowin's own tools
-# (boards/gowin-eda), whose OPTIONS are Gowin set_option settings. A missed
+# (boards/gowin-eda), whose OPTIONS are Gowin set_option settings and SDC a
+# board's clock constraints (relative to the calling directory). A missed
 # timing constraint fails the build.
 function(rs_board_bitstream name)
-    cmake_parse_arguments(PARSE_ARGV 1 arg "" "BUILD;COMPONENT;CST;TOP;VENDOR;SEED" "PARAMS;CLOCKS;OPTIONS")
+    cmake_parse_arguments(PARSE_ARGV 1 arg "" "BUILD;COMPONENT;CST;TOP;VENDOR;SEED;SDC" "PARAMS;CLOCKS;OPTIONS")
     if(NOT arg_VENDOR)
         set(arg_VENDOR gowin)
     endif()
@@ -53,6 +54,14 @@ function(rs_board_bitstream name)
     foreach(o IN LISTS arg_OPTIONS)
         list(APPEND params -x ${o})
     endforeach()
+    set(sdc)
+    if(arg_SDC)
+        if(NOT arg_VENDOR STREQUAL "gowin-eda")
+            message(FATAL_ERROR "rs_board_bitstream(${name}): SDC is for Gowin EDA builds")
+        endif()
+        set(sdc ${CMAKE_CURRENT_SOURCE_DIR}/${arg_SDC})
+        list(APPEND params -S ${sdc})
+    endif()
     if(arg_SEED)
         if(NOT arg_VENDOR STREQUAL "gowin")
             message(FATAL_ERROR "rs_board_bitstream(${name}): SEED is for Gowin builds")
@@ -62,7 +71,7 @@ function(rs_board_bitstream name)
     add_custom_command(
         OUTPUT ${dir}/${arg_TOP}.${ext}
         COMMAND ${arg_BUILD} ${params} -t ${arg_TOP} -c ${cst} -o ${dir} ${files}
-        DEPENDS ${files} ${cst} ${arg_BUILD} ${PROJECT_SOURCE_DIR}/boards/${arg_VENDOR}/build.sh
+        DEPENDS ${files} ${cst} ${sdc} ${arg_BUILD} ${PROJECT_SOURCE_DIR}/boards/${arg_VENDOR}/build.sh
         COMMENT "Building the ${name} bitstream"
         VERBATIM)
     add_custom_target(${name}_bitstream ALL DEPENDS ${dir}/${arg_TOP}.${ext})

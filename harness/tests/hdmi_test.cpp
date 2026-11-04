@@ -234,3 +234,15 @@ TEST_CASE("HDMI: the Tang Console 138K's system runs two ROMs in a row, keeping 
         CHECK(r.crc32 == golden[id]);
     }
 }
+
+TEST_CASE("The Tang Console 138K's system with HDMI matches MesenCE on timing-sensitive ROMs") {
+    // Its rates: the system at half the pixel clock, dots at 35/242, block RAM, paced.
+    for (const char* id : {"sprite_hit-05", "nmi_sync"}) {
+        auto [g, rom] = golden_rom(id);
+        auto link = rig::make_nes_bram_hdmi_sim();
+        auto r = rig::nes::rom_test(*link, g.check, rom, g.frames, RS_NES_BRAM_BUILD_ID);
+        INFO(id << ": " << r.detail << " / " << r.notes);
+        CHECK(r.passed);
+        CHECK(r.crc32 == g.crc);
+    }
+}

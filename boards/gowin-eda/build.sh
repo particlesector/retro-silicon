@@ -7,12 +7,14 @@
 # holding bin/gw_sh). The same arguments as ../gowin/build.sh (the open flow),
 # so a board can use either.
 #
-# usage: build.sh -d <device> -F <family> -t <top> -c <pins.cst> [-f <MHz>] [-k NET=MHz]... [-o <outdir>] [-g NAME=VALUE]... [-x OPTION=VALUE]... <sources...>
+# usage: build.sh -d <device> -F <family> -t <top> -c <pins.cst> [-f <MHz>] [-k NET=MHz]... [-o <outdir>] [-g NAME=VALUE]... [-x OPTION=VALUE]... [-S <clocks.sdc>] <sources...>
 # -g sets a top-level parameter: Gowin's Tcl can't, so the top module's file is
 # copied with that parameter's default changed (a plain `parameter ... NAME =
 # value`). -f constrains the top's `clk` port; -k NET=MHz constrains another
 # clock, by net (a PLL's output). -x passes a Gowin option (set_option
-# -OPTION VALUE), such as place_option=2. A missed timing constraint fails the build.
+# -OPTION VALUE), such as place_option=2. -S adds a board's own SDC file: for a
+# PLL's clocks, as generated clocks of its input (Gowin's own derivation of
+# them can be wrong), which -k can't relate to each other. A missed timing constraint fails the build.
 # Writes <outdir>/<top>.fs, the Tcl project (gowin.tcl), its log (gowin.log)
 # and the timing report (timing.rpt).
 set -euo pipefail
@@ -22,8 +24,9 @@ out=build/fpga
 params=()
 clocks=()
 options=()
+sdcs=()
 
-while getopts "d:F:t:c:f:k:o:s:g:x:" opt; do
+while getopts "d:F:t:c:f:k:o:s:g:x:S:" opt; do
   case $opt in
     d) device=$OPTARG ;;
     F) family=$OPTARG ;;
@@ -35,6 +38,7 @@ while getopts "d:F:t:c:f:k:o:s:g:x:" opt; do
     s) echo "build.sh: Gowin EDA has no placement seed" >&2; exit 2 ;;
     g) params+=("$OPTARG") ;;
     x) options+=("$OPTARG") ;;
+    S) sdcs+=("$(cd "$(dirname "$OPTARG")" && pwd)/$(basename "$OPTARG")") ;;
     *) sed -n 's/^# usage: //p' "$0" >&2; exit 2 ;;
   esac
 done
@@ -84,6 +88,7 @@ done
   for c in "${clocks[@]}"; do
     echo "create_clock -name ${c%%=*} -period $(python3 -c "print(round(1000 / ${c#*=}, 3))") [get_nets {${c%%=*}}]"
   done
+  for f in "${sdcs[@]}"; do grep -v "^//" "$f"; done
 } > "$proj/clocks.sdc"
 
 {
@@ -113,7 +118,7 @@ install -m 644 "$proj/gowin.tcl" "$out/gowin.tcl"
 }
 fs=$(find "$proj" -name "$top.fs" | head -1)
 [[ -n $fs ]] || { tail -30 "$out/gowin.log" >&2; echo "build.sh: no bitstream (see $out/gowin.log)" >&2; exit 1; }
-rpt=$(find "$proj" -name "$top.tr" -o -name "${top}_tr_content.html" | head -1)
+rpt=$(find "$proj" -name "${top}_tr_content.html" | head -1)  # the HTML report, which the check below reads
 [[ -n $rpt ]] && install -m 644 "$rpt" "$out/timing.rpt"
 # Gowin's timing analysis covers setup and hold: any negative slack fails the build.
 [[ -n $rpt ]] || { echo "build.sh: no timing report (see $out/gowin.log)" >&2; exit 1; }
