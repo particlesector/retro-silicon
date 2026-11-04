@@ -192,6 +192,12 @@ Anything else reads 0 and ignores writes. Multi-byte registers are little-endian
 
 The limits are levels: raising one lets the system run on from where it stopped. All registers are absolute, so a command the shell runs twice does no harm.
 
+## The lean build
+
+`DEBUG=0` builds the system to play games on, without the test machinery: the shell keeps loading ROMs and taking writes (the control registers, the live controller registers `64` and `65`, the memory windows), but has no PEEK or CRC, so nothing can be read back. Left out: the stops, the frame and line captures, the trace, audio and PCM CRCs, the trace buffer, the video probe, `nes_video`'s video CRC, the input script, the vector override, the reset button and register `8F` (the alignment is `LEAD_DOTS`); the cycle count keeps only its parity, which the APU and DMA need. The harness loads it with `Console::load_lean`, writes only, with the board's sizes from its board table instead of registers `74`-`76`, and recognises it by PEEK's answer (`Console::is_lean`).
+
+It plays exactly what the test build plays: in the sim (`make_nes_lean_sim`, the 20K's `nes_lean` bitstream), the receiver of `harness/tests/hdmi_test.cpp` sees the golden frame of each ROM with an HDMI golden, with the test build's video CRC, and the same sound, sample for sample from reset.
+
 ## Ports
 
 | Port | Dir | Width | Meaning |
@@ -224,6 +230,7 @@ The limits are levels: raising one lets the system run on from where it stopped.
 | `CHR_EXT` | 0 | CHR ROM can come from the board's memory (`nes_sdram`'s too); needs 8 or more clocks a dot |
 | `TRACE_AW` | 10 | The trace buffer keeps the last 2^`TRACE_AW` CPU cycles (4 bytes each, in byte-wide block RAM) |
 | `SAVE_STATE` | 1 | 0 builds the system without save states (no save-state controller or its 32 KB buffer; the CPU's, PPU's, APU's and resampler's ports do nothing; OAM can still be cleared; register `3A` bit 0 reads 0): the Tang Nano 20K's NES, which fits only so with the APU and HDMI audio |
+| `DEBUG` | 1 | 0 is the lean build, to play on (see below); needs `SAVE_STATE=0` |
 | `BUILD_ID` | 0 | Reported by INFO; the CMake build sets it from the RTL's SHA-256 |
 
 ## Status

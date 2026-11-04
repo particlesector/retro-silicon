@@ -67,6 +67,7 @@ An error response has no payload.
 | `MAX_PAYLOAD_LOG2` | 11 | Command payloads up to 2 KB, buffered in one block RAM |
 | `IDLE_CLKS` | 270,000 | Clocks of silence that drop a partial frame; 10 ms at 27 MHz |
 | `BUILD_ID` | 0 | Reported by INFO; CMake's `rs_build_id` derives it from the RTL |
+| `READS` | 1 | 0 leaves out PEEK and CRC (they answer `01`, unknown command) and with them every bus read and the CRC engine: for a build that only takes writes, such as `systems/nes`'s lean build. About 200 fewer LUTs and ALUs on a GW2A |
 
 Built from `rtl/ts_rx.sv` (frame receiver), `rtl/ts_tx.sv` (frame transmitter, CRC computed as bytes go out, so a response of any length needs no buffer) and `rtl/test_shell.sv` (dispatcher), with `common/uart` and `common/crc32`. About 900 LUTs and one block RAM on a GW2A-18C.
 

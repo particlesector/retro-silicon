@@ -204,7 +204,63 @@ uint32_t on_hdmi(const std::string& id) {
     return r.crc32;
 }
 
+// The 20K's lean build (make_nes_lean_sim) given a ROM with writes only and
+// left to run: the receiver must see, after the system starts, the display
+// frame showing the ROM's golden frame, with the test build's video CRC, and
+// every frame with the right timing. Returns the HDMI samples it heard.
+std::vector<std::pair<int16_t, int16_t>> lean_on_hdmi(const std::string& id) {
+    auto [g, rom] = golden_rom(id);
+    auto frame = golden_frame(g, rom);
+    auto golden = golden_video();
+    REQUIRE(golden.count(id));
+    Receiver rx;
+    rx.expect = &frame;
+    rx.pal = palette();
+    auto link = rig::make_nes_lean_sim([&rx](uint32_t s) { rx(s); });
+    rig::shell::Client client(*link);
+    rig::nes::Console nes(client);
+    REQUIRE(client.info().build_id == RS_NES_BUILD_ID);
+    REQUIRE(nes.is_lean());
+    nes.hold_reset();
+    REQUIRE_FALSE(nes.load_lean(rom, 23, 13, true));
+    size_t start = rx.frames.size();
+    nes.run();
+    // A display frame for each NES frame, and two more.
+    std::vector<uint8_t> buf(64);
+    while (rx.frames.size() < start + g.frames + 2) link->read(buf, 16);
+    INFO((rx.dec.errors.empty() ? std::string("no HDMI errors") : rx.dec.errors[0]));
+    CHECK(rx.dec.errors.empty());
+    int matched = 0;
+    for (size_t i = 0; i < rx.frames.size(); i++) {
+        INFO("display frame " << i);
+        CHECK(rx.frames[i].timing);
+        if (i > start && rx.frames[i].crc == golden[id]) {
+            matched++;
+            CHECK(rx.frames[i].picture);
+        }
+    }
+    CHECK(matched >= 1);
+    return rx.dec.samples;
+}
+
 } // namespace
+
+TEST_CASE("HDMI: the lean build plays oam_read's frames and sound as the test build does") {
+    auto lean = lean_on_hdmi("oam_read");
+    // The test build's sound, from reset, through the same receiver.
+    auto [g, rom] = golden_rom("oam_read");
+    Receiver rx;
+    auto link = rig::make_nes_hdmi_sim([&rx](uint32_t s) { rx(s); });
+    auto r = rig::nes::hdmi_test(*link, "oam_read", rom, g.frames, RS_NES_BUILD_ID);
+    REQUIRE(r.passed);
+    size_t n = std::min(lean.size(), rx.dec.samples.size());
+    CHECK(n > 800 * (g.frames - 2));
+    CHECK(std::equal(lean.begin(), lean.begin() + static_cast<long>(n), rx.dec.samples.begin()));
+}
+
+TEST_CASE("HDMI: the lean build plays full_palette's frames as the test build does") {
+    lean_on_hdmi("full_palette");
+}
 
 TEST_CASE("HDMI: a receiver sees oam_read's frame at 720p, three times its size, with nes_video's CRC") {
     uint32_t crc = on_hdmi("oam_read");

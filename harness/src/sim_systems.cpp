@@ -6,6 +6,7 @@
 #include "Vnes_axi_sim.h"
 #include "Vnes_ext_sim.h"
 #include "Vnes_hdmi_sim.h"
+#include "Vnes_lean_sim.h"
 #include "Vnes_sim.h"
 #include "Vshell_axi_sim.h"
 #include "Vshell_sdram_sim.h"
@@ -84,9 +85,9 @@ private:
 // so 5 system clocks take as long as 8 pixel clocks. Time here is in units of
 // 1/40 of that: a system clock every 8, a pixel clock every 5, rising together
 // every 40. Each pixel clock's symbols go to `on_symbol`.
-class NesHdmi : public SimModel {
+template <class V> class NesHdmiT : public SimModel {
 public:
-    explicit NesHdmi(std::function<void(uint32_t)> on_symbol) : on_symbol_(std::move(on_symbol)) {}
+    explicit NesHdmiT(std::function<void(uint32_t)> on_symbol) : on_symbol_(std::move(on_symbol)) {}
 
     bool tick(bool rx) override {
         m_.uart_rx = rx;
@@ -119,11 +120,13 @@ private:
         if (on_symbol_) on_symbol_(m_.tmds0 | m_.tmds1 << 10 | static_cast<uint32_t>(m_.tmds2) << 20);
     }
 
-    Vnes_hdmi_sim m_;
+    V m_;
     SdramModel sdram_{kNesHdmiClockHz / 1e6};
     std::function<void(uint32_t)> on_symbol_;
     uint64_t t_sys_ = 0, t_pix_ = 0;
 };
+
+using NesHdmi = NesHdmiT<Vnes_hdmi_sim>;
 
 } // namespace
 
@@ -161,6 +164,11 @@ std::unique_ptr<SimLink> make_nes_bram_sim() {
 std::unique_ptr<SimLink> make_nes_hdmi_sim(std::function<void(uint32_t)> on_symbol) {
     return std::make_unique<SimLink>(std::make_unique<NesHdmi>(std::move(on_symbol)), kNesHdmiClksPerBit, 64,
                                      kNesHdmiClockHz);
+}
+
+std::unique_ptr<SimLink> make_nes_lean_sim(std::function<void(uint32_t)> on_symbol) {
+    return std::make_unique<SimLink>(std::make_unique<NesHdmiT<Vnes_lean_sim>>(std::move(on_symbol)),
+                                     kNesHdmiClksPerBit, 64, kNesHdmiClockHz);
 }
 
 } // namespace rig

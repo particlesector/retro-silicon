@@ -68,6 +68,7 @@ module nes #(
     parameter int          MEM_AW       = 23,       // the board's memory: 2^MEM_AW bytes, for PRG ROM
     parameter bit          CHR_EXT      = 1'b0,     // CHR ROM can come from the board's memory
     parameter int          TRACE_AW     = 10,       // the trace buffer keeps the last 2^TRACE_AW CPU cycles
+    parameter bit          DEBUG        = 1'b1,     // 0: the lean build, to play on (see README.md); needs SAVE_STATE 0
     parameter logic [31:0] BUILD_ID     = '0
 ) (
     input  logic        clk,
@@ -118,7 +119,16 @@ module nes #(
     logic [7:0]  t_wdata, t_rdata, s_wdata, s_rdata;
     logic        crc_error, timeout;
 
-    test_shell #(.CLKS_PER_BIT(CLKS_PER_BIT), .IDLE_CLKS(IDLE_CLKS), .BUILD_ID(BUILD_ID)) u_shell (
+    // The lean build (DEBUG=0) keeps the shell for loading and the live
+    // controller registers, writes only: the shell has no PEEK or CRC, every
+    // read gives 0, and the stops, captures, CRCs, trace buffer, video probe,
+    // input script, vector override, reset button and alignment register are
+    // left out (held at their power-up values, so synthesis drops them).
+    if (!DEBUG && SAVE_STATE) begin : g_bad
+        $error("nes: the lean build (DEBUG=0) has no save states: set SAVE_STATE=0");
+    end
+
+    test_shell #(.CLKS_PER_BIT(CLKS_PER_BIT), .IDLE_CLKS(IDLE_CLKS), .BUILD_ID(BUILD_ID), .READS(DEBUG)) u_shell (
         .clk, .rst, .uart_rx, .uart_tx,
         .bus_addr(t_addr), .bus_req(t_req), .bus_we(t_we), .bus_wdata(t_wdata),
         .bus_ack(t_ack), .bus_rdata(t_rdata),
@@ -221,7 +231,7 @@ module nes #(
     logic [2:0] lead_dots;  // register 8F: the lead after a reset, the CPU/PPU alignment
 
     // Stops are levels, so raising a limit runs on from where it stopped.
-    assign stopped   = (stop_at != '0 && cycles >= stop_at) || (stop_frame != '0 && frames >= stop_frame);
+    assign stopped   = DEBUG && ((stop_at != '0 && cycles >= stop_at) || (stop_frame != '0 && frames >= stop_frame));
     assign sys_rst   = rst || ctrl_reset;
     // The reset button (registers 90-97): pressed at the end of a chosen frame,
     // at the next boundary between CPU cycles. As in MesenCE, it restarts the
@@ -487,7 +497,7 @@ module nes #(
     wire c_pad2 = bus_addr == 16'h4017;  // reads; a write there is the APU's
     wire c_wram = bus_addr[15:13] == 3'b011;  // $6000-$7FFF
     wire c_prg  = bus_addr[15];               // $8000-$FFFF
-    wire c_vec  = vec_en && bus_addr[15:1] == 15'h7FFE;
+    wire c_vec  = DEBUG && vec_en && bus_addr[15:1] == 15'h7FFE;
 
     // ---- The cartridge's mapper ----
     logic [22:0] cart_prg_a;
@@ -923,7 +933,7 @@ module nes #(
     logic [23:0] in_stage;
     logic        in_ack;
     wire         pad_bit = c_pad1 ? (strobe ? pads[0] : sr1[0]) : (strobe ? pads[8] : sr2[0]);
-    wire         in_we = s_new && sel_input && s_we && !in_ack && s_addr[1:0] == 2'd3;
+    wire         in_we = DEBUG && s_new && sel_input && s_we && !in_ack && s_addr[1:0] == 2'd3;
 
     // The script's block RAM takes its read address on the falling edge: on
     // the GW2AR-18 a block RAM's address needs more hold than a short path
@@ -1007,18 +1017,28 @@ module nes #(
     logic [31:0] tr;
     logic [2:0]  tr_n;
 
-    crc32 u_trace (.clk, .rst(sys_rst), .en(tr_n != '0), .data(tr[7:0]), .crc(trace_crc),
-                   .st_we(st_we_sys && st_sys_w == 4'd2), .st_wdata);
+    if (DEBUG) begin : g_trace_crc
+        crc32 u_trace (.clk, .rst(sys_rst), .en(tr_n != '0), .data(tr[7:0]), .crc(trace_crc),
+                       .st_we(st_we_sys && st_sys_w == 4'd2), .st_wdata);
+    end else begin : g_no_trace_crc
+        assign trace_crc = '0;
+    end
 
     // The same 4 bytes go into the trace buffer, the last 2^TRACE_AW cycles:
     // cycle n at ring index n mod 2^TRACE_AW (a state loaded sets the count).
     logic [31:0]       tb_count, tb_rdata;
     logic [TRACE_AW:0] tb_filled;
 
-    trace_buffer #(.W(32), .AW(TRACE_AW)) u_tbuf (
-        .clk, .rst(sys_rst), .en(ce), .data({6'b0, bus_sync, bus_we, bus_we ? bus_wdata : cpu_din, bus_addr}),
-        .set((st_we_sys && st_sys_w == 4'd0) || sreset), .set_count(sreset ? '0 : st_wdata), .count(tb_count), .filled(tb_filled),
-        .raddr(s_addr[TRACE_AW+1:2]), .rdata(tb_rdata));
+    if (DEBUG) begin : g_tbuf
+        trace_buffer #(.W(32), .AW(TRACE_AW)) u_tbuf (
+            .clk, .rst(sys_rst), .en(ce), .data({6'b0, bus_sync, bus_we, bus_we ? bus_wdata : cpu_din, bus_addr}),
+            .set((st_we_sys && st_sys_w == 4'd0) || sreset), .set_count(sreset ? '0 : st_wdata), .count(tb_count),
+            .filled(tb_filled), .raddr(s_addr[TRACE_AW+1:2]), .rdata(tb_rdata));
+    end else begin : g_no_tbuf
+        assign tb_count  = '0;
+        assign tb_filled = '0;
+        assign tb_rdata  = '0;
+    end
 
     // The audio CRC: each CPU cycle's channel levels as 3 bytes, {pulse 2,
     // pulse 1}, {noise, triangle}, DMC.
@@ -1026,8 +1046,12 @@ module nes #(
     logic [23:0] au;
     logic [1:0]  au_n;
 
-    crc32 u_audio (.clk, .rst(sys_rst), .en(au_n != '0), .data(au[7:0]), .crc(audio_crc),
-                   .st_we(st_we_sys && st_sys_w == 4'd5), .st_wdata);
+    if (DEBUG) begin : g_audio_crc
+        crc32 u_audio (.clk, .rst(sys_rst), .en(au_n != '0), .data(au[7:0]), .crc(audio_crc),
+                       .st_we(st_we_sys && st_sys_w == 4'd5), .st_wdata);
+    end else begin : g_no_audio_crc
+        assign audio_crc = '0;
+    end
 
     always_ff @(posedge clk) begin
         if (au_n != '0) begin
@@ -1060,8 +1084,12 @@ module nes #(
                     .st_addr(2'(st_sys_w - 4'd6)), .st_rdata(rs_st_rdata),
                     .st_we(st_we_sys && st_sys_w >= 4'd6 && st_sys_w <= 4'd9), .st_wdata);
 
-    crc32 u_pcm (.clk, .rst(sys_rst), .en(pcm_bn != '0), .data(pcm_b[7:0]), .crc(pcm_crc),
-                 .st_we(st_we_sys && st_sys_w == 4'd10), .st_wdata);
+    if (DEBUG) begin : g_pcm_crc
+        crc32 u_pcm (.clk, .rst(sys_rst), .en(pcm_bn != '0), .data(pcm_b[7:0]), .crc(pcm_crc),
+                     .st_we(st_we_sys && st_sys_w == 4'd10), .st_wdata);
+    end else begin : g_no_pcm_crc
+        assign pcm_crc = '0;
+    end
 
     assign a_valid = pcm_v;
 
@@ -1124,6 +1152,8 @@ module nes #(
             endcase
         if (sreset)
             cycles   <= '0;
+        if (!DEBUG)
+            cycles[31:1] <= '0;  // the lean build keeps only the parity, for the APU and DMA
         if (sys_rst) begin
             sreset_pend <= 1'b0;
             tr_n     <= '0;
@@ -1189,13 +1219,23 @@ module nes #(
     logic        crc_valid;
     logic [15:0] buf_rdata;
 
-    video_probe u_probe (
-        .clk, .rst(sys_rst),
-        .pix_valid, .pix({7'b0, pix}), .pix_x, .pix_y, .frame(frames),
-        .frame_crc, .crc_frame, .crc_valid,
-        .line_raddr(s_addr[9:2]), .line_rdata,
-        .cap_en, .cap_frame, .cap_line, .cap_held,
-        .buf_raddr(s_addr[8:1]), .buf_rdata);
+    if (DEBUG) begin : g_probe
+        video_probe u_probe (
+            .clk, .rst(sys_rst),
+            .pix_valid, .pix({7'b0, pix}), .pix_x, .pix_y, .frame(frames),
+            .frame_crc, .crc_frame, .crc_valid,
+            .line_raddr(s_addr[9:2]), .line_rdata,
+            .cap_en, .cap_frame, .cap_line, .cap_held,
+            .buf_raddr(s_addr[8:1]), .buf_rdata);
+    end else begin : g_no_probe
+        assign frame_crc  = '0;
+        assign crc_frame  = '0;
+        assign crc_valid  = 1'b0;
+        assign line_rdata = '0;
+        assign cap_held   = 1'b0;
+        assign buf_rdata  = '0;
+        wire unused_probe = &{1'b0, cap_line, cap_frame};
+    end
 
     // ---- Save state, probe and save-state buffer reads: registered, so three clocks ----
     // A state word goes through a register of its own before its byte is
@@ -1225,7 +1265,7 @@ module nes #(
     wire         sp_issue = s_new && (sel_state || sel_probe || sel_ssbuf || sel_trace) && sp_wait == '0 && !sp_ack;
     assign       paused   = ctrl_reset || ((cs == C_START || cs == C_LEAD) && !go);
     wire  [1:0]  st_sel   = s_addr[13:12];  // CPU, PPU, the system's, APU
-    wire         st_commit = sp_issue && sel_state && s_we && paused && s_addr[1:0] == 2'd3;
+    wire         st_commit = DEBUG && sp_issue && sel_state && s_we && paused && s_addr[1:0] == 2'd3;
 
     assign st_wdata  = {s_wdata, st_stage};
     assign st_we_cpu = st_commit && st_sel == 2'd0 && s_addr[11:4] == '0;
@@ -1308,7 +1348,7 @@ module nes #(
     wire  [7:0] r = s_addr[7:0];
     wire        running = go || cs == C_RUN || cs == C_END;
 
-    assign vcap_arm = s_new && sel_reg && s_we && !reg_ack && r == 8'h3C && s_wdata[1];
+    assign vcap_arm = DEBUG && s_new && sel_reg && s_we && !reg_ack && r == 8'h3C && s_wdata[1];
 
     always_ff @(posedge clk) begin
         reg_ack <= s_new && sel_reg && !reg_ack;
@@ -1491,6 +1531,20 @@ module nes #(
             reset_at[0] <= '0;
             reset_at[1] <= '0;
         end
+        if (!DEBUG) begin
+            reg_q       <= '0;
+            vec_en      <= 1'b0;
+            stop_at     <= '0;
+            stop_frame  <= '0;
+            cap_en      <= 1'b0;
+            ss_cmd      <= '0;
+            vcap_frame  <= '0;
+            in_on       <= 1'b0;
+            in_len      <= '0;
+            lead_dots   <= 3'(LEAD_DOTS);
+            reset_at[0] <= '0;
+            reset_at[1] <= '0;
+        end
     end
 
     // Accesses outside the map are acknowledged at once: writes vanish, reads give 0.
@@ -1503,7 +1557,9 @@ module nes #(
 
     assign s_ack = sh_sd_ack || sh_m_ack || sh_v_ack || sp_ack || reg_ack || none_ack || in_ack;
     always_comb
-        if (sh_sd_ack)
+        if (!DEBUG)
+            s_rdata = 8'h00;
+        else if (sh_sd_ack)
             s_rdata = sd_rdata_q;
         else if (sh_m_ack)
             s_rdata = sh_m_data;

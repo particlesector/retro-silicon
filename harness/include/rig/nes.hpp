@@ -157,6 +157,9 @@ struct InputEntry {
     uint8_t pad1, pad2 = 0;
 };
 
+// Why a system with these sizes (registers 75, 74 and 76) can't run the ROM, or nothing.
+std::optional<std::string> unsupported_on(const NesRom& rom, unsigned mem_bits, unsigned chr_bits, bool chr_ext);
+
 // systems/nes through its test shell. Every call is an absolute register write
 // or read, so the shell's retries are safe.
 class Console {
@@ -180,6 +183,15 @@ public:
     std::optional<std::string> unsupported(const NesRom& rom);
     // The system can take CHR ROM from the board's memory.
     bool chr_ext();
+    // The lean build (systems/nes's DEBUG=0) answers writes only: its shell
+    // has no PEEK, which says so.
+    bool is_lean();
+    // load() for the lean build, writes only: the board's memory and CHR
+    // block RAM are 2^mem_bits and 2^chr_bits bytes, as the board table says,
+    // and chr_ext whether CHR ROM can come from its memory (bigger CHR ROM
+    // then does). Memory powers up as zeros; nothing is read back. Hold reset
+    // first, then run().
+    std::optional<std::string> load_lean(const NesRom& rom, unsigned mem_bits, unsigned chr_bits, bool chr_ext);
     void set_vector(std::optional<uint16_t> pc);
     // The input player: plays `script` (frames in order, one entry a frame at
     // most, 512 at most) from reset; an empty one turns the player off.

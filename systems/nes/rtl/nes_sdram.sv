@@ -12,6 +12,7 @@ module nes_sdram #(
     parameter bit          PACE         = 1'b0,
     parameter bit          SAVE_STATE   = 1'b1,
     parameter bit          CHR_EXT      = 1'b0,  // CHR ROM from the SDRAM; needs 8 clocks a dot or more
+    parameter bit          DEBUG        = 1'b1,  // 0: the lean build (systems/nes's DEBUG), without the video CRC
     parameter logic [31:0] BUILD_ID     = '0
 ) (
     input  logic        clk,
@@ -55,7 +56,7 @@ module nes_sdram #(
     por u_por (.clk, .rst);
 
     nes #(.CLKS_PER_BIT(CLKS_PER_BIT), .IDLE_CLKS(IDLE_CLKS), .DOT_NUM(DOT_NUM), .DOT_DEN(DOT_DEN),
-          .PACE(PACE), .SAVE_STATE(SAVE_STATE), .CHR_EXT(CHR_EXT), .BUILD_ID(BUILD_ID)) u_nes (
+          .PACE(PACE), .SAVE_STATE(SAVE_STATE), .CHR_EXT(CHR_EXT), .DEBUG(DEBUG), .BUILD_ID(BUILD_ID)) u_nes (
         .clk, .uart_rx, .uart_tx, .led,
         .mem_req(req), .mem_we(we), .mem_addr(addr), .mem_wdata(wdata),
         .mem_ack(ack), .mem_rdata(rdata), .mem_rdata_w(rdata_w), .mem_ready(ready), .mem_ref_hold(ref_hold), .mem_stats(96'h0),
@@ -63,7 +64,7 @@ module nes_sdram #(
         .v_crc, .v_crc_ok, .v_crc_t, .v_shown, .v_late, .v_overrun,
         .a_valid, .a_pcm);
 
-    nes_video u_video (
+    nes_video #(.CRC(DEBUG)) u_video (
         .clk, .rst, .pix_valid, .pix, .pix_x, .pix_y, .waiting(v_waiting), .req(v_req), .a_valid, .a_pcm,
         .cap_t(v_cap_t), .crc(v_crc), .crc_ok(v_crc_ok), .crc_t(v_crc_t),
         .shown(v_shown), .late(v_late), .overrun(v_overrun),

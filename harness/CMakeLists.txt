@@ -38,6 +38,10 @@ rs_verilate(rs_sim_link COMPONENT nes_bram PREFIX Vnes_bram_sim
 rs_verilate(rs_sim_link COMPONENT nes_sdram PREFIX Vnes_hdmi_sim
             PARAMS CLKS_PER_BIT=31 IDLE_CLKS=464063 FREQ_MHZ=47 DOT_NUM=14 DOT_DEN=121 PACE=1 CHR_EXT=1 SAVE_STATE=0
                    BUILD_ID=${nes_id})
+# The 20K's lean build (nes_lean): the same, DEBUG=0.
+rs_verilate(rs_sim_link COMPONENT nes_sdram PREFIX Vnes_lean_sim
+            PARAMS CLKS_PER_BIT=31 IDLE_CLKS=464063 FREQ_MHZ=47 DOT_NUM=14 DOT_DEN=121 PACE=1 CHR_EXT=1 SAVE_STATE=0
+                   DEBUG=0 BUILD_ID=${nes_id})
 # The same without the display, for running ROMs whose CHR ROM is in the SDRAM.
 rs_verilate(rs_sim_link COMPONENT nes_sdram PREFIX Vnes_ext_sim
             PARAMS CLKS_PER_BIT=31 IDLE_CLKS=464063 FREQ_MHZ=47 DOT_NUM=14 DOT_DEN=121 CHR_EXT=1 BUILD_ID=${nes_id})
