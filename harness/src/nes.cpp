@@ -323,13 +323,17 @@ void Console::save_cmd(uint8_t op) {
         if (n > 1000) throw RigError("the save-state controller never finished");
 }
 
+bool Console::has_save_states() { return c_.peek(kRegs + kFeatures, 1)[0] & 1; }
+
 std::vector<uint8_t> Console::save_state() {
+    if (!has_save_states()) throw RigError("this build has no save states");
     if (c_.peek(kRegs + kCtrl, 1)[0] & 2) throw RigError("save_state with the system held in reset");
     save_cmd(1);
     return c_.read(kSaveBuffer, kSaveStateBytes);
 }
 
 void Console::load_state(const std::vector<uint8_t>& state) {
+    if (!has_save_states()) throw RigError("this build has no save states");
     if (state.size() != kSaveStateBytes)
         throw RigError("a save state is " + std::to_string(kSaveStateBytes) + " bytes, not " +
                        std::to_string(state.size()));

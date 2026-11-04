@@ -142,12 +142,27 @@ module nes #(
     wire         sel_ssbuf;
     wire         ss_hwe;
 
-    save_state_ctrl #(.NREG(SS_REGIONS), .BASES(SS_BASES), .LENS(SS_LENS), .AW(15)) u_ss (
-        .clk, .rst,
-        .cmd(ss_cmd), .done(ss_done), .busy(ss_busy),
-        .hold(ss_hold_req), .hold_frame(ss_hold_frame), .ready(ss_ready),
-        .b_req, .b_we, .b_addr, .b_wdata, .b_ack, .b_rdata(s_rdata),
-        .h_addr(s_addr[14:0]), .h_we(ss_hwe), .h_wdata(s_wdata), .h_rdata(ss_hq));
+    // Without save states (SAVE_STATE=0), no controller and no buffer (16
+    // block RAMs on a GW2A): commands do nothing, and register 3A says so.
+    if (SAVE_STATE) begin : g_ss
+        save_state_ctrl #(.NREG(SS_REGIONS), .BASES(SS_BASES), .LENS(SS_LENS), .AW(15)) u_ss (
+            .clk, .rst,
+            .cmd(ss_cmd), .done(ss_done), .busy(ss_busy),
+            .hold(ss_hold_req), .hold_frame(ss_hold_frame), .ready(ss_ready),
+            .b_req, .b_we, .b_addr, .b_wdata, .b_ack, .b_rdata(s_rdata),
+            .h_addr(s_addr[14:0]), .h_we(ss_hwe), .h_wdata(s_wdata), .h_rdata(ss_hq));
+    end else begin : g_no_ss
+        assign ss_done       = '0;
+        assign ss_busy       = 1'b0;
+        assign ss_hold_req   = 1'b0;
+        assign ss_hold_frame = 1'b0;
+        assign b_req         = 1'b0;
+        assign b_we          = 1'b0;
+        assign b_addr        = '0;
+        assign b_wdata       = '0;
+        assign ss_hq         = '0;
+        wire unused_ss = &{1'b0, ss_ready, ss_hwe, ss_cmd, b_ack};
+    end
 
     always_ff @(posedge clk)
         ss_own <= !rst && ss_busy && (ss_own || !t_req);
@@ -1388,6 +1403,7 @@ module nes #(
             8'h35:   reg_q <= {7'b0, cap_en};
             8'h38:   reg_q <= ss_cmd;
             8'h39:   reg_q <= ss_done;
+            8'h3A:   reg_q <= {7'b0, SAVE_STATE};
             8'h3C:   reg_q <= {6'b0, vcap_armed, vid_pace};
             8'h3D:   reg_q <= {7'b0, vcap_ok};
             8'h40:   reg_q <= vcap_frame[7:0];

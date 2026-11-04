@@ -97,6 +97,7 @@ All notable changes to this project are listed here. The format follows [Keep a 
 - `boards/gowin/build.sh` holds the Gowin open-flow build; each board's `build.sh` calls it with its part. `rs_board_bitstream` replaces `rs_tang_bitstream`.
 - `boards/tang-nano-20k`: the UART moved from header pins 41/42 to 71 (FPGA RX) and 72 (FPGA TX), out of the HDMI pairs' banks; the NES runs at 46.40625 MHz (31 clocks a bit).
 - `README.md` is shorter and points at the website, retro-silicon.particlesector.com, which generates every component's status from the simulation and board runs; the hand-kept status table is gone.
+- `systems/nes`: without save states (`SAVE_STATE=0`) the save-state controller and its 32 KB buffer are left out, and register `3A` bit 0 says whether a build has them; the Tang Nano 20K's NES goes from 42 to 26 of its 46 block RAMs. `harness`: `Console::has_save_states()`, and `save_state()`/`load_state()` refuse on a build without them; `make_nes_hdmi_sim` is built with `SAVE_STATE=0`, as the 20K is.
 
 ### Fixed
 
