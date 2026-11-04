@@ -20,9 +20,13 @@ rs_board_bitstream(console_shell_ram BUILD ${build} VENDOR gowin-eda COMPONENT c
                    PARAMS BUILD_ID=${shell_ram_id})
 get_property(nes_bram_id GLOBAL PROPERTY RS_NES_BRAM_BUILD_ID)
 # The NES's clocks come from the PLL (rtl/nes_top.sv): 37.1875 MHz for the
-# system, 74.375 for the pixels, 371.875 for the serializers. Gowin's
-# timing-driven placement and routing take the system from 33 to 41 MHz.
+# system, 74.375 for the pixels, 371.875 for the serializers, constrained in
+# nes.sdc as generated clocks of the 50 MHz input, so Gowin times the paths
+# between them with the clock tree's delays (as unrelated clocks on their nets,
+# a placement that met timing failed sprite-0 and NMI timing tests on the
+# chip). Gowin's timing-driven placement and routing take the system from 33
+# to 41 MHz.
 rs_board_bitstream(console_nes BUILD ${build} VENDOR gowin-eda COMPONENT console_nes_top TOP nes_top CST nes.cst
                    PARAMS BUILD_ID=${nes_bram_id}
-                   CLOCKS sclk=37.1875 pclk=74.375 fclk=371.875
+                   SDC nes.sdc
                    OPTIONS timing_driven=1 place_option=2 route_option=2)

@@ -96,6 +96,12 @@ module PLL #(
     input  logic [6:0] MDSEL, ODSEL0, ODSEL1, ODSEL2, ODSEL3, ODSEL4, ODSEL5, ODSEL6,
     input  logic [2:0] MDSEL_FRAC, ODSEL0_FRAC,
     input  logic       ENCLK0, ENCLK1, ENCLK2, ENCLK3, ENCLK4, ENCLK5, ENCLK6,
+    input  logic [3:0] DT0, DT1, DT2, DT3,
+    input  logic [5:0] ICPSEL,
+    input  logic [2:0] LPFRES, PSSEL, SSCMDSEL_FRAC,
+    input  logic [1:0] LPFCAP,
+    input  logic       PSDIR, PSPULSE, SSCPOL, SSCON,
+    input  logic [6:0] SSCMDSEL,
     output logic       LOCK, CLKOUT0, CLKOUT1, CLKOUT2, CLKOUT3, CLKOUT4, CLKOUT5, CLKOUT6, CLKFBOUT
 );
     assign {CLKOUT0, CLKOUT1, CLKOUT2, CLKOUT3, CLKOUT4, CLKOUT5, CLKOUT6, CLKFBOUT} = {8{CLKIN}};
