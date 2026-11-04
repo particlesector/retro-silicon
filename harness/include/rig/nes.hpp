@@ -60,6 +60,7 @@ enum Reg : uint32_t {
     kCapEn = 0x35,      // bit 0: capture
     kSaveCmd = 0x38,    // {op (1 save, 2 load), sequence}: runs when it changes
     kSaveDone = 0x39,   // read-only: the last command finished
+    kFeatures = 0x3A,   // read-only: bit 0, the build has save states (kSaveCmd does nothing without them)
     kVideo = 0x3C,      // bit 0 keep pace with the display; write bit 1 to take the video CRC
     kVideoWhole = 0x3D, // read-only: bit 0 the video CRC's display frame showed its frame whole
     kVcapFrame = 0x40,  // 4 bytes: the frame whose display frame the video CRC is of
@@ -226,8 +227,12 @@ public:
     // Throws RigError if its cycle count stops moving first.
     uint8_t wait_stopped();
 
+    // Whether the build has save states (systems/nes's SAVE_STATE).
+    bool has_save_states();
+
     // Saves the system's whole state and returns it: if it's running, at its
     // next frame boundary, after which it runs on. Not while held in reset.
+    // Both throw RigError on a build without save states.
     std::vector<uint8_t> save_state();
     // Loads a state from save_state(), from this board or any other running
     // the same system, and leaves the system stopped there; run() continues.

@@ -161,6 +161,7 @@ Anything else reads 0 and ignores writes. Multi-byte registers are little-endian
 | `35` | 1 | Bit 0: capture |
 | `38` | 1 | Save-state command: op in bits 7-6 (1 save, 2 load), a sequence number in 5-0; runs when it changes |
 | `39` | 1 | The last save-state command finished (read-only) |
+| `3A` | 1 | Read-only: bit 0, the build has save states (`SAVE_STATE`); without them there's no controller or buffer, and `38` does nothing |
 | `3C` | 1 | Video: bit 0 keep pace with the display (from `PACE` at power-up); write bit 1 to take the video CRC of frame `40`'s display frame (reads 1 until it's taken) |
 | `3D` | 1 | Bit 0: the video CRC's display frame showed its frame whole (read-only) |
 | `40` | 4 | The frame whose display frame the video CRC is of |
@@ -222,7 +223,7 @@ The limits are levels: raising one lets the system run on from where it stopped.
 | `MEM_AW` | 23 | The board's memory's size, for the harness (`nes_bram` passes its own) |
 | `CHR_EXT` | 0 | CHR ROM can come from the board's memory (`nes_sdram`'s too); needs 8 or more clocks a dot |
 | `TRACE_AW` | 10 | The trace buffer keeps the last 2^`TRACE_AW` CPU cycles (4 bytes each, in byte-wide block RAM) |
-| `SAVE_STATE` | 1 | 0 builds the system without save states (the CPU's, PPU's, APU's and resampler's ports do nothing; OAM can still be cleared): the Tang Nano 20K's NES, which fits only so with the APU and HDMI audio |
+| `SAVE_STATE` | 1 | 0 builds the system without save states (no save-state controller or its 32 KB buffer; the CPU's, PPU's, APU's and resampler's ports do nothing; OAM can still be cleared; register `3A` bit 0 reads 0): the Tang Nano 20K's NES, which fits only so with the APU and HDMI audio |
 | `BUILD_ID` | 0 | Reported by INFO; the CMake build sets it from the RTL's SHA-256 |
 
 ## Status

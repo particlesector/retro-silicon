@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 #include <catch2/catch_test_macros.hpp>
+#include <catch2/matchers/catch_matchers_string.hpp>
 
 #include <algorithm>
 #include <filesystem>
@@ -174,6 +175,23 @@ TEST_CASE("a save-state round trip keeps the mapper's state: MMC3 mid-IRQ test, 
         CHECK(r.passed);
         CHECK(r.crc32 == g.crc);
     }
+}
+
+TEST_CASE("a build without save states says so, and refuses them") {
+    // The Tang Nano 20K as built (SAVE_STATE=0) has no save-state controller.
+    auto a = rig::make_nes_hdmi_sim();
+    rig::shell::Client ca(*a);
+    rig::nes::Console na(ca);
+    na.hold_reset();
+    CHECK_FALSE(na.has_save_states());
+    CHECK_THROWS_WITH(na.save_state(), Catch::Matchers::ContainsSubstring("no save states"));
+    CHECK_THROWS_WITH(na.load_state(std::vector<uint8_t>(rig::nes::kSaveStateBytes)),
+                      Catch::Matchers::ContainsSubstring("no save states"));
+
+    auto b = rig::make_nes_sim();
+    rig::shell::Client cb(*b);
+    rig::nes::Console nb(cb);
+    CHECK(nb.has_save_states());
 }
 
 TEST_CASE("a state saved on SDRAM at 27 MHz finishes the same on block RAM at 50 MHz") {
