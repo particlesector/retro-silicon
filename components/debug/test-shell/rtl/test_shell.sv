@@ -13,7 +13,8 @@ module test_shell #(
     parameter int          CLKS_PER_BIT     = 18,       // 27 MHz / 18 = 1.5 Mbaud
     parameter int          MAX_PAYLOAD_LOG2 = 11,       // command payloads up to 2 KB
     parameter int          IDLE_CLKS        = 270_000,  // drop a frame stalled for 10 ms at 27 MHz
-    parameter logic [31:0] BUILD_ID         = '0        // reported by INFO; ties results to a build
+    parameter logic [31:0] BUILD_ID         = '0,       // reported by INFO; ties results to a build
+    parameter bit          READS            = 1'b1      // 0: no PEEK or CRC (unknown commands), so no bus reads
 ) (
     input  logic        clk,
     input  logic        rst,        // synchronous
@@ -122,7 +123,13 @@ module test_shell #(
     logic        crc_rst, crc_en;
     logic [31:0] crc_val;
 
-    crc32 u_crc (.clk, .rst(crc_rst), .en(crc_en), .data(bus_rdata), .crc(crc_val), .st_we(1'b0), .st_wdata('0));
+    // Without READS there are no reads to check, and no CRC engine.
+    if (READS) begin : g_crc
+        crc32 u_crc (.clk, .rst(crc_rst), .en(crc_en), .data(bus_rdata), .crc(crc_val), .st_we(1'b0), .st_wdata('0));
+    end else begin : g_no_crc
+        assign crc_val = '0;
+        wire unused_crc = &{1'b0, crc_rst, crc_en, bus_rdata};
+    end
 
     assign crc_rst = dstate == D_IDLE;
     assign crc_en  = dstate == D_CRC && bus_req && bus_ack;
@@ -153,7 +160,9 @@ module test_shell #(
                                 src   <= SRC_INFO;
                             end
                         CMD_PEEK:
-                            if (f_len != 16'd6)
+                            if (!READS)
+                                r_status <= ST_UNKNOWN_CMD;
+                            else if (f_len != 16'd6)
                                 r_status <= ST_BAD_LENGTH;
                             else begin
                                 base  <= f_args[31:0];
@@ -169,7 +178,9 @@ module test_shell #(
                                 dstate <= D_POKE;
                             end
                         CMD_CRC:
-                            if (f_len != 16'd8)
+                            if (!READS)
+                                r_status <= ST_UNKNOWN_CMD;
+                            else if (f_len != 16'd8)
                                 r_status <= ST_BAD_LENGTH;
                             else begin
                                 bus_addr <= f_args[31:0];
@@ -203,7 +214,9 @@ module test_shell #(
                 end
             D_CRC:
                 // One read at a time; each acknowledged byte goes into u_crc.
-                if (bus_req) begin
+                if (!READS)
+                    dstate <= D_IDLE;
+                else if (bus_req) begin
                     if (bus_ack) begin
                         bus_req  <= 1'b0;
                         bus_addr <= bus_addr + 1'b1;
@@ -228,7 +241,7 @@ module test_shell #(
                         stage_data  <= buf_rdata;
                         stage_valid <= 1'b1;
                         pending     <= 1'b0;
-                    end else if (bus_ack) begin
+                    end else if (READS && bus_ack) begin
                         stage_data  <= bus_rdata;
                         stage_valid <= 1'b1;
                         pending     <= 1'b0;
@@ -245,7 +258,7 @@ module test_shell #(
                             stage_data  <= crc_val[fetch_n[1:0]*8 +: 8];
                             stage_valid <= 1'b1;
                         end
-                        SRC_BUS: begin
+                        SRC_BUS: if (READS) begin
                             bus_addr <= base + 32'(fetch_n);
                             bus_we   <= 1'b0;
                             bus_req  <= 1'b1;

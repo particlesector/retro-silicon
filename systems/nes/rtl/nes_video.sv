@@ -25,7 +25,8 @@
 module nes_video #(
     parameter int X0    = 256,
     parameter int SCALE = 3,
-    parameter int REQ_Y = 680
+    parameter int REQ_Y = 680,
+    parameter bit CRC   = 1'b1  // 0 leaves out the video CRC (a lean build): crc reads 0, crc_t never toggles
 ) (
     // The NES's clock
     input  logic        clk,
@@ -139,8 +140,13 @@ module nes_video #(
 
     cdc_sync u_cap (.clk(pclk), .d(cap_t), .q(cap_seen));
 
-    crc32 #(.W(30)) u_crc (.clk(pclk), .rst(start && armed), .en(running), .data(sym_q), .crc(vcrc),
-                           .st_we(1'b0), .st_wdata('0));
+    if (CRC) begin : g_crc
+        crc32 #(.W(30)) u_crc (.clk(pclk), .rst(start && armed), .en(running), .data(sym_q), .crc(vcrc),
+                               .st_we(1'b0), .st_wdata('0));
+    end else begin : g_no_crc
+        assign vcrc = '0;
+        wire unused_crc = &{1'b0, sym_q};
+    end
 
     always_ff @(posedge pclk) begin
         fd      <= {fd[LATENCY:0], hframe};

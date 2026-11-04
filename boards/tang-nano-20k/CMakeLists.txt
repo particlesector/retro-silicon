@@ -32,3 +32,8 @@ get_property(nes_id GLOBAL PROPERTY RS_NES_BUILD_ID)
 # Re-check on the board whenever the RTL changes.
 rs_board_bitstream(nes BUILD ${build} COMPONENT nes_top CST nes.cst PARAMS BUILD_ID=${nes_id}
                    CLOCKS sclk=46.40625 pclk=74.25 fclk=371.25 SEED 1)
+# The lean build, to play on (systems/nes's DEBUG=0): the shell loads ROMs and
+# takes the live controller registers, writes only; no stops, CRCs, trace or
+# video probe. Same clocks.
+rs_board_bitstream(nes_lean BUILD ${build} COMPONENT nes_top CST nes.cst PARAMS BUILD_ID=${nes_id} DEBUG=0
+                   CLOCKS sclk=46.40625 pclk=74.25 fclk=371.25 SEED 1)

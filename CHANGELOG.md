@@ -89,6 +89,8 @@ All notable changes to this project are listed here. The format follows [Keep a 
 - `memory/axi-bridge`: `memory/sdram`'s byte port onto a 64-bit AXI master (single beats, valid AXI3 and AXI4), for memory behind a processor such as the Zynq-7000's DDR through its HP ports.
 - `harness`: NES 2.0 RAM sizes in `NesRom`; `Console::load` sets up the mapper and puts big CHR ROM in the board's memory; `Console::unsupported` says why a board can't run a ROM. Test ROMs: Holy Mapperel for each mapper (built from source), blargg's MMC3 IRQ tests and all-in-one MMC1 ROMs, and Holy Mapperel's larger CHR ROMs in the sim as the Tang Nano 20K runs them (`make_nes_ext_sim`).
 
+- `systems/nes`: the lean build (`DEBUG=0`), to play on: the shell takes writes only, and the stops, captures, CRCs, trace buffer, video probe, input script and the rest of the test machinery are left out. `debug/test-shell`: `READS=0` leaves out PEEK and CRC. `boards/tang-nano-20k`: the `nes_lean` bitstream. `harness`: `make_nes_lean_sim`, `Console::is_lean` and `Console::load_lean`; the lean build plays oam_read's and full_palette's golden frames over HDMI with the test build's video CRCs, and the same sound.
+
 ### Changed
 
 - The Yosys lint stops before technology mapping and adds Yosys's design checks, so it runs in under a second.

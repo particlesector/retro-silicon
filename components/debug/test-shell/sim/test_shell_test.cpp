@@ -7,6 +7,7 @@
 #include <vector>
 
 #include "Vtest_shell.h"
+#include "Vtest_shell_wo.h"
 #include "rig/crc32.hpp"
 #include "rig/faulty_link.hpp"
 #include "rig/shell.hpp"
@@ -20,8 +21,9 @@ using rig::shell::StatusError;
 
 // test_shell with a 32-bit sparse memory on its bus that acknowledges after a
 // random 0-4 clocks. Untouched bytes read as a pattern of their address.
-struct Bench : rig::SimModel {
-    Vtest_shell m;
+template <class V>
+struct BenchT : rig::SimModel {
+    V m;
     std::unordered_map<uint32_t, uint8_t> mem;
     std::mt19937 rng{9};
     int wait = -1;
@@ -65,12 +67,15 @@ struct Bench : rig::SimModel {
     }
 };
 
-struct Fixture {
-    Bench* bench;
+using Bench = BenchT<Vtest_shell>;
+
+template <class V>
+struct FixtureT {
+    BenchT<V>* bench;
     std::unique_ptr<rig::SimLink> link;
 
-    Fixture() {
-        auto b = std::make_unique<Bench>();
+    FixtureT() {
+        auto b = std::make_unique<BenchT<V>>();
         bench = b.get();
         link = std::make_unique<rig::SimLink>(std::move(b), kClksPerBit);
     }
@@ -92,6 +97,8 @@ std::vector<uint8_t> random_bytes(std::mt19937& rng, size_t n) {
     for (auto& b : v) b = static_cast<uint8_t>(rng());
     return v;
 }
+
+using Fixture = FixtureT<Vtest_shell>;
 
 uint8_t status_of(Client& c, uint8_t cmd, std::vector<uint8_t> payload) {
     try {
@@ -179,6 +186,20 @@ TEST_CASE("test_shell answers unknown commands and bad lengths with an error sta
     REQUIRE(status_of(c, rig::shell::kCrc, {0, 0, 0, 0, 1, 0, 0}) == rig::shell::kBadLength);
     REQUIRE(f.bench->reads + f.bench->writes == 0);
     REQUIRE(c.info().version == rig::shell::kVersion);  // still answering
+}
+
+TEST_CASE("test_shell without READS answers PEEK and CRC as unknown and never reads its bus") {
+    FixtureT<Vtest_shell_wo> f;
+    auto c = f.client();
+    REQUIRE(c.info().build_id == 0x12345678u);
+    std::vector<uint8_t> data{1, 2, 3, 4, 5};
+    REQUIRE(c.ping(data) == data);
+    c.poke(0x1000, data);
+    for (uint8_t k = 0; k < 5; k++) REQUIRE(f.bench->read(0x1000 + k) == data[k]);
+    REQUIRE(status_of(c, rig::shell::kPeek, {0, 0x10, 0, 0, 5, 0}) == rig::shell::kUnknownCmd);
+    REQUIRE(status_of(c, rig::shell::kCrc, {0, 0x10, 0, 0, 5, 0, 0, 0}) == rig::shell::kUnknownCmd);
+    REQUIRE(f.bench->reads == 0);
+    REQUIRE(f.bench->writes == 5);
 }
 
 TEST_CASE("test_shell drops a corrupt frame without answering, and counts it") {

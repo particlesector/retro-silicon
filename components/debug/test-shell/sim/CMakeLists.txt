@@ -5,3 +5,6 @@ target_link_libraries(test_shell_test PRIVATE rs_harness)
 # build uses the defaults.
 rs_verilate(test_shell_test COMPONENT test_shell PREFIX Vtest_shell
     PARAMS CLKS_PER_BIT=4 IDLE_CLKS=2700 BUILD_ID=32'h12345678)
+# Without reads (READS=0), as a lean build has it.
+rs_verilate(test_shell_test COMPONENT test_shell PREFIX Vtest_shell_wo
+    PARAMS CLKS_PER_BIT=4 IDLE_CLKS=2700 BUILD_ID=32'h12345678 READS=0)

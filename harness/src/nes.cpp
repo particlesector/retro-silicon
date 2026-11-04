@@ -77,6 +77,10 @@ std::vector<uint8_t> prg_image(const NesRom& rom) {
 } // namespace
 
 std::optional<std::string> Console::unsupported(const NesRom& rom) {
+    return unsupported_on(rom, c_.peek(kRegs + kMemBits, 1)[0], c_.peek(kRegs + kChrBits, 1)[0], chr_ext());
+}
+
+std::optional<std::string> unsupported_on(const NesRom& rom, unsigned mem_bits, unsigned chr_bits, bool chr_ext) {
     static const unsigned kMappers[] = {0, 1, 2, 3, 4, 7};
     if (std::find(std::begin(kMappers), std::end(kMappers), rom.mapper) == std::end(kMappers))
         return "mapper " + std::to_string(rom.mapper) + " isn't supported";
@@ -90,9 +94,9 @@ std::optional<std::string> Console::unsupported(const NesRom& rom) {
         return "CHR ROM must be a power of 2 from 8 KB, not " + std::to_string(rom.chr.size()) + " bytes";
     if (rom.chr.empty() && rom.chr_ram > 8192) return "CHR RAM over 8 KB isn't supported";
     if (prg_ram_size(rom) > 8192) return "PRG RAM over 8 KB isn't supported";
-    size_t mem = size_t{1} << c_.peek(kRegs + kMemBits, 1)[0];
-    size_t chr = size_t{1} << c_.peek(kRegs + kChrBits, 1)[0];
-    bool ext = rom.chr.size() > chr && chr_ext();
+    size_t mem = size_t{1} << mem_bits;
+    size_t chr = size_t{1} << chr_bits;
+    bool ext = rom.chr.size() > chr && chr_ext;
     size_t prg = prg_image(rom).size();
     if (prg > (ext ? std::min(mem, kChrExtBase) : mem))
         return std::to_string(prg / 1024) + " KB of PRG ROM doesn't fit this board's " +
@@ -186,6 +190,47 @@ std::optional<std::string> Console::load(const NesRom& rom, bool want_ext) {
     c_.write(kCpu + 0x6000, power_up_fill(power_up_, 0x2000, 4));
     c_.write(kPpuState, power_up_fill(power_up_, 256, 5));  // state words 0-63
     put32(kLeadDots, power_up_.lead_dots, 1);
+    return std::nullopt;
+}
+
+bool Console::is_lean() {
+    try {
+        c_.peek(kRegs + kCtrl, 1);
+        return false;
+    } catch (const shell::StatusError& e) {
+        if (e.status == shell::kUnknownCmd) return true;
+        throw;
+    }
+}
+
+std::optional<std::string> Console::load_lean(const NesRom& rom, unsigned mem_bits, unsigned chr_bits, bool chr_ext) {
+    if (auto e = unsupported_on(rom, mem_bits, chr_bits, chr_ext)) return e;
+    set_live_input(0, 0);
+    // Each POKE's frame is CRC-checked and answered, so writes that arrive
+    // are whole; there's no reading them back.
+    auto prg = prg_image(rom);
+    c_.write(kSdram, prg);
+    put32(kPrgMask, static_cast<uint32_t>(prg.size() - 1), 3);
+    bool chr_ram = rom.chr.empty();
+    bool ext = !chr_ram && rom.chr.size() > (size_t{1} << chr_bits);
+    put32(kMapper, rom.mapper, 1);
+    put32(kCart, (rom.mirroring == NesRom::Mirroring::kVertical ? 1 : 0) | (chr_ram ? 2 : 0) |
+                     (prg_ram_size(rom) ? 4 : 0) | (ext ? 8 : 0), 1);
+    std::vector<uint8_t> chr_ram_fill(8192, 0);
+    const std::vector<uint8_t>& chr = chr_ram ? chr_ram_fill : rom.chr;
+    put32(kChrMask, static_cast<uint32_t>(chr.size() - 1), 3);
+    if (ext) {
+        std::vector<uint8_t> laid(chr.size());
+        for (size_t a = 0; a < chr.size(); a++) laid[chr_ext_offset(a)] = chr[a];
+        c_.write(kSdram + kChrExtBase, laid);
+    } else {
+        c_.write(kChr, chr);
+    }
+    // Power-up memory as zeros, as MesenCE's default; OAM and the CPU/PPU
+    // alignment are the lean build's own (cleared at reset, and LEAD_DOTS).
+    c_.write(kPpu + 0x2000, std::vector<uint8_t>(0x1000, 0));
+    c_.write(kCpu + 0x0000, std::vector<uint8_t>(0x800, 0));
+    c_.write(kCpu + 0x6000, std::vector<uint8_t>(0x2000, 0));
     return std::nullopt;
 }
 
