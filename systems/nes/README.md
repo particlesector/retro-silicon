@@ -240,6 +240,8 @@ It plays exactly what the test build plays: in the sim (`make_nes_lean_sim`, the
 
 **The unstable opcodes' ROMs (Oct 31).** blargg's `all_instrs`, `instr_timing`, `instr_misc` and two of their singles need the unstable opcodes, which `cpu/6502` now runs; with them the golden list has 188 ROMs, every manifest ROM but nestest (checked by its trace).
 
+**MMC2 (Nov 5).** Holy Mapperel's MMC2 ROM (`mapperel-mmc2`, 128 KB of PRG and 64 KB of CHR) matches MesenCE's frame and the sim's audio CRC with its PRG ROM behind the sim's AXI memory and with its CHR ROM in the SDRAM model, and all 189 golden ROMs pass on the Tang Nano 20K and the PYNQ-Z2 (187 on the Tang Console 138K, which skips the two whose ROMs don't fit its block RAM).
+
 **The reset button (Oct 31).** blargg's apu_reset and cpu_reset ROMs (8) ask for it, MesenCE presses it 10 frames later, and the core presses it at the same frames: all 8 match MesenCE in the sim and on both boards, 183 golden ROMs in all.
 
 **The sweep (Oct 31).** The golden list has 175 ROMs: the 103 before and 72 more from nes-test-roms (every ROM there for these mappers with a result MesenCE gives automatically). 165 match MesenCE in the sim, on the Tang Nano 20K and on the PYNQ-Z2, with the same CRCs. The same 10 fail on all three, to be fixed in milestone 10b:
