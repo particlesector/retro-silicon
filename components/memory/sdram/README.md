@@ -39,6 +39,17 @@ Module `sdram_ctrl`.
 | `INIT_US` | 200 | Power-up wait before the first command |
 | `REFRESH_NS` | 15000 | One refresh this often; 4096 rows in 64 ms needs 15,625 or less |
 
+<!-- size and speed: tools/timing/report.py --readmes writes this section -->
+## Size and speed
+
+Each top module placed alone by `tools/timing/report.py` (see `docs/timing.md` for how to read it): its fastest clock and its logic, in LUT4s and ALUs on the Gowin parts, LUT6s on the XC7Z020, and 18 Kbit block RAMs.
+
+| Module | Tang Nano 20K (GW2A-18C) | Tang Console 138K (GW5AST-138C) | PYNQ-Z2 (XC7Z020) |
+| --- | --- | --- | --- |
+| `sdram_ctrl` | 332 MHz, 207 LUTs | 297 MHz, 206 LUTs | 212 MHz, 188 LUTs |
+
+<!-- end of size and speed -->
+
 ## Status
 
 Sim tests, at 27, 47 and 100 MHz, against `sim/sdram_model.hpp`, a model of the chip that checks every command against its timing limits (power-up sequence, tRCD, tRP, tRC, tRAS, tWR, refresh interval) and puts read data on the bus only at the cycle the CAS latency allows:

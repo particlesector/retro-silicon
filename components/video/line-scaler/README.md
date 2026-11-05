@@ -47,6 +47,17 @@ The source tells the display how many lines it has finished as a Gray-coded coun
 
 `REQ_Y` suits a source like the NES. The NES stops at line 240, so its first picture line arrives 22 lines and 259 dots after the request (1.45 ms, 65 display lines). With the NES into 720p, the sim finds that requests up to line 684 work, so 680 leaves four display lines (90 µs) of margin.
 
+<!-- size and speed: tools/timing/report.py --readmes writes this section -->
+## Size and speed
+
+Each top module placed alone by `tools/timing/report.py` (see `docs/timing.md` for how to read it): its fastest clock and its logic, in LUT4s and ALUs on the Gowin parts, LUT6s on the XC7Z020, and 18 Kbit block RAMs.
+
+| Module | Tang Nano 20K (GW2A-18C) | Tang Console 138K (GW5AST-138C) | PYNQ-Z2 (XC7Z020) |
+| --- | --- | --- | --- |
+| `line_scaler` | 124 MHz, 341 LUTs, 5 BRAM | 113 MHz, 312 LUTs, 5 BRAM | 129 MHz, 244 LUTs, 5 BRAM |
+
+<!-- end of size and speed -->
+
 ## Status
 
 Sim tests, with both clocks at the Tang Nano 20K's rates (46.40625 and 74.25 MHz, from one PLL) and a source with the 2C02's exact timing (341 dots by 262 lines, pixels two dots after they're drawn, the odd-frame dot skip):

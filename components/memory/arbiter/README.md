@@ -28,6 +28,17 @@ Module `mem_arbiter`.
 | `N` | 2 | Clients |
 | `AW` | 23 | Address bits |
 
+<!-- size and speed: tools/timing/report.py --readmes writes this section -->
+## Size and speed
+
+Each top module placed alone by `tools/timing/report.py` (see `docs/timing.md` for how to read it): its fastest clock and its logic, in LUT4s and ALUs on the Gowin parts, LUT6s on the XC7Z020, and 18 Kbit block RAMs.
+
+| Module | Tang Nano 20K (GW2A-18C) | Tang Console 138K (GW5AST-138C) | PYNQ-Z2 (XC7Z020) |
+| --- | --- | --- | --- |
+| `mem_arbiter` | 402 MHz, 53 LUTs | 380 MHz, 53 LUTs | 442 MHz, 52 LUTs |
+
+<!-- end of size and speed -->
+
 ## Status
 
 Sim test (N = 3) against a memory with a random latency of 1 to 7 clocks, with three clients each keeping requests going in its own part of the address space: 200,000 clocks in which every request is served exactly once, every read gives the byte last written, and client 0 never waits more than two accesses. In `systems/nes` it serves the CPU's PRG reads and the shell, on both boards.

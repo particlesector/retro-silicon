@@ -33,6 +33,17 @@ Module `save_state_ctrl`.
 | `BASES`, `LENS` | 0 | Each region's first address and length in bytes, region r in bits `[r*32 +: 32]` |
 | `AW` | 15 | Buffer: 2^AW bytes, at least the regions' total |
 
+<!-- size and speed: tools/timing/report.py --readmes writes this section -->
+## Size and speed
+
+Each top module placed alone by `tools/timing/report.py` (see `docs/timing.md` for how to read it): its fastest clock and its logic, in LUT4s and ALUs on the Gowin parts, LUT6s on the XC7Z020, and 18 Kbit block RAMs.
+
+| Module | Tang Nano 20K (GW2A-18C) | Tang Console 138K (GW5AST-138C) | PYNQ-Z2 (XC7Z020) |
+| --- | --- | --- | --- |
+| `save_state_ctrl` | 392 MHz, 119 LUTs | 277 MHz, 114 LUTs | 168 MHz, 103 LUTs |
+
+<!-- end of size and speed -->
+
 ## Status
 
 Sim tests, with two regions behind a bus of random latency and a stop that takes up to 20 clocks: a save fills the buffer with the regions in order, touching nothing else; a repeated command does nothing; a load after the system is scrambled restores every byte; nothing reaches the bus before `ready`; and a buffer the host wrote loads. Planted bug caught: a load that doesn't wait for its buffer read.

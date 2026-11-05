@@ -56,6 +56,18 @@ The port follows [docs/conventions.md](../../../docs/conventions.md): 17 words, 
 
 The fields within each word are packed as listed by each module's `st_rdata`.
 
+<!-- size and speed: tools/timing/report.py --readmes writes this section -->
+## Size and speed
+
+Each top module placed alone by `tools/timing/report.py` (see `docs/timing.md` for how to read it): its fastest clock and its logic, in LUT4s and ALUs on the Gowin parts, LUT6s on the XC7Z020, and 18 Kbit block RAMs.
+
+| Module | Tang Nano 20K (GW2A-18C) | Tang Console 138K (GW5AST-138C) | PYNQ-Z2 (XC7Z020) |
+| --- | --- | --- | --- |
+| `apu_2a03` | 107 MHz, 2995 LUTs | 120 MHz, 2854 LUTs | 89 MHz, 2183 LUTs |
+| `apu_mixer` | 216 MHz, 143 LUTs, 1 BRAM | 230 MHz, 131 LUTs, 1 BRAM | 212 MHz, 196 LUTs |
+
+<!-- end of size and speed -->
+
 ## Status
 
 Unit tests check:

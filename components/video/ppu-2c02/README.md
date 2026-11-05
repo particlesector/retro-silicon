@@ -55,6 +55,18 @@ The port follows [docs/conventions.md](../../../docs/conventions.md): 101 words,
 
 OAM has no reset, as on the chip: a system clears it through this port at power-up if it wants it clear.
 
+<!-- size and speed: tools/timing/report.py --readmes writes this section -->
+## Size and speed
+
+Each top module placed alone by `tools/timing/report.py` (see `docs/timing.md` for how to read it): its fastest clock and its logic, in LUT4s and ALUs on the Gowin parts, LUT6s on the XC7Z020, and 18 Kbit block RAMs.
+
+| Module | Tang Nano 20K (GW2A-18C) | Tang Console 138K (GW5AST-138C) | PYNQ-Z2 (XC7Z020) |
+| --- | --- | --- | --- |
+| `ppu_2c02` | 85 MHz, 5966 LUTs, 2 BRAM | 73 MHz, 5851 LUTs, 2 BRAM | 54 MHz, 4495 LUTs |
+| `ppu_2c02_rgb` | 371 MHz, 9 LUTs, 1 BRAM | 371 MHz, 9 LUTs, 1 BRAM | 552 MHz, 9 LUTs, 1 BRAM |
+
+<!-- end of size and speed -->
+
 ## Status
 
 Unit tests: frame length with and without rendering (the odd frame's skipped dot), VBL set and clear times, NMI and its suppression, $2007's buffer, palette mirrors and increment, a background tile with fine X scroll, sprite 0 hit's first dot, and a save-state round trip mid-frame with rendering and register writes going on.

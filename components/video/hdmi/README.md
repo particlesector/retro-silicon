@@ -51,6 +51,18 @@ HDMI 1.4, section 5.2, with these additions to the DVI stream:
 | `VIC` | 4 | The AVI InfoFrame's video format (4 is 720p60) |
 | `ACR_N`, `ACR_CTS` | 6144, 74250 | Audio clock regeneration: 128 × 48 kHz / 1 kHz, and the pixel clock / 1 kHz |
 
+<!-- size and speed: tools/timing/report.py --readmes writes this section -->
+## Size and speed
+
+Each top module placed alone by `tools/timing/report.py` (see `docs/timing.md` for how to read it): its fastest clock and its logic, in LUT4s and ALUs on the Gowin parts, LUT6s on the XC7Z020, and 18 Kbit block RAMs.
+
+| Module | Tang Nano 20K (GW2A-18C) | Tang Console 138K (GW5AST-138C) | PYNQ-Z2 (XC7Z020) |
+| --- | --- | --- | --- |
+| `hdmi` | 152 MHz, 1573 LUTs | 154 MHz, 1457 LUTs | 116 MHz, 1226 LUTs |
+| `tmds_encoder` | 168 MHz, 140 LUTs | 172 MHz, 128 LUTs | 168 MHz, 114 LUTs |
+
+<!-- end of size and speed -->
+
 ## Status
 
 Sim tests (`sim/tmds_model.hpp` holds a TMDS encoder written from the DVI spec, a receiver's decoder, and an HDMI sink's decoder that follows preambles into data islands, rebuilds packets and checks their BCH codes, checksums and sample parity; the harness uses them too):

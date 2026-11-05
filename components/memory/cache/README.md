@@ -30,6 +30,17 @@ Module `mem_cache`.
 | `IDX` | 12 | 2^IDX lines: 32 KB |
 | `PREFETCH` | 1 | Fetch the next line after a miss, and after the first read of a prefetched line |
 
+<!-- size and speed: tools/timing/report.py --readmes writes this section -->
+## Size and speed
+
+Each top module placed alone by `tools/timing/report.py` (see `docs/timing.md` for how to read it): its fastest clock and its logic, in LUT4s and ALUs on the Gowin parts, LUT6s on the XC7Z020, and 18 Kbit block RAMs.
+
+| Module | Tang Nano 20K (GW2A-18C) | Tang Console 138K (GW5AST-138C) | PYNQ-Z2 (XC7Z020) |
+| --- | --- | --- | --- |
+| `mem_cache` | 120 MHz, 1172 LUTs, 19 BRAM | 170 MHz, 1214 LUTs, 19 BRAM | 152 MHz, 961 LUTs, 19 BRAM |
+
+<!-- end of size and speed -->
+
 ## Status
 
 Sim tests (`AW` = 16, `IDX` = 6), with and without prefetch, behind a memory that answers in 2 to 15 clocks and checks that each access's address, write enable and data hold from its request to its ack:
