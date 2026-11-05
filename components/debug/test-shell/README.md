@@ -71,6 +71,17 @@ An error response has no payload.
 
 Built from `rtl/ts_rx.sv` (frame receiver), `rtl/ts_tx.sv` (frame transmitter, CRC computed as bytes go out, so a response of any length needs no buffer) and `rtl/test_shell.sv` (dispatcher), with `common/uart` and `common/crc32`. About 900 LUTs and one block RAM on a GW2A-18C.
 
+<!-- size and speed: tools/timing/report.py --readmes writes this section -->
+## Size and speed
+
+Each top module placed alone by `tools/timing/report.py` (see `docs/timing.md` for how to read it): its fastest clock and its logic, in LUT4s and ALUs on the Gowin parts, LUT6s on the XC7Z020, and 18 Kbit block RAMs.
+
+| Module | Tang Nano 20K (GW2A-18C) | Tang Console 138K (GW5AST-138C) | PYNQ-Z2 (XC7Z020) |
+| --- | --- | --- | --- |
+| `test_shell` | 181 MHz, 1567 LUTs, 1 BRAM | 164 MHz, 1518 LUTs, 1 BRAM | 142 MHz, 1293 LUTs, 1 BRAM |
+
+<!-- end of size and speed -->
+
 ## Status
 
 Sim tests against a bus model with a random 0-4 clock acknowledge delay:

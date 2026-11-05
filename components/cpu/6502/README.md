@@ -58,6 +58,17 @@ Every official opcode, and the unofficial ones: LAX, SAX, DCP, ISC, SLO, RLA, SR
 
 The JAM opcodes stop the CPU with `halted` set.
 
+<!-- size and speed: tools/timing/report.py --readmes writes this section -->
+## Size and speed
+
+Each top module placed alone by `tools/timing/report.py` (see `docs/timing.md` for how to read it): its fastest clock and its logic, in LUT4s and ALUs on the Gowin parts, LUT6s on the XC7Z020, and 18 Kbit block RAMs.
+
+| Module | Tang Nano 20K (GW2A-18C) | Tang Console 138K (GW5AST-138C) | PYNQ-Z2 (XC7Z020) |
+| --- | --- | --- | --- |
+| `cpu_6502` | 91 MHz, 2705 LUTs | 93 MHz, 2620 LUTs | 83 MHz, 2071 LUTs |
+
+<!-- end of size and speed -->
+
 ## Status
 
 Sim tests:

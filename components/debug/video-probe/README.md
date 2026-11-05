@@ -35,6 +35,17 @@ The capture must be armed before its line passes: stop the system at the end of 
 | `W` | 256 | Pixels a line |
 | `H` | 240 | Lines a frame |
 
+<!-- size and speed: tools/timing/report.py --readmes writes this section -->
+## Size and speed
+
+Each top module placed alone by `tools/timing/report.py` (see `docs/timing.md` for how to read it): its fastest clock and its logic, in LUT4s and ALUs on the Gowin parts, LUT6s on the XC7Z020, and 18 Kbit block RAMs.
+
+| Module | Tang Nano 20K (GW2A-18C) | Tang Console 138K (GW5AST-138C) | PYNQ-Z2 (XC7Z020) |
+| --- | --- | --- | --- |
+| `video_probe` | 286 MHz, 406 LUTs, 2 BRAM | 196 MHz, 409 LUTs, 2 BRAM | 192 MHz, 284 LUTs, 2 BRAM |
+
+<!-- end of size and speed -->
+
 ## Status
 
 Sim tests (at 16 x 6): frame and line CRCs match a software CRC over three frames, with pixels 3 clocks apart; a whole frame captured line by line, holding after each line until the next is asked for, matches what was sent.

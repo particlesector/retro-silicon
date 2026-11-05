@@ -27,6 +27,17 @@ Module `trace_buffer`.
 | `W` | 32 | Entry width, a multiple of 8 |
 | `AW` | 10 | 2^AW entries |
 
+<!-- size and speed: tools/timing/report.py --readmes writes this section -->
+## Size and speed
+
+Each top module placed alone by `tools/timing/report.py` (see `docs/timing.md` for how to read it): its fastest clock and its logic, in LUT4s and ALUs on the Gowin parts, LUT6s on the XC7Z020, and 18 Kbit block RAMs.
+
+| Module | Tang Nano 20K (GW2A-18C) | Tang Console 138K (GW5AST-138C) | PYNQ-Z2 (XC7Z020) |
+| --- | --- | --- | --- |
+| `trace_buffer` | 317 MHz, 199 LUTs, 4 BRAM | 295 MHz, 195 LUTs, 4 BRAM | 222 MHz, 150 LUTs, 4 BRAM |
+
+<!-- end of size and speed -->
+
 ## Status
 
 Sim test (`AW` = 4), against a software model: bursts of entries, some far longer than the buffer, with `set`s and resets between. After each burst every valid entry reads back at its ring index, and `count` and `filled` match. The test caught two planted bugs: a `set` that leaves old entries valid, and `filled` counting past the depth.

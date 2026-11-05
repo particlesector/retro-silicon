@@ -32,6 +32,17 @@ The AXI data bus is 64 bits wide. Error responses aren't reported: the byte port
 | `BASE` | `0x10000000` | The AXI address of byte 0: the window is `BASE` to `BASE + 2^AW - 1`, 8-byte aligned |
 | `IDW` | 6 | AXI ID width (6 for the Zynq-7000's HP ports); IDs are 0 |
 
+<!-- size and speed: tools/timing/report.py --readmes writes this section -->
+## Size and speed
+
+Each top module placed alone by `tools/timing/report.py` (see `docs/timing.md` for how to read it): its fastest clock and its logic, in LUT4s and ALUs on the Gowin parts, LUT6s on the XC7Z020, and 18 Kbit block RAMs.
+
+| Module | Tang Nano 20K (GW2A-18C) | Tang Console 138K (GW5AST-138C) | PYNQ-Z2 (XC7Z020) |
+| --- | --- | --- | --- |
+| `axi_bridge` | 613 MHz, 144 LUTs | 239 MHz, 146 LUTs | 265 MHz, 111 LUTs |
+
+<!-- end of size and speed -->
+
 ## Status
 
 Sim test (`AW` = 12): 20,000 random byte reads and writes against a byte array, through an AXI slave model that withholds ready on every channel at random and answers after 0 to 11 clocks. The model checks AXI's rules as it goes: payloads hold while valid is up, one transfer at a time, single 8-byte beats inside the window, a one-byte strobe. `req` is held high the clock after each `ack` without starting a second access. The bench caught both bugs planted in it, a read's byte from the wrong lane and a write's strobe on the wrong byte.

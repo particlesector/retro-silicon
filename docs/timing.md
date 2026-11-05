@@ -11,7 +11,7 @@ How to read it:
 | Module | Component | Tang Nano 20K (GW2A-18C) | Tang Console 138K (GW5AST-138C) | PYNQ-Z2 (XC7Z020) |
 | --- | --- | --- | --- | --- |
 | `apu_2a03` | `components/audio/apu-2a03` | 107 MHz, 2995 LUTs | 120 MHz, 2854 LUTs | 89 MHz, 2183 LUTs |
-| `apu_mixer` | `components/audio/apu-2a03` | 165 MHz, 143 LUTs, 1 BRAM | 162 MHz, 132 LUTs, 1 BRAM | 208 MHz, 196 LUTs |
+| `apu_mixer` | `components/audio/apu-2a03` | 216 MHz, 143 LUTs, 1 BRAM | 230 MHz, 131 LUTs, 1 BRAM | 212 MHz, 196 LUTs |
 | `axi_bridge` | `components/memory/axi-bridge` | 613 MHz, 144 LUTs | 239 MHz, 146 LUTs | 265 MHz, 111 LUTs |
 | `bram_mem` | `components/memory/bram` | — | 66 MHz, 164 LUTs, 128 BRAM | — |
 | `cdc_sync` | `components/common/cdc` | 3759 MHz, 0 LUTs | 3759 MHz, 0 LUTs | — |
@@ -30,7 +30,7 @@ How to read it:
 | `resampler` | `components/audio/resampler` | 229 MHz, 561 LUTs, 1 DSP | 150 MHz, 957 LUTs | 139 MHz, 419 LUTs, 3 DSP |
 | `save_state_ctrl` | `components/common/save-state` | 392 MHz, 119 LUTs | 277 MHz, 114 LUTs | 168 MHz, 103 LUTs |
 | `sdram_ctrl` | `components/memory/sdram` | 332 MHz, 207 LUTs | 297 MHz, 206 LUTs | 212 MHz, 188 LUTs |
-| `test_shell` | `components/debug/test-shell` | 181 MHz, 1567 LUTs, 1 BRAM | 164 MHz, 1518 LUTs, 1 BRAM | 130 MHz, 1297 LUTs, 1 BRAM |
+| `test_shell` | `components/debug/test-shell` | 181 MHz, 1567 LUTs, 1 BRAM | 164 MHz, 1518 LUTs, 1 BRAM | 142 MHz, 1293 LUTs, 1 BRAM |
 | `tmds_encoder` | `components/video/hdmi` | 168 MHz, 140 LUTs | 172 MHz, 128 LUTs | 168 MHz, 114 LUTs |
 | `trace_buffer` | `components/debug/trace` | 317 MHz, 199 LUTs, 4 BRAM | 295 MHz, 195 LUTs, 4 BRAM | 222 MHz, 150 LUTs, 4 BRAM |
 | `uart_rx` | `components/common/uart` | 440 MHz, 54 LUTs | 189 MHz, 50 LUTs | 324 MHz, 42 LUTs |
@@ -41,7 +41,7 @@ Changes this report has led to so far:
 
 - `audio/apu-2a03`: the pulse channels' sweep targets are registered a clock behind. They were the Tang Nano 20K's NES's longest path, and now every seed tried meets its 46.4 MHz.
 - `audio/resampler`: its average and high-pass take a clock each. The multiply, three DSP blocks on the XC7Z020, ran into the high-pass in one clock, at 42 MHz, against the PYNQ-Z2's 37.125. It now reaches 139 MHz there.
-
 - `boards/gowin/build.sh` and this report: Gowin synthesis maps no wide multiplexers (`-nowidelut`). The slices' MUX2_LUT5-8 take their inputs only from LUTs, so Yosys padded each other input with a LUT1: over 700 in the PPU alone. Without them almost every component is smaller and faster on both Gowin parts (the PPU from 65 to 85 MHz and from 6,821 to 5,966 LUTs on the GW2A-18C; `mem_cache` from 2,839 to 1,172 LUTs), and the systems with them: the Tang Nano 20K's NES from 15,915 LUT4s at 53 MHz to 14,341 at 62 MHz.
+- `audio/apu-2a03`: the mixer registers its pulse index on the rising edge. Both table indices were on the falling edge, which left the pulse sum half a clock and made it the Tang Nano 20K's NES's longest path; the TND index stays on the falling edge, as its block RAM address must. The mixer alone goes from 165 to 216 MHz on the GW2A-18C, and the 20K's NES from 62 to 69 MHz.
 
 The PPU, at 54-85 MHz, is still the slowest component, and the CPU (83-93 MHz) next.

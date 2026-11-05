@@ -3,7 +3,7 @@
 """Size and speed of every component, on each FPGA family the boards use.
 
 usage: tools/timing/report.py [--components build/components.json] [--family F]... [--only NAME]...
-                              [--jobs N] [--out FILE] [--work DIR]
+                              [--jobs N] [--out FILE] [--work DIR] [--load FILE]... [--readmes]
 
 Each top module in the CMake build's component list (build/components.json)
 goes into a wrapper that keeps every timing path between registers and needs
@@ -22,7 +22,10 @@ percent from run to run; compare the same component across changes, not
 components with each other to the last MHz.
 
 Writes the results as JSON (default build/timing/results.json) and prints them
-as a Markdown table; each run's files are in --work (default build/timing/work).
+as a Markdown table, docs/timing.md's; each run's files are in --work (default
+build/timing/work). --load merges earlier runs' JSON (later files win, for
+the families asked for) instead of measuring. --readmes writes each
+component's "Size and speed" section into its README.md, between markers.
 """
 
 import argparse
@@ -37,11 +40,11 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[2]
 
 FAMILIES = {
-    "gw2a": {"board": "Tang Nano 20K", "synth": "synth_gowin -nowidelut", "device": "GW2AR-LV18QN88C8/I7",
+    "gw2a": {"board": "Tang Nano 20K", "part": "GW2A-18C", "synth": "synth_gowin -nowidelut", "device": "GW2AR-LV18QN88C8/I7",
              "family": "GW2A-18C", "pins": ("4", "15", "16")},
-    "gw5a": {"board": "Tang Console 138K", "synth": "synth_gowin -nowidelut -family gw5a", "device": "GW5AST-LV138PG484AC1/I0",
+    "gw5a": {"board": "Tang Console 138K", "part": "GW5AST-138C", "synth": "synth_gowin -nowidelut -family gw5a", "device": "GW5AST-LV138PG484AC1/I0",
              "family": "GW5AST-138C", "pins": ("V22", "V19", "G22")},
-    "xc7": {"board": "PYNQ-Z2", "synth": "synth_xilinx -flatten -abc9 -arch xc7", "chipdb": "xc7z020clg400.bin",
+    "xc7": {"board": "PYNQ-Z2", "part": "XC7Z020", "synth": "synth_xilinx -flatten -abc9 -arch xc7", "chipdb": "xc7z020clg400.bin",
             "pins": ("H16", "Y18", "Y19")},
 }
 TARGET_MHZ = 500  # beyond any of them, so the router works for speed
@@ -141,6 +144,64 @@ def measure(comp, top, fam, base):
     return {"fmax_mhz": round(fmax, 1), "utilisation": util, "critical_from": src, "critical_to": sink}
 
 
+def cell(r, fam):
+    """One result as a table cell: the fastest clock, logic, block RAM and DSP."""
+    if not r or "error" in r:
+        return "—"
+    u = r["utilisation"]
+    if fam == "xc7":
+        logic = sum(v for k, v in u.items() if k.startswith("SLICE_LUTX"))
+        ram = u.get("RAMB18E1", 0) + 2 * u.get("RAMB36E1", 0)
+        dsp = u.get("DSP48E1", 0)
+    else:
+        logic = u.get("LUT4", 0) + u.get("ALU", 0)
+        ram = u.get("BSRAM", 0)
+        dsp = sum(v for k, v in u.items() if k.startswith("MULT"))
+    return (f"{r['fmax_mhz']:.0f} MHz, {logic} LUTs" + (f", {ram} BRAM" if ram else "") +
+            (f", {dsp} DSP" if dsp else ""))
+
+
+BEGIN = "<!-- size and speed: tools/timing/report.py --readmes writes this section -->"
+END = "<!-- end of size and speed -->"
+
+
+def readme_section(rows, fams):
+    """The README section for one component's modules."""
+    out = [BEGIN, "## Size and speed", "",
+           "Each top module placed alone by `tools/timing/report.py` (see `docs/timing.md` for how to read it): "
+           "its fastest clock and its logic, in LUT4s and ALUs on the Gowin parts, LUT6s on the XC7Z020, "
+           "and 18 Kbit block RAMs.", "",
+           "| Module | " + " | ".join(f"{FAMILIES[f]['board']} ({FAMILIES[f].get('part', f)})" for f in fams) + " |",
+           "| --- |" + " --- |" * len(fams)]
+    for t, r in rows:
+        out.append(f"| `{t}` | " + " | ".join(cell(r.get(f), f) for f in fams) + " |")
+    out += ["", END]
+    return "\n".join(out)
+
+
+def write_readmes(results, fams):
+    """Writes each component's section into its README.md: replaces it, or
+    adds it before `## Status` (or at the end)."""
+    by_dir = {}
+    for t, r in sorted(results.items()):
+        by_dir.setdefault(r["component"], []).append((t, r))
+    for comp, rows in by_dir.items():
+        path = ROOT / comp / "README.md"
+        if not path.exists():
+            continue
+        text = path.read_text()
+        section = readme_section(rows, fams)
+        if BEGIN in text and END in text:
+            text = text[:text.index(BEGIN)] + section + text[text.index(END) + len(END):]
+        elif "\n## Status" in text:
+            i = text.index("\n## Status") + 1
+            text = text[:i] + section + "\n\n" + text[i:]
+        else:
+            text = text.rstrip("\n") + "\n\n" + section + "\n"
+        path.write_text(text)
+        print(f"wrote {path.relative_to(ROOT)}", file=sys.stderr)
+
+
 def main():
     ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     ap.add_argument("--components", type=Path, default=ROOT / "build/components.json")
@@ -149,43 +210,44 @@ def main():
     ap.add_argument("--jobs", type=int, default=6)
     ap.add_argument("--out", type=Path, default=ROOT / "build/timing/results.json")
     ap.add_argument("--work", type=Path, default=ROOT / "build/timing/work")
+    ap.add_argument("--load", type=Path, action="append",
+                    help="results JSON from an earlier run, merged in order instead of measuring")
+    ap.add_argument("--readmes", action="store_true", help="write each component's README section")
     args = ap.parse_args()
     fams = args.family or list(FAMILIES)
-    comps = json.loads(args.components.read_text())
-    jobs = [(c, t, f) for c in comps for t in c["tops"] for f in fams
-            if not args.only or c["name"] in args.only or t in args.only]
-    base = args.work
     results = {}
-    with concurrent.futures.ThreadPoolExecutor(args.jobs) as pool:
-        futs = {pool.submit(measure, c, t, f, base): (c, t, f) for c, t, f in jobs}
-        for fut in concurrent.futures.as_completed(futs):
-            c, t, f = futs[fut]
-            try:
-                r = fut.result()
-            except Exception as e:  # noqa: BLE001 - reported per entry
-                r = {"error": str(e)}
-            results.setdefault(t, {"component": c["dir"]})[f] = r
-            print(f"{t} on {f}: {r.get('fmax_mhz', r.get('error'))}", file=sys.stderr)
-    args.out.parent.mkdir(parents=True, exist_ok=True)
-    args.out.write_text(json.dumps(results, indent=2, sort_keys=True) + "\n")
+    if args.load:
+        for f in args.load:
+            for t, r in json.loads(f.read_text()).items():
+                results.setdefault(t, {"component": r["component"]})
+                results[t].update({k: v for k, v in r.items() if k in fams})
+    else:
+        comps = json.loads(args.components.read_text())
+        jobs = [(c, t, f) for c in comps for t in c["tops"] for f in fams
+                if not args.only or c["name"] in args.only or t in args.only]
+        base = args.work
+        with concurrent.futures.ThreadPoolExecutor(args.jobs) as pool:
+            futs = {pool.submit(measure, c, t, f, base): (c, t, f) for c, t, f in jobs}
+            for fut in concurrent.futures.as_completed(futs):
+                c, t, f = futs[fut]
+                try:
+                    r = fut.result()
+                except Exception as e:  # noqa: BLE001 - reported per entry
+                    r = {"error": str(e)}
+                results.setdefault(t, {"component": c["dir"]})[f] = r
+                print(f"{t} on {f}: {r.get('fmax_mhz', r.get('error'))}", file=sys.stderr)
+        args.out.parent.mkdir(parents=True, exist_ok=True)
+        args.out.write_text(json.dumps(results, indent=2, sort_keys=True) + "\n")
+        print(f"work files in {base}", file=sys.stderr)
 
-    def cell(r, fam):
-        if "error" in r:
-            return "failed"
-        u = r["utilisation"]
-        if fam == "xc7":
-            logic = sum(v for k, v in u.items() if k.startswith("SLICE_LUTX"))
-            ram = u.get("RAMB18E1", 0) + 2 * u.get("RAMB36E1", 0)
-        else:
-            logic = u.get("LUT4", 0) + u.get("ALU", 0)
-            ram = u.get("BSRAM", 0)
-        return f"{r['fmax_mhz']:.0f} MHz, {logic} LUTs" + (f", {ram} BRAM" if ram else "")
-
-    print("| Module | " + " | ".join(FAMILIES[f]["board"] for f in fams) + " |")
-    print("| --- |" + " --- |" * len(fams))
+    print("| Module | Component | " + " | ".join(f"{FAMILIES[f]['board']} ({FAMILIES[f].get('part', f)})"
+                                                for f in fams) + " |")
+    print("| --- | --- |" + " --- |" * len(fams))
     for t in sorted(results):
-        print(f"| `{t}` | " + " | ".join(cell(results[t].get(f, {"error": ""}), f) for f in fams) + " |")
-    print(f"\nwork files in {base}", file=sys.stderr)
+        print(f"| `{t}` | `{results[t]['component']}` | " +
+              " | ".join(cell(results[t].get(f), f) for f in fams) + " |")
+    if args.readmes:
+        write_readmes(results, fams)
     return 1 if any("error" in r for v in results.values() for k, r in v.items() if k != "component") else 0
 
 

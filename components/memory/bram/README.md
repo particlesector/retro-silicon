@@ -21,6 +21,17 @@ Module `bram_mem`.
 | `IW` | 23 | The port's address width; bits above AW are ignored |
 | `BANK_AW` | AW | Built from banks of 2^BANK_AW bytes, the read muxed after them: for tools that can't place a deeper memory as one (openXC7: 32 KB, BANK_AW = 15) |
 
+<!-- size and speed: tools/timing/report.py --readmes writes this section -->
+## Size and speed
+
+Each top module placed alone by `tools/timing/report.py` (see `docs/timing.md` for how to read it): its fastest clock and its logic, in LUT4s and ALUs on the Gowin parts, LUT6s on the XC7Z020, and 18 Kbit block RAMs.
+
+| Module | Tang Nano 20K (GW2A-18C) | Tang Console 138K (GW5AST-138C) | PYNQ-Z2 (XC7Z020) |
+| --- | --- | --- | --- |
+| `bram_mem` | — | 66 MHz, 164 LUTs, 128 BRAM | — |
+
+<!-- end of size and speed -->
+
 ## Status
 
 Sim test (AW = 10, IW = 12, and again in four banks with BANK_AW = 8): 40,000 random reads and writes, through the mirror, against a byte array, each acked in one clock, with `req` left high during the ack. In `systems/nes` (`nes_bram`) it holds PRG ROM on the Tang Console 138K.

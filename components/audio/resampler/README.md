@@ -30,6 +30,17 @@ Module `resampler`.
 | `HPF` | 9 | The high-pass filter's shift |
 | `SAVE_STATE` | 1 | 0 leaves out the save-state port's logic: writes do nothing and reads give 0. For a board short of logic |
 
+<!-- size and speed: tools/timing/report.py --readmes writes this section -->
+## Size and speed
+
+Each top module placed alone by `tools/timing/report.py` (see `docs/timing.md` for how to read it): its fastest clock and its logic, in LUT4s and ALUs on the Gowin parts, LUT6s on the XC7Z020, and 18 Kbit block RAMs.
+
+| Module | Tang Nano 20K (GW2A-18C) | Tang Console 138K (GW5AST-138C) | PYNQ-Z2 (XC7Z020) |
+| --- | --- | --- | --- |
+| `resampler` | 229 MHz, 561 LUTs, 1 DSP | 150 MHz, 957 LUTs | 139 MHz, 419 LUTs, 3 DSP |
+
+<!-- end of size and speed -->
+
 ## Status
 
 Sim tests:

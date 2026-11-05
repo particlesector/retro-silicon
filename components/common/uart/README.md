@@ -32,6 +32,18 @@ Takes a byte on `valid && ready`. `ready` rises on the last clock of the stop bi
 | --- | --- | --- |
 | `CLKS_PER_BIT` | 9 | Clocks per bit; 27 MHz / 9 = 3 Mbaud, 27 MHz / 18 = 1.5 Mbaud |
 
+<!-- size and speed: tools/timing/report.py --readmes writes this section -->
+## Size and speed
+
+Each top module placed alone by `tools/timing/report.py` (see `docs/timing.md` for how to read it): its fastest clock and its logic, in LUT4s and ALUs on the Gowin parts, LUT6s on the XC7Z020, and 18 Kbit block RAMs.
+
+| Module | Tang Nano 20K (GW2A-18C) | Tang Console 138K (GW5AST-138C) | PYNQ-Z2 (XC7Z020) |
+| --- | --- | --- | --- |
+| `uart_rx` | 440 MHz, 54 LUTs | 189 MHz, 50 LUTs | 324 MHz, 42 LUTs |
+| `uart_tx` | 392 MHz, 46 LUTs | 284 MHz, 38 LUTs | 316 MHz, 42 LUTs |
+
+<!-- end of size and speed -->
+
 ## Status
 
 Sim tests at 9 and 234 clocks per bit: the receiver takes back-to-back streams from a sender 2% fast or slow, drops a byte with a low stop bit and recovers, and ignores a glitch; the transmitter sends back-to-back frames with no gap between them, and idles high and ready. On a Tang Nano 20K, inside `systems/uart-echo`, it echoed 100 MB at 1.5 Mbaud with no errors.
