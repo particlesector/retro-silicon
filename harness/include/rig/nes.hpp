@@ -53,7 +53,7 @@ enum Reg : uint32_t {
     kFrameCrc = 0x24,   // 4 bytes, read-only: CRC-32 of the last whole frame
     kCrcFrame = 0x28,   // 4 bytes, read-only: ...and its index
     kCart = 0x2C,       // bit 0 vertical mirroring, bit 1 CHR is RAM, bit 2 there's PRG RAM,
-                        // bit 3 CHR ROM is in the board's memory
+                        // bit 3 CHR ROM is in the board's memory, bit 4 the mapper is MMC6
     kMapper = 0x2D,     // the iNES mapper number
     kCapFrame = 0x30,   // 4 bytes: the frame to capture
     kCapLine = 0x34,    // the line to capture
@@ -157,6 +157,19 @@ struct InputEntry {
     uint8_t pad1, pad2 = 0;
 };
 
+// MMC6 (StarTropics and its sequel): MMC3 with 1 KB of PRG RAM inside the
+// mapper at $7000-$7FFF, in two 512-byte halves each enabled for reads and
+// writes by $A001 bits 7-4, all of it by $8000 bit 5. A NES 2.0 header says
+// so by submapper 1; for an iNES 1.0 dump, MesenCE's database knows it by its
+// PRG ROM, as kMmc6Prg does.
+bool is_mmc6(const NesRom& rom);
+// Bytes of battery-backed PRG RAM, as a .sav file holds them: 0 without a
+// battery, MMC6's 1 KB, or the PRG RAM (a NES 2.0 header's battery-backed
+// size, else 8 KB).
+size_t battery_size(const NesRom& rom);
+// Reads a .sav file for the ROM; throws RigError if it isn't battery_size(rom) bytes.
+std::vector<uint8_t> read_sav(const NesRom& rom, const std::string& path);
+
 // Why a system with these sizes (registers 75, 74 and 76) can't run the ROM, or nothing.
 std::optional<std::string> unsupported_on(const NesRom& rom, unsigned mem_bits, unsigned chr_bits, bool chr_ext);
 
@@ -225,6 +238,13 @@ public:
     std::optional<std::pair<uint32_t, uint32_t>> frame_crc();
     std::vector<uint32_t> line_crcs();  // of the last frame; read while stopped
     std::vector<uint8_t> peek(uint16_t addr, uint16_t count);  // CPU space: RAM and PRG RAM
+    // Battery-backed PRG RAM (battery_size(rom) bytes from the start of PRG
+    // RAM), as a .sav file holds it. Read or written while it runs: the shell
+    // takes the clocks the CPU leaves. After load(), set_battery_ram() puts a
+    // save in place of the power-up fill; load_lean() takes it too.
+    std::vector<uint8_t> battery_ram(const NesRom& rom);
+    void set_battery_ram(const NesRom& rom, const std::vector<uint8_t>& sav);
+    uint32_t battery_crc(const NesRom& rom);  // CRC-32 of battery_ram(rom), without reading it
     // With the system stopped at the end of frame `index - 1`: runs through
     // frame `index`, capturing it line by line, and stops again after it.
     Frame capture(uint32_t index);
@@ -285,6 +305,9 @@ struct RomCheck {
     uint16_t result = 0;  // kZeroPage: where the ROM leaves 1 for a pass
     std::vector<InputEntry> input;  // played from reset, if any
     std::vector<uint32_t> reset;    // frames ended when the reset button is pressed, if any
+    std::vector<uint8_t> battery;   // battery RAM to power up with (a .sav), if any
+    bool again = false;             // run twice, the second time from the battery RAM the first left
+    std::optional<uint32_t> battery_crc;  // the battery RAM's CRC-32 at the end, MesenCE's
 };
 
 // A test ROM run from power-up until `frames` frames have ended. Passes when
@@ -293,6 +316,8 @@ struct RomCheck {
 // the last frame, which must match the other backend's and MesenCE's for the
 // same frame; its audio CRC32 (the APU's levels through to that point) must
 // match the other backend's. Its notes carry the ROM's text report, if it has one.
+// The check's battery RAM, its second run and its battery CRC, if it has them,
+// as tools/mesen/frames.py's sav=, again and savcrc= say.
 // `power` sets the memories' fill and the CPU/PPU alignment it powers up with.
 TestResult rom_test(Link& link, const RomCheck& check, const NesRom& rom, uint32_t frames,
                     std::optional<uint32_t> build_id = std::nullopt, bool chr_ext = false,
@@ -323,6 +348,7 @@ struct GoldenRom {
     uint32_t frames = 0;
     uint32_t crc = 0;
     std::string path;  // under the test-ROM directory: its source, then its path
+    std::string sav;   // the same for its .sav (sav=), if any: read_sav() it into check.battery
 };
 std::vector<GoldenRom> load_golden_roms(const std::string& file);
 

@@ -4,7 +4,7 @@ The NES as far as it's built:
 - the 2A03's CPU (`cpu/6502` with `DECIMAL = 0`), its APU (`audio/apu-2a03`), and its DMC and OAM DMA;
 - the 2C02 PPU (`video/ppu-2c02`);
 - 2 KB of RAM mirrored to `$1FFF`;
-- a cartridge (below): PRG ROM in the board's memory; CHR ROM in block RAM, or on the Tang Nano 20K in its SDRAM; 8 KB of CHR RAM; 8 KB of PRG RAM at `$6000` if the ROM has any; and the mappers NROM, UxROM, CNROM, AxROM, MMC1, MMC3 and MMC2 (`nes_cart`);
+- a cartridge (below): PRG ROM in the board's memory; CHR ROM in block RAM, or on the Tang Nano 20K in its SDRAM; 8 KB of CHR RAM; 8 KB of PRG RAM at `$6000` if the ROM has any; and the mappers NROM, UxROM, CNROM, AxROM, MMC1, MMC3, MMC6 and MMC2 (`nes_cart`);
 - two standard controllers, driven by an input player (a script of buttons by frame) or by registers, for live input.
 
 The test shell loads ROMs, runs the system and reads results, frame CRCs and whole frames. A save-state controller saves and loads the whole system. The picture goes out as HDMI at 720p. Reads of `$4000`-`$5FFF` other than `$4015`, `$4016` and `$4017` give open bus (the last value on the data bus), and writes there other than the APU's, `$4014` and `$4016` do nothing.
@@ -19,6 +19,7 @@ The test shell loads ROMs, runs the system and reads results, frame CRCs and who
 | 7 | AxROM | 32 KB PRG banks; one-screen mirroring, either page |
 | 1 | MMC1 (SxROM) | Its serial port, 16 or 32 KB PRG modes, 4 or 8 KB CHR modes, its mirroring, PRG RAM off by `$E000` bit 4, and SUROM's 512 KB of PRG |
 | 4 | MMC3 (TxROM) | 8 KB PRG and 1 or 2 KB CHR banks in both modes, its mirroring, PRG RAM enable and write protect, and its scanline IRQ (revision B) |
+| 4 | MMC6 (HKROM, StarTropics), register `2C` bit 4 | MMC3, with 1 KB of PRG RAM at `$7000-$7FFF` (mirrored) in two 512-byte halves, each enabled for reads and for writes by `$A001` bits 7-4 (upper half, then lower), all of it by `$8000` bit 5; a half not enabled for reads is open bus, as is `$6000-$6FFF` |
 | 9 | MMC2 (PxROM) | An 8 KB PRG bank at `$8000`, the last three after it; two 4 KB CHR banks for each half of the pattern tables, picked by latches the PPU's reads of tiles `$FD` and `$FE` flip; its mirroring |
 
 They behave as MesenCE's do, for the golden frames: MMC1 ignores a write in the cycle after another (the second write of a read-modify-write instruction) unless bit 7 is set, and powers up with one-screen mirroring and its last bank at `$C000`; MMC2 powers up with both latches at `$FE`, and a latch's new bank applies from the PPU's next address, so the read that flips it still sees the old one; MMC3 powers up with R0-R7 = 0, 2, 4, 5, 6, 7, 0, 1, vertical mirroring and PRG RAM off, and counts a rise of the PPU's A12 after it has been low for 3 CPU cycles. A bank number past the end wraps; for MMC1's ROMs whose size isn't a power of 2 (blargg's 80 KB ones), the harness lays PRG out as 256 KB, each bank a copy of the bank MesenCE's modulo gives. No bus conflicts. A ROM with no PRG RAM, by its NES 2.0 header, has open bus at `$6000`; an iNES 1.0 ROM gets 8 KB, as MesenCE gives it.
@@ -155,7 +156,7 @@ Anything else reads 0 and ignores writes. Multi-byte registers are little-endian
 | `20` | 4 | Frames ended since reset (read-only): a frame ends at line 240 |
 | `24` | 4 | CRC-32 of the last whole frame (read-only): 2 bytes a pixel, low first, the PPU's {emphasis, colour} |
 | `28` | 4 | Which frame that is (read-only), counting from 0 |
-| `2C` | 1 | Cartridge: bit 0 vertical mirroring (for mappers that don't set it), bit 1 CHR is RAM, bit 2 there's PRG RAM (power-up: set), bit 3 CHR ROM is in the board's memory (with `CHR_EXT`) |
+| `2C` | 1 | Cartridge: bit 0 vertical mirroring (for mappers that don't set it), bit 1 CHR is RAM, bit 2 there's PRG RAM (power-up: set), bit 3 CHR ROM is in the board's memory (with `CHR_EXT`), bit 4 mapper 4 is MMC6 |
 | `2D` | 1 | The mapper, by iNES number (unknown ones behave as NROM) |
 | `30` | 4 | The frame to capture |
 | `34` | 1 | The line to capture |
@@ -239,6 +240,8 @@ It plays exactly what the test build plays: in the sim (`make_nes_lean_sim`, the
 `rig::nes::nestest` runs nestest's automated mode for 26,554 cycles while the host reads memory; the trace CRC is still `0xebba51ce`, in the sim (both memories) and on both boards, and the trace buffer's last 1024 cycles match nestest.log, instruction by instruction.
 
 **The unstable opcodes' ROMs (Oct 31).** blargg's `all_instrs`, `instr_timing`, `instr_misc` and two of their singles need the unstable opcodes, which `cpu/6502` now runs; with them the golden list has 188 ROMs, every manifest ROM but nestest (checked by its trace).
+
+**Battery saves and MMC6 (Nov 5).** A game's battery-backed PRG RAM is what a `.sav` file holds (MMC6's 1 KB, at the start of PRG RAM, or the PRG RAM), and the host reads and writes it through the CPU's address space while the game runs (`Console::battery_ram`, `set_battery_ram`; `battery_crc` has the shell take its CRC, so watching it for a save costs the link 9 bytes). Holy Mapperel's MMC1 battery ROM (`mapperel-mmc1-battery`) runs from its `.sav`, then again from the battery RAM the first run left, and matches MesenCE's frame and battery RAM, with its CHR ROM in the SDRAM model and with its PRG ROM behind AXI. MMC6's RAM passes a test program's reads and writes through each enable (MesenCE gives the same but at `$6000-$6FFF`, where its MMC6 leaves the RAM too, always enabled, and the chip has nothing).
 
 **MMC2 (Nov 5).** Holy Mapperel's MMC2 ROM (`mapperel-mmc2`, 128 KB of PRG and 64 KB of CHR) matches MesenCE's frame and the sim's audio CRC with its PRG ROM behind the sim's AXI memory and with its CHR ROM in the SDRAM model, and all 189 golden ROMs pass on the Tang Nano 20K and the PYNQ-Z2 (187 on the Tang Console 138K, which skips the two whose ROMs don't fit its block RAM).
 

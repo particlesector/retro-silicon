@@ -186,6 +186,7 @@ mapperel-mmc1-cr8k 330 0x41861928 frame - holy-mapperel/testroms/M1_P128K_CR8K.n
 mapperel-mmc1-c32k 330 0xd7e4cf9a frame - holy-mapperel/testroms/M1_P128K_C32K.nes
 mapperel-mmc1-c128k 330 0x2a98ecf4 frame - holy-mapperel/testroms/M1_P128K_C128K.nes
 mapperel-mmc1-p512k 330 0xaac218d2 frame - holy-mapperel/testroms/M1_P512K_CR8K_S8K.nes
+mapperel-mmc1-battery 330 0x64e17edc frame - holy-mapperel/testroms/M1_P128K_C128K_S8K.nes sav=holy-mapperel/testroms/8k.sav again savcrc=0xadb024ca
 mapperel-mmc3-cr8k 330 0xd1c0d43e frame - holy-mapperel/testroms/M4_P128K_CR8K.nes
 mapperel-mmc3-c256k 330 0xde84878f frame - holy-mapperel/testroms/M4_P256K_C256K.nes
 mapperel-mmc2 330 0x368413bf frame - holy-mapperel/testroms/M9_P128K_C64K.nes

@@ -16,6 +16,8 @@
 # input: an input script for player 1, [[frame, buttons], ...] in frame order,
 # the buttons (bit 0 A, B, Select, Start, Up, Down, Left, bit 7 Right) held
 # from that frame on, counting frames ended since power-up.
+# sav: a .sav file the ROM powers up with as its battery-backed PRG RAM.
+# again: run the ROM twice, the second time from the battery RAM the first left.
 # needs: the parts of the console the ROM exercises.
 
 [sources.nes-test-roms]
@@ -1996,6 +1998,18 @@ path = "testroms/M1_P512K_CR8K_S8K.nes"
 sha256 = "09a054de16624ecf9495cd16bed2c931108c1e3b674811d5cd6f154777a5ee70"
 needs = "cpu, ppu, mmc1"
 covers = "MMC1 (SUROM): 512 KB of PRG ROM, CHR RAM, battery-backed PRG RAM"
+check = "frame"
+frames = 300
+
+[[rom]]
+id = "mapperel-mmc1-battery"
+source = "holy-mapperel"
+path = "testroms/M1_P128K_C128K_S8K.nes"
+sha256 = "c6e9fa7bab19c740ead712d8d0d9ef9e5aa7bb8b337feced5f0b1c95f0fe8531"
+sav = { path = "testroms/8k.sav", sha256 = "7d2c7ac4888bfd75cd5f56e8d61f69595121183afc81556c876732fd3782c62f" }
+again = true
+needs = "cpu, ppu, mmc1"
+covers = "MMC1 with battery-backed PRG RAM: run from its .sav, then again from the battery RAM the first run left"
 check = "frame"
 frames = 300
 

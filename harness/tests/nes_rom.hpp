@@ -23,5 +23,7 @@ inline std::pair<rig::nes::GoldenRom, rig::NesRom> golden_rom(const std::string&
     if (!std::filesystem::exists(path)) SKIP(path << " not found: run testroms/fetch.py");
     auto rom = rig::load_ines(path);
     REQUIRE(std::holds_alternative<rig::NesRom>(rom));
-    return {*g, std::get<rig::NesRom>(rom)};
+    auto out = *g;
+    if (!out.sav.empty()) out.check.battery = rig::nes::read_sav(std::get<rig::NesRom>(rom), std::string(RS_TESTROMS) + "/" + out.sav);
+    return {out, std::get<rig::NesRom>(rom)};
 }

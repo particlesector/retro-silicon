@@ -198,7 +198,7 @@ module nes #(
     wire sel_trace = s_addr[31:24] == 8'h09;
 
     // ---- Control registers ----
-    logic        ctrl_run, ctrl_reset, mirror_v, chr_ram, wram_on, chr_ext;
+    logic        ctrl_run, ctrl_reset, mirror_v, chr_ram, wram_on, chr_ext, cart_mmc6;
     logic [7:0]  mapper;
     logic [22:0] prg_mask;
     logic [17:0] chr_mask;
@@ -506,14 +506,15 @@ module nes #(
     logic        vread_next;
     logic [1:0]  cart_mirror;
     logic        cart_wram_rd, cart_wram_wr;
+    logic [12:0] cart_wram_a;
     logic [31:0] cart_st_rdata;
     logic [13:0] vaddr;
 
     nes_cart #(.SAVE_STATE(SAVE_STATE)) u_cart (
         .clk, .rst(sys_rst),
-        .mapper, .hdr_vertical(mirror_v), .prg_512k(prg_mask[19:18] == 2'b01),
+        .mapper, .mmc6(cart_mmc6), .hdr_vertical(mirror_v), .prg_512k(prg_mask[19:18] == 2'b01),
         .wr_ce(reg_ce), .ce, .addr(bus_addr), .we(bus_we), .wdata(bus_wdata),
-        .prg_addr(cart_prg_a), .wram_rd(cart_wram_rd), .wram_wr(cart_wram_wr), .irq_n(cart_irq_n),
+        .prg_addr(cart_prg_a), .wram_rd(cart_wram_rd), .wram_wr(cart_wram_wr), .wram_addr(cart_wram_a), .irq_n(cart_irq_n),
         .va({vaddr_next[12:0], vaddr[12:0]}), .va13({vaddr_next[13], vaddr[13]}), .a12(vaddr[12]), .a12_ce(ppu_ce_q),
         .chr_addr({cart_chr_n, cart_chr_a}), .mirror(cart_mirror),
         .st_addr(s_addr[4:2]), .st_rdata(cart_st_rdata), .st_we(st_we_cart), .st_wdata);
@@ -864,7 +865,7 @@ module nes #(
         m_we    = 1'b0;
         m_wdata = bus_wdata;
         if (cpu_slot) begin
-            m_addr = bus_addr[12:0];
+            m_addr = c_wram ? cart_wram_a : bus_addr[12:0];
             m_ram  = c_ram;
             m_wram = c_wram && cart_wram_wr && wram_on;
             m_we   = ce && bus_we;
@@ -1369,7 +1370,7 @@ module nes #(
                 8'h1D: stop_frame[15:8]  <= s_wdata;
                 8'h1E: stop_frame[23:16] <= s_wdata;
                 8'h1F: stop_frame[31:24] <= s_wdata;
-                8'h2C: {chr_ext, wram_on, chr_ram, mirror_v} <= s_wdata[3:0];
+                8'h2C: {cart_mmc6, chr_ext, wram_on, chr_ram, mirror_v} <= s_wdata[4:0];
                 8'h2D: mapper            <= s_wdata;
                 8'h30: cap_frame[7:0]    <= s_wdata;
                 8'h31: cap_frame[15:8]   <= s_wdata;
@@ -1433,7 +1434,7 @@ module nes #(
             8'h29:   reg_q <= crc_frame[15:8];
             8'h2A:   reg_q <= crc_frame[23:16];
             8'h2B:   reg_q <= crc_frame[31:24];
-            8'h2C:   reg_q <= {4'b0, chr_ext, wram_on, chr_ram, mirror_v};
+            8'h2C:   reg_q <= {3'b0, cart_mmc6, chr_ext, wram_on, chr_ram, mirror_v};
             8'h2D:   reg_q <= mapper;
             8'h30:   reg_q <= cap_frame[7:0];
             8'h31:   reg_q <= cap_frame[15:8];
@@ -1517,6 +1518,7 @@ module nes #(
             chr_ram    <= 1'b0;
             wram_on    <= 1'b1;
             chr_ext    <= 1'b0;
+            cart_mmc6  <= 1'b0;
             mapper     <= '0;
             chr_mask   <= 18'h1FFF;
             cap_en     <= 1'b0;

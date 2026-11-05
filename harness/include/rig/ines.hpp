@@ -15,6 +15,7 @@ struct NesRom {
     enum class Mirroring { kHorizontal, kVertical, kFourScreen };
 
     unsigned mapper = 0;
+    unsigned submapper = 0;   // NES 2.0 only
     bool nes2 = false;        // the header is NES 2.0
     Mirroring mirroring = Mirroring::kHorizontal;
     bool battery = false;     // PRG RAM is battery-backed
