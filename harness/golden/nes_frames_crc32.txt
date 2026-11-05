@@ -188,3 +188,4 @@ mapperel-mmc1-c128k 330 0x2a98ecf4 frame - holy-mapperel/testroms/M1_P128K_C128K
 mapperel-mmc1-p512k 330 0xaac218d2 frame - holy-mapperel/testroms/M1_P512K_CR8K_S8K.nes
 mapperel-mmc3-cr8k 330 0xd1c0d43e frame - holy-mapperel/testroms/M4_P128K_CR8K.nes
 mapperel-mmc3-c256k 330 0xde84878f frame - holy-mapperel/testroms/M4_P256K_C256K.nes
+mapperel-mmc2 330 0x368413bf frame - holy-mapperel/testroms/M9_P128K_C64K.nes

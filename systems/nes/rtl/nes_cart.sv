@@ -2,13 +2,14 @@
 // The cartridge's mapper: which banks of PRG ROM, CHR and PRG RAM the CPU and
 // PPU see, the nametable mirroring, and the mapper's IRQ. One design covers
 // every mapper it knows, picked at load time by `mapper` (the iNES number):
-//   0 NROM, 2 UxROM, 3 CNROM, 7 AxROM, 1 MMC1 (SxROM), 4 MMC3 (TxROM).
+//   0 NROM, 2 UxROM, 3 CNROM, 7 AxROM, 1 MMC1 (SxROM), 4 MMC3 (TxROM),
+//   9 MMC2 (PxROM).
 // Any other number behaves as NROM. Behaviour follows MesenCE's mappers, as
 // the golden frames come from it: MMC1 ignores a write in the CPU cycle after
 // another (the second write of a read-modify-write instruction) unless bit 7
 // is set; MMC1 powers up with one-screen mirroring and the last bank fixed at
 // $C000; MMC3 with R0-R7 = 0, 2, 4, 5, 6, 7, 0, 1, vertical mirroring and
-// PRG RAM off. No bus conflicts.
+// PRG RAM off; MMC2 with both latches at $FE. No bus conflicts.
 //
 // The CPU side: its cycle's address goes to prg_addr and wram_rd/wram_wr at
 // once (combinational); a write to $8000-$FFFF takes effect on wr_ce, which
@@ -23,6 +24,13 @@
 // MMC3's IRQ counts rises of the PPU's A12 (a12, sampled on a12_ce, after
 // each dot's address) that come after A12 has been low for 3 CPU cycles
 // (counted on ce), as MesenCE's MMC3 (revision B) counts them.
+//
+// MMC2 keeps its registers in MMC3's (they never run together): R0-R3 its
+// CHR banks ($B000-$E000: $0000 at latch $FD, at $FE; $1000 at $FD, at $FE),
+// R4 its PRG bank ($A000), MMC3's mirroring bit its $F000. Its latches flip
+// when the PPU reads $0FD8 or $0FE8 (latch 0) or $1FD8-$1FDF or $1FE8-$1FEF
+// (latch 1), sampled on a12_ce, and as in MesenCE the new bank applies from
+// the PPU's next address on: the read that flips it still sees the old one.
 //
 // Save state: words 0-4, as listed at the end.
 module nes_cart #(
@@ -50,6 +58,7 @@ module nes_cart #(
     // Two PPU addresses (its address and the next, for a prefetch) through
     // the same banks.
     input  logic [1:0][12:0] va,
+    input  logic [1:0]  va13,          // their bit 13 (a nametable), which MMC2's latches ignore
     input  logic        a12,
     input  logic        a12_ce,
     output logic [1:0][17:0] chr_addr,
@@ -66,6 +75,7 @@ module nes_cart #(
     wire is_ax   = mapper == 8'd7;
     wire is_mmc1 = mapper == 8'd1;
     wire is_mmc3 = mapper == 8'd4;
+    wire is_mmc2 = mapper == 8'd9;
 
     wire reg_wr = wr_ce && we && addr[15];
 
@@ -92,6 +102,28 @@ module nes_cart #(
     logic       a12_low;           // A12 has been seen low since it was last high
     logic [1:0] a12_n;             // CPU cycles since then, up to 3
 
+    // ---- MMC2: its latches (its registers are MMC3's) ----
+    logic [1:0] m2_latch;          // {$1000's, $0000's}: 0 $FD, 1 $FE
+    logic [2:0] m2_pend;           // {pending, which latch, its new value}
+
+    // What an address does to the latches: {it flips one, which, to what}.
+    function automatic logic [2:0] m2_trig(input logic a13, input logic [12:0] a);
+        if (a13)
+            m2_trig = 3'b000;
+        else if (!a[12])
+            m2_trig = a[11:0] == 12'hFD8 ? 3'b100 : a[11:0] == 12'hFE8 ? 3'b101 : 3'b000;
+        else
+            m2_trig = a[11:3] == 9'h1FB ? 3'b110 : a[11:3] == 9'h1FD ? 3'b111 : 3'b000;
+    endfunction
+
+    // The latches an address sees: a pending flip applies to any address but
+    // the one that made it.
+    function automatic logic [1:0] m2_seen(input logic [2:0] trig);
+        m2_seen = m2_latch;
+        if (m2_pend[2] && trig != m2_pend)
+            m2_seen = m2_pend[1] ? {m2_pend[0], m2_latch[0]} : {m2_latch[1], m2_pend[0]};
+    endfunction
+
     // A12's rise, counted.
     wire       a12_rise = is_mmc3 && a12_ce && a12 && a12_low && a12_n == 2'd3;
 
@@ -108,6 +140,14 @@ module nes_cart #(
                 a12_low <= 1'b1;
                 a12_n   <= {1'b0, ce};  // seen in a cycle that ends now: it counts
             end
+        end
+        if (is_mmc2 && a12_ce) begin
+            if (m2_pend[2] && m2_trig(va13[0], va[0]) != m2_pend) begin
+                m2_latch <= m2_pend[1] ? {m2_pend[0], m2_latch[0]} : {m2_latch[1], m2_pend[0]};
+                m2_pend[2]           <= 1'b0;
+            end
+            if (m2_trig(va13[0], va[0]) != 3'b000)
+                m2_pend <= m2_trig(va13[0], va[0]);
         end
         if (a12_rise) begin
             m3_reload <= 1'b0;
@@ -153,6 +193,16 @@ module nes_cart #(
                     3'b110: begin m3_irq_on <= 1'b0; m3_irq <= 1'b0; end
                     default: m3_irq_on <= 1'b1;
                 endcase
+            if (is_mmc2)
+                case (addr[14:12])
+                    3'd2: m3_r[4] <= {4'b0, wdata[3:0]};
+                    3'd3: m3_r[0] <= {3'b0, wdata[4:0]};
+                    3'd4: m3_r[1] <= {3'b0, wdata[4:0]};
+                    3'd5: m3_r[2] <= {3'b0, wdata[4:0]};
+                    3'd6: m3_r[3] <= {3'b0, wdata[4:0]};
+                    3'd7: m3_hmirror <= wdata[0];
+                    default: ;
+                endcase
         end
         if (SAVE_STATE && st_we)
             case (st_addr)
@@ -160,7 +210,7 @@ module nes_cart #(
                 3'd1: m3_r[7:4] <= st_wdata;
                 3'd2: {m3_sel, m3_latch, m3_count, m3_hmirror, m3_ram, m3_reload, m3_irq_on} <= st_wdata[28:0];
                 3'd3: {m1_last_c, m1_wrote, m1_n, m1_sr, m1_ctrl, m1_chr0, m1_chr1, m1_prg} <= st_wdata[29:0];
-                3'd4: {m3_irq, a12_low, a12_n, latch} <= st_wdata[11:0];
+                3'd4: {m2_pend, m2_latch, m3_irq, a12_low, a12_n, latch} <= st_wdata[16:0];
                 default: ;
             endcase
         if (rst) begin
@@ -184,6 +234,8 @@ module nes_cart #(
             m3_irq     <= 1'b0;
             a12_low    <= 1'b0;
             a12_n      <= '0;
+            m2_latch   <= 2'b11;
+            m2_pend    <= '0;
         end
     end
 
@@ -209,6 +261,8 @@ module nes_cart #(
             bank = {4'b0, latch[3:0], addr[14:13]};
         else if (is_mmc1)
             bank = {4'b0, m1_hi, m1_page, addr[13]};
+        else if (is_mmc2)
+            bank = addr[14:13] == 2'd0 ? {2'b0, m3_r[4]} : {8'hFF, addr[14:13]};  // the last three from $A000
         else if (is_mmc3)
             case ({addr[14] ^ (m3_sel[6] && !addr[13]), addr[13]})  // mode 1 swaps $8000 and $C000
                 2'd0:    bank = {2'b0, m3_r[6]};
@@ -228,6 +282,10 @@ module nes_cart #(
     for (genvar i = 0; i < 2; i++) begin : g_chr
         logic [7:0] cbank;
         wire        m3_half = va[i][12] ^ m3_sel[7];
+        wire [1:0]  m2_l    = m2_seen(m2_trig(va13[i], va[i]));
+        /* verilator lint_off UNUSEDSIGNAL */  // MMC2's banks are 5 bits
+        wire [7:0]  m2_reg  = m3_r[{1'b0, va[i][12], va[i][12] ? m2_l[1] : m2_l[0]}];
+        /* verilator lint_on UNUSEDSIGNAL */
 
         always_comb
             if (is_cn)
@@ -235,6 +293,8 @@ module nes_cart #(
             else if (is_mmc1)
                 cbank = m1_ctrl[4] ? {1'b0, va[i][12] ? m1_chr1 : m1_chr0, va[i][11:10]}
                                    : {1'b0, m1_chr0[4:1], va[i][12:10]};
+            else if (is_mmc2)
+                cbank = {m2_reg[5:0], va[i][11:10]};
             else if (is_mmc3)
                 cbank = !m3_half ? {m3_r[{2'b0, va[i][11]}][7:1], va[i][10]} : m3_r[{1'b0, va[i][11:10]} + 3'd2];
             else
@@ -248,7 +308,7 @@ module nes_cart #(
             mirror = {1'b0, latch[4]};
         else if (is_mmc1)
             mirror = m1_ctrl[1:0];
-        else if (is_mmc3)
+        else if (is_mmc3 || is_mmc2)
             mirror = m3_hmirror ? 2'd3 : 2'd2;
         else
             mirror = hdr_vertical ? 2'd2 : 2'd3;
@@ -258,8 +318,10 @@ module nes_cart #(
     //   2 {MMC3 $8000, IRQ latch, IRQ counter, $A000 bit 0, $A001 bits 7-6, reload, IRQ on} in bits 28-0,
     //   3 {MMC1 last CHR register $C000, wrote last cycle, bits shifted, shift register,
     //      control, CHR 0, CHR 1, PRG} in bits 29-0,
-    //   4 {MMC3's IRQ, A12 seen low, CPU cycles since (to 3)} in bits 11-8, the
-    //     UxROM, CNROM and AxROM latch in 7-0.
+    //   4 {MMC2's pending flip (3 bits), its latches (2)} in bits 16-12, {MMC3's
+    //     IRQ, A12 seen low, CPU cycles since (to 3)} in 11-8, the UxROM,
+    //     CNROM and AxROM latch in 7-0.
+    //   (MMC2's registers are MMC3's, in words 0-2.)
     always_comb
         if (!SAVE_STATE)
             st_rdata = '0;
@@ -269,7 +331,7 @@ module nes_cart #(
                 3'd1:    st_rdata = m3_r[7:4];
                 3'd2:    st_rdata = {3'b0, m3_sel, m3_latch, m3_count, m3_hmirror, m3_ram, m3_reload, m3_irq_on};
                 3'd3:    st_rdata = {2'b0, m1_last_c, m1_wrote, m1_n, m1_sr, m1_ctrl, m1_chr0, m1_chr1, m1_prg};
-                3'd4:    st_rdata = {20'b0, m3_irq, a12_low, a12_n, latch};
+                3'd4:    st_rdata = {15'b0, m2_pend, m2_latch, m3_irq, a12_low, a12_n, latch};
                 default: st_rdata = '0;
             endcase
 endmodule
