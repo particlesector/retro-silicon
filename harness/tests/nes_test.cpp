@@ -15,6 +15,7 @@
 
 #include "golden.hpp"
 #include "nes_rom.hpp"
+#include "rig/crc32.hpp"
 #include "rig/ines.hpp"
 #include "rig/nes.hpp"
 #include "rig/shell.hpp"
@@ -365,6 +366,7 @@ MATCHES_MESEN("mmc3_test-5")
 MATCHES_MESEN_EXT("mapperel-cnrom")
 MATCHES_MESEN_EXT("mapperel-mmc1-c32k")
 MATCHES_MESEN_EXT("mapperel-mmc1-c128k")
+MATCHES_MESEN_EXT("mapperel-mmc1-battery")
 MATCHES_MESEN_EXT("mapperel-mmc3-c256k")
 MATCHES_MESEN_EXT("mapperel-mmc2")
 // As the PYNQ-Z2 runs it, PRG ROM in its DDR3 (an AXI memory model that
@@ -376,6 +378,7 @@ MATCHES_MESEN_EXT("mapperel-mmc2")
 MATCHES_MESEN_AXI("mapperel-mmc1-p512k")
 MATCHES_MESEN_AXI("mapperel-mmc3-c256k")
 MATCHES_MESEN_AXI("mapperel-mmc2")
+MATCHES_MESEN_AXI("mapperel-mmc1-battery")
 MATCHES_MESEN_AXI("mmc3_irq-4")
 MATCHES_MESEN_AXI("oam_read")
 MATCHES_MESEN_AXI("cpu_interrupts-5")
@@ -512,3 +515,110 @@ TEST_CASE("the controllers shift out their buttons, then 1s, and give A while st
 }
 
 
+
+TEST_CASE("MMC6's PRG RAM: 1 KB at $7000-$7FFF, its halves enabled by $A001, all of it by $8000 bit 5") {
+    // A 32 KB program at $E000 (MMC3's fixed bank), its results from $0300.
+    // MesenCE gives the same, but for $6000: its MMC6 leaves the save's first
+    // 512 bytes at $6000-$6FFF too, always enabled, where the chip has
+    // nothing (open bus).
+    std::vector<uint8_t> code = {
+        0x78, 0xD8,                                      // sei; cld
+        0xA9, 0x20, 0x8D, 0x00, 0x80,                    // $8000 = $20: RAM on
+        0xA9, 0xF0, 0x8D, 0x01, 0xA0,                    // $A001 = $F0: both halves read and write
+        0xA9, 0x11, 0x8D, 0x00, 0x70,                    // $7000 = $11
+        0xA9, 0x22, 0x8D, 0x00, 0x72,                    // $7200 = $22
+        0xA9, 0x33, 0x8D, 0x01, 0x74,                    // $7401 = $33 (a mirror of $7001)
+        0xA9, 0x44, 0x8D, 0x00, 0x60,                    // $6000 = $44 (nothing there)
+        0xAD, 0x00, 0x70, 0x8D, 0x00, 0x03,              // [0] = $7000
+        0xAD, 0x00, 0x72, 0x8D, 0x01, 0x03,              // [1] = $7200
+        0xAD, 0x01, 0x70, 0x8D, 0x02, 0x03,              // [2] = $7001
+        0xAD, 0x00, 0x7C, 0x8D, 0x03, 0x03,              // [3] = $7C00 (a mirror of $7000)
+        0xAD, 0x00, 0x60, 0x8D, 0x04, 0x03,              // [4] = $6000
+        0xA9, 0xA0, 0x8D, 0x01, 0xA0,                    // $A001 = $A0: read only
+        0xA9, 0x55, 0x8D, 0x00, 0x70,                    // $7000 = $55, ignored
+        0xA9, 0x66, 0x8D, 0x00, 0x72,                    // $7200 = $66, ignored
+        0xAD, 0x00, 0x70, 0x8D, 0x05, 0x03,              // [5] = $7000
+        0xAD, 0x00, 0x72, 0x8D, 0x06, 0x03,              // [6] = $7200
+        0xA9, 0x30, 0x8D, 0x01, 0xA0,                    // $A001 = $30: the lower half only
+        0xAD, 0x00, 0x72, 0x8D, 0x07, 0x03,              // [7] = $7200: open bus
+        0xA9, 0x77, 0x8D, 0x02, 0x70,                    // $7002 = $77
+        0xA9, 0x00, 0x8D, 0x00, 0x80,                    // $8000 = 0: RAM off
+        0xAD, 0x00, 0x70, 0x8D, 0x08, 0x03,              // [8] = $7000: open bus
+        0xA9, 0x88, 0x8D, 0x03, 0x70,                    // $7003 = $88, ignored
+        0xA9, 0x20, 0x8D, 0x00, 0x80,                    // RAM on again
+        0xA9, 0xF0, 0x8D, 0x01, 0xA0,
+        0xA9, 0x99, 0x8D, 0x09, 0x03,                    // [9] = $99: done
+        0x4C, 0x88, 0xE0};                               // jmp *
+    rig::NesRom rom;
+    rom.mapper = 4;
+    rom.nes2 = true;
+    rom.submapper = 1;
+    rom.battery = true;
+    rom.prg_nvram = 1024;
+    rom.prg.assign(32768, 0xEA);
+    std::copy(code.begin(), code.end(), rom.prg.begin() + 0x6000);
+    for (int v : {0x7FFA, 0x7FFC, 0x7FFE}) {
+        rom.prg[v] = 0x00;
+        rom.prg[v + 1] = 0xE0;
+    }
+    REQUIRE(rig::nes::is_mmc6(rom));
+    REQUIRE(rig::nes::battery_size(rom) == 1024);
+    auto link = rig::make_nes_sim();
+    rig::shell::Client c(*link);
+    rig::nes::Console nes(c);
+    nes.hold_reset();
+    REQUIRE_FALSE(nes.load(rom));
+    nes.set_battery_ram(rom, std::vector<uint8_t>(1024, 0));
+    nes.stop_frame(2);
+    nes.run();
+    nes.wait_stopped();
+    auto ram = nes.peek(0x0300, 10);
+    CHECK(ram == std::vector<uint8_t>{0x11, 0x22, 0x33, 0x11, 0x60, 0x11, 0x22, 0x72, 0x70, 0x99});
+    auto sav = nes.battery_ram(rom);
+    REQUIRE(sav.size() == 1024);
+    CHECK(sav[0] == 0x11);
+    CHECK(sav[1] == 0x33);
+    CHECK(sav[2] == 0x77);
+    CHECK(sav[3] == 0x00);
+    CHECK(sav[0x200] == 0x22);
+    rig::Crc32 crc;
+    crc.update(sav);
+    CHECK(nes.battery_crc(rom) == crc.value());
+}
+
+TEST_CASE("battery RAM goes in from a save and comes back out as the game left it") {
+    // A 16 KB NROM program at $C000 with 8 KB of battery RAM: adds 1 to $6000
+    // and copies $7FFF to $6001.
+    std::vector<uint8_t> code = {
+        0xEE, 0x00, 0x60,                                // inc $6000
+        0xAD, 0xFF, 0x7F, 0x8D, 0x01, 0x60,              // lda $7FFF; sta $6001
+        0x4C, 0x09, 0xC0};                               // jmp *
+    rig::NesRom rom;
+    rom.battery = true;
+    rom.prg.assign(16384, 0xEA);
+    std::copy(code.begin(), code.end(), rom.prg.begin());
+    for (int v : {0x3FFA, 0x3FFC, 0x3FFE}) {
+        rom.prg[v] = 0x00;
+        rom.prg[v + 1] = 0xC0;
+    }
+    REQUIRE(rig::nes::battery_size(rom) == 8192);
+    auto link = rig::make_nes_sim();
+    rig::shell::Client c(*link);
+    rig::nes::Console nes(c);
+    std::vector<uint8_t> sav(8192, 0);
+    for (int run = 0; run < 3; run++) {
+        nes.hold_reset();
+        REQUIRE_FALSE(nes.load(rom));
+        sav[0x1FFF] = static_cast<uint8_t>(0x40 + run);
+        nes.set_battery_ram(rom, sav);
+        nes.stop_frame(1);
+        nes.run();
+        nes.wait_stopped();
+        sav = nes.battery_ram(rom);
+        CHECK(sav[0] == run + 1);
+        CHECK(sav[1] == 0x40 + run);
+    }
+    CHECK_THROWS(nes.set_battery_ram(rom, std::vector<uint8_t>(1024)));
+    rom.battery = false;
+    CHECK(rig::nes::battery_size(rom) == 0);
+}

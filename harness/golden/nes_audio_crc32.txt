@@ -104,6 +104,7 @@ mapperel-mmc1-cr8k 330 0xa0a58e88
 mapperel-mmc1-c32k 330 0x5b430150
 mapperel-mmc1-c128k 330 0x88cad8cb
 mapperel-mmc1-p512k 330 0x3b5b3ec5
+mapperel-mmc1-battery 330 0xa2c26ea2
 mapperel-mmc3-cr8k 330 0x936b04cd
 mapperel-mmc3-c256k 330 0xb852cbe0
 mapperel-mmc2 330 0x4a82a21c

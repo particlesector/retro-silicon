@@ -40,6 +40,8 @@ def files(manifest):
         yield rom["source"], rom["path"], rom["sha256"]
         if "trace" in rom:
             yield rom["source"], rom["trace"]["path"], rom["trace"]["sha256"]
+        if "sav" in rom:
+            yield rom["source"], rom["sav"]["path"], rom["sav"]["sha256"]
 
 
 def build(dest, source, spec):

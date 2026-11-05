@@ -3,7 +3,7 @@
 // PPU see, the nametable mirroring, and the mapper's IRQ. One design covers
 // every mapper it knows, picked at load time by `mapper` (the iNES number):
 //   0 NROM, 2 UxROM, 3 CNROM, 7 AxROM, 1 MMC1 (SxROM), 4 MMC3 (TxROM),
-//   9 MMC2 (PxROM).
+//   9 MMC2 (PxROM); with `mmc6`, 4 is MMC6.
 // Any other number behaves as NROM. Behaviour follows MesenCE's mappers, as
 // the golden frames come from it: MMC1 ignores a write in the CPU cycle after
 // another (the second write of a read-modify-write instruction) unless bit 7
@@ -32,6 +32,13 @@
 // (latch 1), sampled on a12_ce, and as in MesenCE the new bank applies from
 // the PPU's next address on: the read that flips it still sees the old one.
 //
+// MMC6 is MMC3 with 1 KB of PRG RAM inside the mapper, at $7000-$7FFF (four
+// mirrors of it), in two 512-byte halves: $A001 bits 7-4 enable reading and
+// writing the upper half and reading and writing the lower, and $8000 bit 5
+// all of it. A half not enabled for reading is open bus, as is $6000-$6FFF
+// (MesenCE's MMC6 leaves the RAM there too, always enabled; StarTropics never
+// goes there). The RAM is PRG RAM's first 1 KB (wram_addr).
+//
 // Save state: words 0-4, as listed at the end.
 module nes_cart #(
     parameter bit SAVE_STATE = 1'b1
@@ -41,6 +48,7 @@ module nes_cart #(
 
     // Configuration, from the ROM's header.
     input  logic [7:0]  mapper,
+    input  logic        mmc6,          // mapper 4 is MMC6
     input  logic        hdr_vertical,  // the header's mirroring, for mappers that don't set it
     input  logic        prg_512k,      // 512 KB of PRG ROM: MMC1's SUROM, its 256 KB halves picked by the CHR registers
 
@@ -53,6 +61,7 @@ module nes_cart #(
     output logic [22:0] prg_addr,
     output logic        wram_rd,       // PRG RAM at $6000-$7FFF answers reads...
     output logic        wram_wr,       // ...and takes writes (when the cartridge has it)
+    output logic [12:0] wram_addr,     // PRG RAM's address for addr
     output logic        irq_n,
 
     // Two PPU addresses (its address and the next, for a prefetch) through
@@ -76,6 +85,7 @@ module nes_cart #(
     wire is_mmc1 = mapper == 8'd1;
     wire is_mmc3 = mapper == 8'd4;
     wire is_mmc2 = mapper == 8'd9;
+    wire is_mmc6 = is_mmc3 && mmc6;
 
     wire reg_wr = wr_ce && we && addr[15];
 
@@ -96,7 +106,8 @@ module nes_cart #(
     logic [7:0][7:0] m3_r;  // R7-R0
     logic [7:0] m3_sel;        // $8000: {CHR mode, PRG mode, -, -, -, register}
     logic       m3_hmirror;    // $A000 bit 0
-    logic [1:0] m3_ram;        // $A001: {enabled, write-protected}
+    logic [3:0] m3_ram;        // $A001 bits 7-4: MMC3's {enabled, write-protected, -, -};
+                               // MMC6's {read, write} of the upper half, then of the lower
     logic [7:0] m3_latch, m3_count;
     logic       m3_reload, m3_irq_on, m3_irq;
     logic       a12_low;           // A12 has been seen low since it was last high
@@ -187,7 +198,7 @@ module nes_cart #(
                     3'b000: m3_sel <= wdata;
                     3'b001: m3_r[m3_sel[2:0]] <= m3_sel[2:1] == 2'b00 ? {wdata[7:1], 1'b0} : wdata;
                     3'b010: m3_hmirror <= wdata[0];
-                    3'b011: m3_ram <= wdata[7:6];
+                    3'b011: m3_ram <= wdata[7:4];
                     3'b100: m3_latch <= wdata;
                     3'b101: begin m3_count <= '0; m3_reload <= 1'b1; end
                     3'b110: begin m3_irq_on <= 1'b0; m3_irq <= 1'b0; end
@@ -208,7 +219,7 @@ module nes_cart #(
             case (st_addr)
                 3'd0: m3_r[3:0] <= st_wdata;
                 3'd1: m3_r[7:4] <= st_wdata;
-                3'd2: {m3_sel, m3_latch, m3_count, m3_hmirror, m3_ram, m3_reload, m3_irq_on} <= st_wdata[28:0];
+                3'd2: {m3_sel, m3_latch, m3_count, m3_hmirror, m3_ram, m3_reload, m3_irq_on} <= st_wdata[30:0];
                 3'd3: {m1_last_c, m1_wrote, m1_n, m1_sr, m1_ctrl, m1_chr0, m1_chr1, m1_prg} <= st_wdata[29:0];
                 3'd4: {m2_pend, m2_latch, m3_irq, a12_low, a12_n, latch} <= st_wdata[16:0];
                 default: ;
@@ -275,8 +286,12 @@ module nes_cart #(
     end
 
     assign prg_addr = {bank, addr[12:0]};
-    assign wram_rd  = is_mmc1 ? !m1_prg[4] : is_mmc3 ? m3_ram[1] : 1'b1;
-    assign wram_wr  = is_mmc3 ? m3_ram == 2'b10 : wram_rd;
+    // MMC6: $7000-$7FFF with $8000 bit 5, then the half's enable.
+    wire   m6_on    = addr[12] && m3_sel[5];
+    wire [1:0] m6_en = addr[9] ? m3_ram[3:2] : m3_ram[1:0];  // {read, write}
+    assign wram_rd  = is_mmc1 ? !m1_prg[4] : is_mmc6 ? m6_on && m6_en[1] : is_mmc3 ? m3_ram[3] : 1'b1;
+    assign wram_wr  = is_mmc6 ? m6_on && m6_en[0] : is_mmc3 ? m3_ram[3:2] == 2'b10 : wram_rd;
+    assign wram_addr = is_mmc6 ? {3'b0, addr[9:0]} : addr[12:0];
 
     // ---- CHR: 1 KB banks, for each of the two PPU addresses ----
     for (genvar i = 0; i < 2; i++) begin : g_chr
@@ -315,7 +330,7 @@ module nes_cart #(
 
     // ---- Save state ----
     //   0 MMC3's R3-R0, 1 R7-R4 (R0 in the low byte),
-    //   2 {MMC3 $8000, IRQ latch, IRQ counter, $A000 bit 0, $A001 bits 7-6, reload, IRQ on} in bits 28-0,
+    //   2 {MMC3 $8000, IRQ latch, IRQ counter, $A000 bit 0, $A001 bits 7-4, reload, IRQ on} in bits 30-0,
     //   3 {MMC1 last CHR register $C000, wrote last cycle, bits shifted, shift register,
     //      control, CHR 0, CHR 1, PRG} in bits 29-0,
     //   4 {MMC2's pending flip (3 bits), its latches (2)} in bits 16-12, {MMC3's
@@ -329,7 +344,7 @@ module nes_cart #(
             case (st_addr)
                 3'd0:    st_rdata = m3_r[3:0];
                 3'd1:    st_rdata = m3_r[7:4];
-                3'd2:    st_rdata = {3'b0, m3_sel, m3_latch, m3_count, m3_hmirror, m3_ram, m3_reload, m3_irq_on};
+                3'd2:    st_rdata = {1'b0, m3_sel, m3_latch, m3_count, m3_hmirror, m3_ram, m3_reload, m3_irq_on};
                 3'd3:    st_rdata = {2'b0, m1_last_c, m1_wrote, m1_n, m1_sr, m1_ctrl, m1_chr0, m1_chr1, m1_prg};
                 3'd4:    st_rdata = {15'b0, m2_pend, m2_latch, m3_irq, a12_low, a12_n, latch};
                 default: st_rdata = '0;

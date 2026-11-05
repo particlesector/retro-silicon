@@ -17,6 +17,7 @@ std::variant<NesRom, std::string> parse_ines(std::span<const uint8_t> file) {
         // NES 2.0 adds high bits to the mapper and sizes; the exponent size form isn't supported.
         if ((file[9] & 0x0F) == 0x0F || (file[9] & 0xF0) == 0xF0) return std::string("NES 2.0 exponent sizes aren't supported");
         rom.mapper |= (file[8] & 0x0Fu) << 8;
+        rom.submapper = file[8] >> 4;
         prg_units |= (file[9] & 0x0Fu) << 8;
         chr_units |= (file[9] & 0xF0u) << 4;
         auto shift = [](unsigned n) -> size_t { return n ? size_t{64} << n : 0; };

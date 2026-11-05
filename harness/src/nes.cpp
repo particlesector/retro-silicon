@@ -61,6 +61,39 @@ bool pow2(size_t n) { return n && !(n & (n - 1)); }
 // MesenCE gives a ROM whose iNES 1.0 header can't say.
 size_t prg_ram_size(const NesRom& rom) { return rom.nes2 ? rom.prg_ram + rom.prg_nvram : 8192; }
 
+// The PRG ROM CRC-32s of iNES 1.0 dumps MesenCE's database makes MMC6.
+constexpr uint32_t kMmc6Prg[] = {
+    0xbeb88304,  // StarTropics (USA)
+};
+
+} // namespace
+
+bool is_mmc6(const NesRom& rom) {
+    if (rom.mapper != 4) return false;
+    if (rom.nes2) return rom.submapper == 1;
+    Crc32 c;
+    c.update(rom.prg);
+    return std::find(std::begin(kMmc6Prg), std::end(kMmc6Prg), c.value()) != std::end(kMmc6Prg);
+}
+
+size_t battery_size(const NesRom& rom) {
+    if (!rom.battery && !(rom.nes2 && rom.prg_nvram)) return 0;
+    if (is_mmc6(rom)) return 1024;
+    return rom.nes2 && rom.prg_nvram ? rom.prg_nvram : 8192;
+}
+
+std::vector<uint8_t> read_sav(const NesRom& rom, const std::string& path) {
+    std::ifstream f(path, std::ios::binary);
+    if (!f) throw RigError("can't read " + path);
+    std::vector<uint8_t> v((std::istreambuf_iterator<char>(f)), {});
+    if (v.size() != battery_size(rom))
+        throw RigError(path + " is " + std::to_string(v.size()) + " bytes; this ROM's battery RAM is " +
+                       std::to_string(battery_size(rom)));
+    return v;
+}
+
+namespace {
+
 // PRG ROM as the board's memory holds it. MesenCE takes a bank number modulo
 // the ROM's bank count, which for a size that isn't a power of 2 a mask can't
 // do: so an MMC1 ROM of such a size (blargg's 80 KB ones) goes in as 256 KB,
@@ -166,7 +199,7 @@ std::optional<std::string> Console::load(const NesRom& rom, bool want_ext) {
     bool ext = !chr_ram && (rom.chr.size() > (size_t{1} << c_.peek(kRegs + kChrBits, 1)[0]) || (want_ext && chr_ext()));
     put32(kMapper, rom.mapper, 1);
     put32(kCart, (rom.mirroring == NesRom::Mirroring::kVertical ? 1 : 0) | (chr_ram ? 2 : 0) |
-                     (prg_ram_size(rom) ? 4 : 0) | (ext ? 8 : 0), 1);
+                     (prg_ram_size(rom) ? 4 : 0) | (ext ? 8 : 0) | (is_mmc6(rom) ? 16 : 0), 1);
     std::vector<uint8_t> chr_ram_fill = power_up_fill(power_up_, 8192, 1);
     const std::vector<uint8_t>& chr = chr_ram ? chr_ram_fill : rom.chr;
     put32(kChrMask, static_cast<uint32_t>(chr.size() - 1), 3);
@@ -215,7 +248,7 @@ std::optional<std::string> Console::load_lean(const NesRom& rom, unsigned mem_bi
     bool ext = !chr_ram && rom.chr.size() > (size_t{1} << chr_bits);
     put32(kMapper, rom.mapper, 1);
     put32(kCart, (rom.mirroring == NesRom::Mirroring::kVertical ? 1 : 0) | (chr_ram ? 2 : 0) |
-                     (prg_ram_size(rom) ? 4 : 0) | (ext ? 8 : 0), 1);
+                     (prg_ram_size(rom) ? 4 : 0) | (ext ? 8 : 0) | (is_mmc6(rom) ? 16 : 0), 1);
     std::vector<uint8_t> chr_ram_fill(8192, 0);
     const std::vector<uint8_t>& chr = chr_ram ? chr_ram_fill : rom.chr;
     put32(kChrMask, static_cast<uint32_t>(chr.size() - 1), 3);
@@ -294,6 +327,21 @@ uint32_t Console::mem_waits() { return get32(kMemWaits); }
 Console::CacheStats Console::cache_stats() { return {get32(kCacheHits), get32(kCacheMisses), get32(kCachePrefetches)}; }
 std::pair<uint32_t, uint32_t> Console::pcm() { return {get32(kPcmCrc), get32(kPcmCount)}; }
 std::vector<uint8_t> Console::peek(uint16_t addr, uint16_t count) { return c_.peek(kCpu + addr, count); }
+
+std::vector<uint8_t> Console::battery_ram(const NesRom& rom) {
+    return c_.peek(kCpu + 0x6000, static_cast<uint32_t>(battery_size(rom)));
+}
+
+void Console::set_battery_ram(const NesRom& rom, const std::vector<uint8_t>& sav) {
+    if (sav.size() != battery_size(rom))
+        throw RigError("a save for this ROM is " + std::to_string(battery_size(rom)) + " bytes, not " +
+                       std::to_string(sav.size()));
+    c_.write(kCpu + 0x6000, sav);
+}
+
+uint32_t Console::battery_crc(const NesRom& rom) {
+    return c_.crc(kCpu + 0x6000, static_cast<uint32_t>(battery_size(rom)));
+}
 
 std::optional<std::pair<uint32_t, uint32_t>> Console::frame_crc() {
     if (!(status() & kCrcValid)) return std::nullopt;
@@ -532,15 +580,25 @@ TestResult rom_test(Link& link, const RomCheck& check, const NesRom& rom, uint32
             return finish("build ID " + hex(info.build_id, 8) + ", expected " + hex(*build_id, 8) +
                           ": the wrong bitstream is loaded");
 
-        nes.hold_reset();
-        nes.set_power_up(power);
-        if (auto e = nes.load(rom, chr_ext)) return finish(*e);
+        // From power-up, with this battery RAM if it isn't empty.
+        auto start = [&](const std::vector<uint8_t>& battery) -> std::optional<std::string> {
+            nes.hold_reset();
+            nes.set_power_up(power);
+            if (auto e = nes.load(rom, chr_ext)) return e;
+            if (!battery.empty()) nes.set_battery_ram(rom, battery);
+            nes.set_vector(std::nullopt);
+            nes.set_input_script(check.input);
+            nes.set_reset_presses(check.reset);
+            nes.stop_frame(frames);
+            nes.run();
+            return std::nullopt;
+        };
+        if (auto e = start(check.battery)) return finish(*e);
         r.bytes = rom.prg.size() + rom.chr.size();
-        nes.set_vector(std::nullopt);
-        nes.set_input_script(check.input);
-        nes.set_reset_presses(check.reset);
-        nes.stop_frame(frames);
-        nes.run();
+        if (check.again) {
+            nes.wait_stopped();
+            if (auto e = start(nes.battery_ram(rom))) return finish(*e);
+        }
         uint8_t st = nes.wait_stopped();
         auto crc = nes.frame_crc();
         if (crc) r.crc32 = crc->first;
@@ -572,6 +630,11 @@ TestResult rom_test(Link& link, const RomCheck& check, const NesRom& rom, uint32
         if (st & kHalted) return finish("the CPU halted at cycle " + std::to_string(nes.cycles()));
         if (!crc || crc->second != frames - 1)
             return finish("no CRC for frame " + std::to_string(frames - 1));
+        if (check.battery_crc && !fail) {
+            uint32_t b = nes.battery_crc(rom);
+            if (b != *check.battery_crc)
+                fail = "battery RAM CRC " + hex(b, 8) + ", MesenCE's " + hex(*check.battery_crc, 8);
+        }
         return finish(fail.value_or(""));
     } catch (const shell::StatusError& e) {
         return finish(e.what());
@@ -737,7 +800,8 @@ std::vector<GoldenRom> load_golden_roms(const std::string& file) {
         std::string crc, kind, result;
         ss >> g.check.id >> g.frames >> crc >> kind >> result >> g.path;
         if (!ss) throw RigError("bad line in " + file + ": " + line);
-        // Optional: input=frame:pad1,frame:pad1,... and reset=frame,frame
+        // Optional: input=frame:pad1,frame:pad1,..., reset=frame,frame,
+        // sav=path, again and savcrc=crc
         std::string opt;
         while (ss >> opt) {
             std::string e;
@@ -749,6 +813,12 @@ std::vector<GoldenRom> load_golden_roms(const std::string& file) {
                     g.check.input.push_back({static_cast<uint16_t>(std::stoul(e.substr(0, colon))),
                                              static_cast<uint8_t>(std::stoul(e.substr(colon + 1), nullptr, 0))});
                 }
+            } else if (opt.rfind("sav=", 0) == 0) {
+                g.sav = opt.substr(4);
+            } else if (opt == "again") {
+                g.check.again = true;
+            } else if (opt.rfind("savcrc=", 0) == 0) {
+                g.check.battery_crc = static_cast<uint32_t>(std::stoul(opt.substr(7), nullptr, 16));
             } else if (opt.rfind("reset=", 0) == 0) {
                 std::istringstream es(opt.substr(6));
                 while (std::getline(es, e, ',')) g.check.reset.push_back(static_cast<uint32_t>(std::stoul(e)));
