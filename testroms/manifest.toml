@@ -2018,3 +2018,13 @@ needs = "cpu, ppu, mmc3"
 covers = "MMC3 (TxROM): 256 KB each of PRG and CHR ROM"
 check = "frame"
 frames = 300
+
+[[rom]]
+id = "mapperel-mmc2"
+source = "holy-mapperel"
+path = "testroms/M9_P128K_C64K.nes"
+sha256 = "04bb2e1aa4f16ee2d89c33318c631202ea3aa0db88858e3483e520dffc13a47a"
+needs = "cpu, ppu, mmc2"
+covers = "MMC2 (PxROM, Punch-Out!!'s): 128 KB of PRG ROM, 64 KB of CHR ROM in 4 KB banks switched by the PPU's reads of tiles $FD and $FE"
+check = "frame"
+frames = 300

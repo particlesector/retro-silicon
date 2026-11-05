@@ -49,8 +49,8 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
 SUPPORTED = {"cpu", "ppu", "apu", "apu frame counter", "controllers", "reset", "unstable opcodes",  # what systems/nes has so far
-             "uxrom", "cnrom", "axrom", "mmc1", "mmc3"}
-MAPPERS = {0, 1, 2, 3, 4, 7}  # NROM, MMC1, UxROM, CNROM, MMC3, AxROM
+             "uxrom", "cnrom", "axrom", "mmc1", "mmc3", "mmc2"}
+MAPPERS = {0, 1, 2, 3, 4, 7, 9}  # NROM, MMC1, UxROM, CNROM, MMC3, AxROM, MMC2
 MARGIN = 30                 # frames after MesenCE's result before the golden frame
 
 LUA = """

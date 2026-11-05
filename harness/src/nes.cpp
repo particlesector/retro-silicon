@@ -81,7 +81,7 @@ std::optional<std::string> Console::unsupported(const NesRom& rom) {
 }
 
 std::optional<std::string> unsupported_on(const NesRom& rom, unsigned mem_bits, unsigned chr_bits, bool chr_ext) {
-    static const unsigned kMappers[] = {0, 1, 2, 3, 4, 7};
+    static const unsigned kMappers[] = {0, 1, 2, 3, 4, 7, 9};
     if (std::find(std::begin(kMappers), std::end(kMappers), rom.mapper) == std::end(kMappers))
         return "mapper " + std::to_string(rom.mapper) + " isn't supported";
     if (rom.mirroring == NesRom::Mirroring::kFourScreen) return "four-screen mirroring isn't supported";

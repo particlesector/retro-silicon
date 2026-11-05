@@ -4,7 +4,7 @@ The NES as far as it's built:
 - the 2A03's CPU (`cpu/6502` with `DECIMAL = 0`), its APU (`audio/apu-2a03`), and its DMC and OAM DMA;
 - the 2C02 PPU (`video/ppu-2c02`);
 - 2 KB of RAM mirrored to `$1FFF`;
-- a cartridge (below): PRG ROM in the board's memory; CHR ROM in block RAM, or on the Tang Nano 20K in its SDRAM; 8 KB of CHR RAM; 8 KB of PRG RAM at `$6000` if the ROM has any; and the mappers NROM, UxROM, CNROM, AxROM, MMC1 and MMC3 (`nes_cart`);
+- a cartridge (below): PRG ROM in the board's memory; CHR ROM in block RAM, or on the Tang Nano 20K in its SDRAM; 8 KB of CHR RAM; 8 KB of PRG RAM at `$6000` if the ROM has any; and the mappers NROM, UxROM, CNROM, AxROM, MMC1, MMC3 and MMC2 (`nes_cart`);
 - two standard controllers, driven by an input player (a script of buttons by frame) or by registers, for live input.
 
 The test shell loads ROMs, runs the system and reads results, frame CRCs and whole frames. A save-state controller saves and loads the whole system. The picture goes out as HDMI at 720p. Reads of `$4000`-`$5FFF` other than `$4015`, `$4016` and `$4017` give open bus (the last value on the data bus), and writes there other than the APU's, `$4014` and `$4016` do nothing.
@@ -19,8 +19,9 @@ The test shell loads ROMs, runs the system and reads results, frame CRCs and who
 | 7 | AxROM | 32 KB PRG banks; one-screen mirroring, either page |
 | 1 | MMC1 (SxROM) | Its serial port, 16 or 32 KB PRG modes, 4 or 8 KB CHR modes, its mirroring, PRG RAM off by `$E000` bit 4, and SUROM's 512 KB of PRG |
 | 4 | MMC3 (TxROM) | 8 KB PRG and 1 or 2 KB CHR banks in both modes, its mirroring, PRG RAM enable and write protect, and its scanline IRQ (revision B) |
+| 9 | MMC2 (PxROM) | An 8 KB PRG bank at `$8000`, the last three after it; two 4 KB CHR banks for each half of the pattern tables, picked by latches the PPU's reads of tiles `$FD` and `$FE` flip; its mirroring |
 
-They behave as MesenCE's do, for the golden frames: MMC1 ignores a write in the cycle after another (the second write of a read-modify-write instruction) unless bit 7 is set, and powers up with one-screen mirroring and its last bank at `$C000`; MMC3 powers up with R0-R7 = 0, 2, 4, 5, 6, 7, 0, 1, vertical mirroring and PRG RAM off, and counts a rise of the PPU's A12 after it has been low for 3 CPU cycles. A bank number past the end wraps; for MMC1's ROMs whose size isn't a power of 2 (blargg's 80 KB ones), the harness lays PRG out as 256 KB, each bank a copy of the bank MesenCE's modulo gives. No bus conflicts. A ROM with no PRG RAM, by its NES 2.0 header, has open bus at `$6000`; an iNES 1.0 ROM gets 8 KB, as MesenCE gives it.
+They behave as MesenCE's do, for the golden frames: MMC1 ignores a write in the cycle after another (the second write of a read-modify-write instruction) unless bit 7 is set, and powers up with one-screen mirroring and its last bank at `$C000`; MMC2 powers up with both latches at `$FE`, and a latch's new bank applies from the PPU's next address, so the read that flips it still sees the old one; MMC3 powers up with R0-R7 = 0, 2, 4, 5, 6, 7, 0, 1, vertical mirroring and PRG RAM off, and counts a rise of the PPU's A12 after it has been low for 3 CPU cycles. A bank number past the end wraps; for MMC1's ROMs whose size isn't a power of 2 (blargg's 80 KB ones), the harness lays PRG out as 256 KB, each bank a copy of the bank MesenCE's modulo gives. No bus conflicts. A ROM with no PRG RAM, by its NES 2.0 header, has open bus at `$6000`; an iNES 1.0 ROM gets 8 KB, as MesenCE gives it.
 
 A mapper write takes effect where the CPU's PPU register access falls in its cycle, after the second dot, and the PPU's fetches see the banks as they stand at each dot's start: so a bank switch lands on the same dot as in MesenCE.
 

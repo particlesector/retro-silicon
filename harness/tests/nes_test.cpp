@@ -366,6 +366,7 @@ MATCHES_MESEN_EXT("mapperel-cnrom")
 MATCHES_MESEN_EXT("mapperel-mmc1-c32k")
 MATCHES_MESEN_EXT("mapperel-mmc1-c128k")
 MATCHES_MESEN_EXT("mapperel-mmc3-c256k")
+MATCHES_MESEN_EXT("mapperel-mmc2")
 // As the PYNQ-Z2 runs it, PRG ROM in its DDR3 (an AXI memory model that
 // stalls at random): the largest ROMs, and timing-sensitive ones.
 #define MATCHES_MESEN_AXI(id) \
@@ -374,6 +375,7 @@ MATCHES_MESEN_EXT("mapperel-mmc3-c256k")
     }
 MATCHES_MESEN_AXI("mapperel-mmc1-p512k")
 MATCHES_MESEN_AXI("mapperel-mmc3-c256k")
+MATCHES_MESEN_AXI("mapperel-mmc2")
 MATCHES_MESEN_AXI("mmc3_irq-4")
 MATCHES_MESEN_AXI("oam_read")
 MATCHES_MESEN_AXI("cpu_interrupts-5")

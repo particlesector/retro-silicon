@@ -514,7 +514,7 @@ module nes #(
         .mapper, .hdr_vertical(mirror_v), .prg_512k(prg_mask[19:18] == 2'b01),
         .wr_ce(reg_ce), .ce, .addr(bus_addr), .we(bus_we), .wdata(bus_wdata),
         .prg_addr(cart_prg_a), .wram_rd(cart_wram_rd), .wram_wr(cart_wram_wr), .irq_n(cart_irq_n),
-        .va({vaddr_next[12:0], vaddr[12:0]}), .a12(vaddr[12]), .a12_ce(ppu_ce_q),
+        .va({vaddr_next[12:0], vaddr[12:0]}), .va13({vaddr_next[13], vaddr[13]}), .a12(vaddr[12]), .a12_ce(ppu_ce_q),
         .chr_addr({cart_chr_n, cart_chr_a}), .mirror(cart_mirror),
         .st_addr(s_addr[4:2]), .st_rdata(cart_st_rdata), .st_we(st_we_cart), .st_wdata);
 
