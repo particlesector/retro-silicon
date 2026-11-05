@@ -37,9 +37,9 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[2]
 
 FAMILIES = {
-    "gw2a": {"board": "Tang Nano 20K", "synth": "synth_gowin", "device": "GW2AR-LV18QN88C8/I7",
+    "gw2a": {"board": "Tang Nano 20K", "synth": "synth_gowin -nowidelut", "device": "GW2AR-LV18QN88C8/I7",
              "family": "GW2A-18C", "pins": ("4", "15", "16")},
-    "gw5a": {"board": "Tang Console 138K", "synth": "synth_gowin -family gw5a", "device": "GW5AST-LV138PG484AC1/I0",
+    "gw5a": {"board": "Tang Console 138K", "synth": "synth_gowin -nowidelut -family gw5a", "device": "GW5AST-LV138PG484AC1/I0",
              "family": "GW5AST-138C", "pins": ("V22", "V19", "G22")},
     "xc7": {"board": "PYNQ-Z2", "synth": "synth_xilinx -flatten -abc9 -arch xc7", "chipdb": "xc7z020clg400.bin",
             "pins": ("H16", "Y18", "Y19")},
