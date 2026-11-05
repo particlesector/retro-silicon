@@ -14,6 +14,14 @@
 # placement that meets timing can still fail on the chip, and a board then
 # pins a seed its tests passed with. Writes <outdir>/<top>.fs plus synth.log,
 # pnr.log and report.json (achieved fmax).
+#
+# Synthesis maps no wide multiplexers (synth_gowin -nowidelut): the slices'
+# MUX2_LUT5-8 take their inputs only from LUTs, so Yosys pads every mux input
+# that isn't a LUT's output (constants, flip-flops) with a LUT1 of its own,
+# and the 20K's NES spent over a thousand LUTs on them. In LUT4s alone it's
+# smaller and faster: 15,915 LUT4s at 53 MHz became 14,341 at 62 MHz on the
+# Tang Nano 20K, and 20,157 at 54 MHz became 16,924 at 56 MHz on the Tang
+# Console 138K (Nov 4).
 set -euo pipefail
 
 freq=27
@@ -54,7 +62,7 @@ synth_family=""
 [[ $family == GW5A* ]] && synth_family="-family gw5a"
 
 yosys -q -l "$out/synth.log" \
-  -p "read_verilog -sv $*; $chparams synth_gowin $synth_family -top $top -json $out/$top.json"
+  -p "read_verilog -sv $*; $chparams synth_gowin -nowidelut $synth_family -top $top -json $out/$top.json"
 
 sdc=()
 if (( ${#clocks[@]} )); then
