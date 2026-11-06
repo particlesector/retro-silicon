@@ -277,3 +277,36 @@ TEST_CASE("HDMI: a receiver sees full_palette's every colour as the 2C02 palette
     REQUIRE(golden.count("full_palette"));
     CHECK(crc == golden["full_palette"]);
 }
+
+TEST_CASE("HDMI: the NES makes a frame in at most 98% of a display frame, leaving room for memory waits") {
+    // Keeping pace, each NES frame has to be ready within a display frame; one
+    // that isn't waits for the next, and the display shows the last one twice
+    // (a stutter). At the NTSC rate a frame takes 99.84% of a 60 Hz display
+    // frame, and the memory waits of a busy game (Kirby's Adventure on the
+    // PYNQ-Z2: hundreds of clocks a frame, against 1,000 to spare) made it
+    // miss several a second. So the dots run 2% faster than NTSC's: the NES
+    // waits at each frame's end, and still makes 60 frames a second. Measured
+    // here with pacing off, in display frames (720p's pixel clocks), while
+    // the host reads memory as rig-run play does for a game's saves.
+    uint64_t pix = 0;
+    auto link = rig::make_nes_hdmi_sim([&pix](uint32_t) { pix++; });
+    rig::shell::Client client(*link);
+    rig::nes::Console nes(client);
+    auto [g, rom] = golden_rom("oam_read");
+    nes.hold_reset();
+    REQUIRE(!nes.load(rom));
+    nes.set_vector(std::nullopt);
+    nes.pace(false);
+    nes.run();
+    while (nes.frames() < 3) {
+    }
+    uint32_t f0 = nes.frames();
+    uint64_t p0 = pix;
+    auto battery = rom;  // the board's CRC of 8 KB of PRG RAM, in the SDRAM, back to back
+    battery.battery = true;
+    while (nes.frames() < f0 + 6) nes.battery_crc(battery);
+    uint32_t frames = nes.frames() - f0;
+    double shown = static_cast<double>(pix - p0) / (1650.0 * 750.0);
+    INFO(frames << " NES frames in " << shown << " display frames");
+    CHECK(shown <= 0.98 * frames + 0.05);  // + the last frame's part, read late
+}

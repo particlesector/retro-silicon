@@ -7,7 +7,11 @@
 // system's clock, held off by DQCE until the PLL locks, so the SDRAM's power-up
 // wait counts real time. CLKDIV makes the 74.25 MHz pixel clock (371.25 / 5).
 // At 46.40625 MHz a UART bit is 31 clocks (1.497 Mbaud, 0.2% slow of the
-// host's 1.5) and the PPU's dot rate 14/121 of the clock, exactly NTSC's.
+// host's 1.5) and the PPU's dot rate
+// 13/110 of the clock, 2.1% faster than NTSC's: keeping pace with the display, the NES
+// waits at each frame's end, and the 2% leaves room for memory waits (at
+// NTSC's rate a frame takes 99.84% of a 60 Hz display frame, and a frame
+// that overruns waits for the next: a stutter).
 //
 // The GW2AR-18's SDRAM is inside the package, on ports the toolchain
 // recognises by name, so they need no constraints. Its clock is the inverse
@@ -65,7 +69,7 @@ module nes_top #(
     logic        dq_oe;
     logic [9:0]  tmds0, tmds1, tmds2;
 
-    nes_sdram #(.CLKS_PER_BIT(CLKS_PER_BIT), .IDLE_CLKS(464_063), .FREQ_MHZ(47), .DOT_NUM(14), .DOT_DEN(121),
+    nes_sdram #(.CLKS_PER_BIT(CLKS_PER_BIT), .IDLE_CLKS(464_063), .FREQ_MHZ(47), .DOT_NUM(13), .DOT_DEN(110),
                 .PACE(1'b1), .SAVE_STATE(1'b0), .CHR_EXT(1'b1), .DEBUG(DEBUG), .BUILD_ID(BUILD_ID)) u_sys (
         .clk(sclk), .uart_rx, .uart_tx, .led,
         .sd_cke(O_sdram_cke), .sd_cs_n(O_sdram_cs_n), .sd_ras_n(O_sdram_ras_n),

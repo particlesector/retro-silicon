@@ -22,8 +22,8 @@ std::unique_ptr<SimLink> make_nes_sim();          // reports RS_NES_BUILD_ID
 // 50 MHz clock (33 clocks a bit). Reports RS_NES_BRAM_BUILD_ID.
 std::unique_ptr<SimLink> make_nes_bram_sim();
 // The NES as the Tang Nano 20K runs it: 46.40625 MHz (31 clocks a bit, the
-// dot rate at 14/121), and its HDMI output on a 74.25 MHz pixel clock from
-// the same PLL, keeping pace with the display. Each pixel clock's TMDS symbols
+// dot rate at 13/110, 2% fast, for room to keep pace), and its HDMI output on
+// a 74.25 MHz pixel clock from the same PLL, keeping pace with the display. Each pixel clock's TMDS symbols
 // go to on_symbol, as {red, green, blue} in bits 29-20, 19-10, 9-0. A frame
 // takes about 2 million clock edges, so it's slower than make_nes_sim().
 // Reports RS_NES_BUILD_ID.
@@ -40,7 +40,7 @@ std::unique_ptr<SimLink> make_nes_lean_sim(std::function<void(uint32_t)> on_symb
 std::unique_ptr<SimLink> make_nes_ext_sim();
 // The NES as the PYNQ-Z2 runs it: PRG ROM in its DDR3 (here an AXI memory
 // model that stalls at random, memory/axi-bridge's), 37.125 MHz (25 clocks a
-// bit, dots at 35/242), 256 KB of CHR in block RAM, without the display.
+// bit, dots at 9/61, 2% fast), 256 KB of CHR in block RAM, without the display.
 // Reports RS_NES_AXI_BUILD_ID.
 std::unique_ptr<SimLink> make_nes_axi_sim();
 
