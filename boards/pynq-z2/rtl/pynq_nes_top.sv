@@ -19,8 +19,11 @@
 // MHz for the system (/20), held off by BUFGCE until the MMCM locks. The
 // system runs slower than the 20K's 46.4 MHz because nextpnr-xilinx's
 // placements of the NES reach anywhere from 38 to 52 MHz. At 37.125 MHz a
-// UART bit is 25 clocks (1.485 Mbaud, 1% slow) and the PPU's dot rate 35/242
-// of the clock, exactly NTSC's.
+// UART bit is 25 clocks (1.485 Mbaud, 1% slow) and the PPU's dot rate 9/61
+// of the clock, 2.0% faster than NTSC's: keeping pace with the display, the
+// NES waits at each frame's end, and the 2% leaves room for the DDR3's waits
+// (at NTSC's rate a frame takes 99.84% of a 60 Hz display frame, and a frame
+// that overruns waits for the next: Kirby's Adventure stuttered).
 //
 // LEDs (active high): ld0 a corrupt command frame was seen, ld1 a stalled one,
 // ld2 running, ld3 heartbeat.
@@ -83,7 +86,7 @@ module pynq_nes_top #(
     logic [63:0] rdata, wdata;
     logic [7:0]  wstrb;
 
-    nes_axi #(.CLKS_PER_BIT(CLKS_PER_BIT), .IDLE_CLKS(371_250), .DOT_NUM(35), .DOT_DEN(242), .CHR_AW(18),
+    nes_axi #(.CLKS_PER_BIT(CLKS_PER_BIT), .IDLE_CLKS(371_250), .DOT_NUM(9), .DOT_DEN(61), .CHR_AW(18),
               .BANK_AW(15), .BASE(32'h1000_0000), .ASYNC(1'b1), .PACE(1'b1), .BUILD_ID(BUILD_ID)) u_sys (
         .clk(sclk), .uart_rx, .uart_tx, .led(sys_led),
         .pclk, .tmds0, .tmds1, .tmds2, .aclk(pclk), .axi_ready(aresetn),

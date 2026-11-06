@@ -109,6 +109,7 @@ All notable changes to this project are listed here. The format follows [Keep a 
 
 ### Fixed
 
+- `boards/tang-nano-20k`, `boards/pynq-z2`: the NES's dots run 2% faster than NTSC's (13/110 and 9/61 of the clock), so that keeping pace with the display it has room for memory waits: at NTSC's rate a frame took 99.84% of a 60 Hz display frame, and one that overran waited for the next, so busy games stuttered (Kirby's Adventure on the PYNQ-Z2). The NES waits at each frame's end, so it still makes 60 frames a second, with the same sound.
 - `cpu/6502`: the unstable unofficial opcodes (XAA, LAX `#imm`, LAS, SHY, SHX, AHX, TAS) run as MesenCE runs them, instead of halting.
 - `systems/nes`: a DMA's dummy cycles no longer clock the pads during a `$4016`/`$4017` read; only its halt cycle does, as on an NES.
 - `video/ppu-2c02`: dot 0 of a visible line presents the pattern address of dot 339's nametable byte, so an MMC3 with the background at `$1000` doesn't count a second A12 rise in a line.

@@ -36,19 +36,19 @@ rs_verilate(rs_sim_link COMPONENT nes_bram PREFIX Vnes_bram_sim
 # The NES as the Tang Nano 20K runs it with HDMI (boards/tang-nano-20k/rtl/nes_top.sv's
 # parameters): 46.40625 MHz, keeping pace with its display, without save states.
 rs_verilate(rs_sim_link COMPONENT nes_sdram PREFIX Vnes_hdmi_sim
-            PARAMS CLKS_PER_BIT=31 IDLE_CLKS=464063 FREQ_MHZ=47 DOT_NUM=14 DOT_DEN=121 PACE=1 CHR_EXT=1 SAVE_STATE=0
+            PARAMS CLKS_PER_BIT=31 IDLE_CLKS=464063 FREQ_MHZ=47 DOT_NUM=13 DOT_DEN=110 PACE=1 CHR_EXT=1 SAVE_STATE=0
                    BUILD_ID=${nes_id})
 # The 20K's lean build (nes_lean): the same, DEBUG=0.
 rs_verilate(rs_sim_link COMPONENT nes_sdram PREFIX Vnes_lean_sim
-            PARAMS CLKS_PER_BIT=31 IDLE_CLKS=464063 FREQ_MHZ=47 DOT_NUM=14 DOT_DEN=121 PACE=1 CHR_EXT=1 SAVE_STATE=0
+            PARAMS CLKS_PER_BIT=31 IDLE_CLKS=464063 FREQ_MHZ=47 DOT_NUM=13 DOT_DEN=110 PACE=1 CHR_EXT=1 SAVE_STATE=0
                    DEBUG=0 BUILD_ID=${nes_id})
 # The same without the display, for running ROMs whose CHR ROM is in the SDRAM.
 rs_verilate(rs_sim_link COMPONENT nes_sdram PREFIX Vnes_ext_sim
-            PARAMS CLKS_PER_BIT=31 IDLE_CLKS=464063 FREQ_MHZ=47 DOT_NUM=14 DOT_DEN=121 CHR_EXT=1 BUILD_ID=${nes_id})
+            PARAMS CLKS_PER_BIT=31 IDLE_CLKS=464063 FREQ_MHZ=47 DOT_NUM=13 DOT_DEN=110 CHR_EXT=1 BUILD_ID=${nes_id})
 # The NES as the PYNQ-Z2 runs it, its PRG in DDR3 through HP0 (an AXI memory
 # model here): 37.125 MHz (25 clocks a bit, dots at 35/242), 256 KB of CHR, no display.
 rs_verilate(rs_sim_link COMPONENT nes_axi PREFIX Vnes_axi_sim
-            PARAMS CLKS_PER_BIT=25 IDLE_CLKS=371250 DOT_NUM=35 DOT_DEN=242 CHR_AW=18 BUILD_ID=${nes_axi_id})
+            PARAMS CLKS_PER_BIT=25 IDLE_CLKS=371250 DOT_NUM=9 DOT_DEN=61 CHR_AW=18 BUILD_ID=${nes_axi_id})
 target_include_directories(rs_sim_link PRIVATE ${PROJECT_SOURCE_DIR}/components/memory/sdram/sim
                                                ${PROJECT_SOURCE_DIR}/components/memory/axi-bridge/sim)
 # The build IDs the models and bitstreams report, for runners to check.
