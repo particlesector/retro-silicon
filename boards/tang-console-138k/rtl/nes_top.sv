@@ -14,7 +14,7 @@
 // eighths), and the system clock is half the pixel clock, as on the PYNQ-Z2:
 // a UART bit is 25 clocks (1.4875 Mbaud) and the PPU's dot rate 35/242 of the
 // clock, so the NES keeps pace with its display as on the PYNQ-Z2. Gowin EDA
-// places the NES at about 41 MHz here, short of the 20K's 46.4.
+// places the NES at 37.7 to 41 MHz here, short of the 20K's 46.4.
 module nes_top #(
     parameter int          CLKS_PER_BIT = 25,
     parameter logic [31:0] BUILD_ID     = '0

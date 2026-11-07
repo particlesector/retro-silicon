@@ -240,6 +240,9 @@ module ppu_2c02 #(
         logic [12:0] sa;
         logic [7:0]  sy, stile, sattr;
         logic [8:0]  so;      // a sprite unit's pixel offset
+        /* verilator lint_off UNUSEDSIGNAL */
+        logic [7:0]  so_lo, so_hi; // its pattern bytes, shifted to bring its pixel to bit 7
+        /* verilator lint_on UNUSEDSIGNAL */
         logic        inr;     // the copy buffer's Y is in range
 
         n_vbl = vbl; n_s0hit = s0hit; n_ovf = ovf;
@@ -267,7 +270,7 @@ module ppu_2c02 #(
         sl_we = 1'b0; sl_clear = 1'b0; sl_wa = '0;
         bgc = '0; sbg = '0; spc = '0; spi = 4'd8; spf = 1'b0; color = '0; x8 = '0;
         diff = '0; ah = '0; al = '0; slot = '0; rr = '0; sa = '0; sy = '0; stile = '0; sattr = '0;
-        so = '0; inr = 1'b0;
+        so = '0; so_lo = '0; so_hi = '0; inr = 1'b0;
         n_sp_lo = sp_lo;
 
         // A buffered $2007 read finished last dot: its data is here now.
@@ -321,8 +324,16 @@ module ppu_2c02 #(
                     if (ren_prev && sl_valid != '0) begin
                         for (int i = 7; i >= 0; i--) begin
                             so = cd - {1'b0, sl_x[i]} - 9'd1;
-                            if (sl_valid[i] && so < 9'd8 && {sl_hi[i][3'd7 - so[2:0]], sl_lo[i][3'd7 - so[2:0]]} != 2'b00) begin
-                                spc = {6'b0, sl_hi[i][3'd7 - so[2:0]], sl_lo[i][3'd7 - so[2:0]]};
+                            // The pixel is taken by shifting whole bytes, not as the
+                            // pair of bit-selects {sl_hi[i][7-so], sl_lo[i][7-so]}:
+                            // GowinSynthesis (1.9.11.03) merges sl_lo and sl_hi into
+                            // one register RAM and read that pair from the wrong bits,
+                            // so a transparent sprite pixel read as opaque (a false
+                            // sprite-0 hit; sprite_hit-05 failed on the Console 138K).
+                            so_lo = sl_lo[i] << so[2:0];
+                            so_hi = sl_hi[i] << so[2:0];
+                            if (sl_valid[i] && so < 9'd8 && {so_hi[7], so_lo[7]} != 2'b00) begin
+                                spc = {6'b0, so_hi[7], so_lo[7]};
                                 spi = 4'(i);
                             end
                         end

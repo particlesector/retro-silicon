@@ -79,6 +79,8 @@ Not modelled yet: OAM decay and the row-corruption glitches MesenCE has off by d
 
 About 5,800 LUTs, 450 ALU cells and 1,170 flip-flops on a GW2A-18C by Yosys's count, plus 337 flip-flops for the registered next dot; OAM in 66 LUT RAMs. Registering the next dot took the Tang Console 138K's NES build from 49 MHz to 65-72 MHz, and the Tang Nano 20K's from 45 to 70 MHz. Not optimised yet.
 
+Built with Gowin EDA (GowinSynthesis 1.9.11.03) for the Tang Console 138K, the sprite pixel is taken by shifting the line buffer's bytes, not as a pair of bit-selects: GowinSynthesis merges `sl_lo` and `sl_hi` into one register RAM and read such a pair from the wrong bits (`boards/tang-console-138k`'s README has the details).
+
 In `systems/nes` on a Tang Console 138K at 50 MHz, too, the same 42 test ROMs pass with MesenCE's frames. Planted bug the ROMs catch: `ce` a clock after the memory read instead of two, so the next dot settles on the byte before.
 
 ## References

@@ -6,6 +6,20 @@ Sipeed Tang Console with the Tang Mega 138K module: Gowin GW5AST-LV138PG484A (`G
 
 The board builds with Gowin EDA, Gowin's own tools (decided Nov 1): the open flow has no PLL for this part, and with one the NES runs on its PLL's clocks with HDMI. `build.sh` runs `../gowin-eda/build.sh` for this part, with the 50 MHz oscillator constrained; `RS_GOWIN_EDA` must name Gowin EDA's IDE directory (the one holding `bin/gw_sh`). Gowin EDA's free Education edition is enough, and it's closed and behind a login, so each user downloads it; it's never part of this library. The CMake build makes this board's bitstreams only when `RS_GOWIN_EDA` is set. Gowin's timing analysis covers setup and hold, and a miss fails the build.
 
+### Setting up Gowin EDA
+
+1. Download Gowin EDA's Education edition for your OS from Gowin's site (it needs a free account). Sipeed lists the Tang Console 138K among the boards it supports; this library is built and tested with 1.9.11.03 on Linux. The Education edition needs no license.
+2. Unpack it anywhere and point `RS_GOWIN_EDA` at its `IDE` directory, the one holding `bin/gw_sh`.
+3. On Linux, Gowin's bundled FreeType can clash with the system's fontconfig and stop `gw_sh` before it starts, even headless. If it does, set `RS_GOWIN_EDA_PRELOAD` to the system's FreeType (on Debian and Ubuntu `/usr/lib/x86_64-linux-gnu/libfreetype.so.6`); the build preloads it for `gw_sh`.
+4. Configure the CMake build with those set, so it makes the `console_*_bitstream` targets:
+
+```sh
+export RS_GOWIN_EDA=/path/to/Gowin/IDE RS_GOWIN_EDA_PRELOAD=/usr/lib/x86_64-linux-gnu/libfreetype.so.6
+cmake --preset default && cmake --build --preset default --target console_nes_bitstream
+```
+
+The open flow (Yosys and nextpnr's GW5AST-138C support through Apicula) can build this part's simple designs, but it has no PLL for it, so it can't make the NES's HDMI clocks; this board uses Gowin EDA only.
+
 ```sh
 RS_GOWIN_EDA=/path/to/Gowin/IDE boards/tang-console-138k/build.sh -t <top> -c <pins.cst> -o <outdir> [-k NET=MHz]... [-g NAME=VALUE]... [-x OPTION=VALUE]... <sources...>
 ```
@@ -26,7 +40,7 @@ openFPGALoader -b tangconsole build/fpga/console_nes/nes_top.fs
 
 ## Clocks
 
-Echo and the shell run on the 50 MHz oscillator. The NES's clocks come from the GW5A's `PLL`: its VCO at 1487.5 MHz (50 x 29.75, its multiplier taking eighths) gives 371.875 MHz for the serializers (/4) and 37.1875 MHz for the system (/40), gated by `DCE` (the GW5A's `DQCE`) until the PLL locks, and `CLKDIV` makes the 74.375 MHz pixel clock (371.875 / 5) in phase with the serializers. The HDMI clocks are 0.17% above the Tang Nano 20K's, well inside HDMI's tolerance, and the system clock is half the pixel clock, as on the PYNQ-Z2: 25 clocks a bit (1.4875 Mbaud) and dots at 35/242 of the clock, so the NES keeps pace with its display as there. Gowin EDA places the NES at about 41 MHz (with `timing_driven`, `place_option=2` and `route_option=2`; 33 MHz without), short of the 20K's 46.4.
+Echo and the shell run on the 50 MHz oscillator. The NES's clocks come from the GW5A's `PLL`: its VCO at 743.75 MHz (50 x 14.875, its multiplier taking eighths; the VCO must be 650 to 1300 MHz) gives 371.875 MHz for the serializers (/2) and 37.1875 MHz for the system (/20), gated by `DCE` (the GW5A's `DQCE`) until the PLL locks, and `CLKDIV` makes the 74.375 MHz pixel clock (371.875 / 5) in phase with the serializers. The HDMI clocks are 0.17% above the Tang Nano 20K's, well inside HDMI's tolerance, and the system clock is half the pixel clock, as on the PYNQ-Z2: 25 clocks a bit (1.4875 Mbaud) and dots at 35/242 of the clock, so the NES keeps pace with its display as there. Gowin EDA places the NES at 37.7 to 41 MHz (with `timing_driven`, `place_option=2` and `route_option=2`; 33 MHz without), short of the 20K's 46.4.
 
 ## HDMI
 
@@ -42,6 +56,10 @@ Use an external 3.3 V USB-serial adapter on PMOD0, the socket furthest from the 
 
 The onboard BL616's UART (V14 from it, U15 to it) behaves as the Tang Nano 20K's does: at 2 Mbaud it echoed 32 bytes and then garbage, and soon after, the BL616 stopped answering JTAG until the board was unplugged.
 
+## Known Gowin synthesis issue
+
+GowinSynthesis (1.9.11.03) can merge small arrays that are written at the same address into one register RAM (`<name>_RAMREG_*` cells in its netlist), and it then read a pair of bit-selects at one index, `{a[i][b], c[i][b]}`, from the wrong bits of the merged word. The PPU's sprite line buffers (`sl_lo`, `sl_hi`) hit this: a transparent sprite pixel read as opaque, giving a false sprite-0 hit, and 8 timing-sensitive test ROMs and the save-state round trip failed on this board while passing in the sim. The PPU now takes the pixel by shifting the whole bytes (`video/ppu-2c02`). It was found by simulating Gowin's post-route netlist of the PPU (`set_option -gen_verilog_sim_netlist 1`) beside the RTL and comparing them every clock; if a design passes in the sim and fails on this board, that's the way to look. Prefer whole-word reads to paired bit-selects of arrays in RTL this board builds.
+
 ## Not working yet
 
 - **User LEDs.** The two LEDs are on G11 and U12, the DONE and READY configuration pins. Gowin EDA's build lets them be used as GPIO (`use_done_as_gpio`, `use_ready_as_gpio`), but no design drives them yet.
@@ -49,4 +67,4 @@ The onboard BL616's UART (V14 from it, U15 to it) behaves as the Tang Nano 20K's
 
 ## Status
 
-Built with Gowin EDA, the board tests give the Tang Nano 20K's results: echo's CRC; nestest's trace CRC; every golden ROM that fits (186 of 188: SUROM's 512 KB of PRG and MMC3's 256 KB of CHR don't) with MesenCE's frame CRCs; and on HDMI, the 20K's video CRCs for `oam_read` and `full_palette`. The sim runs the NES with HDMI as this board does (`make_nes_bram_hdmi_sim`), and at the open flow's 50 MHz rates (`make_nes_bram_sim`). `console_nes` uses 18,753 of 138,240 LUTs (14%), 7,290 registers, 229 of 340 block RAMs and 1 of 12 PLLs.
+Built with Gowin EDA, the board tests give the other boards' results: echo's and the shell's CRCs; nestest's trace CRC; the save-state round trip; every golden ROM that fits (188 of 190: SUROM's 512 KB of PRG and MMC3's 256 KB of CHR don't) with MesenCE's frame CRCs; and on HDMI, the 20K's video CRCs for `oam_read` and `full_palette`. The sim runs the NES with HDMI as this board does (`make_nes_bram_hdmi_sim`), and at the open flow's 50 MHz rates (`make_nes_bram_sim`). `console_nes` uses 18,850 of 138,240 LUTs and ALUs (14%), 7,298 registers, 229 of 340 block RAMs and 1 of 12 PLLs.
