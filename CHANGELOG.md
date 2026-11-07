@@ -94,6 +94,7 @@ All notable changes to this project are listed here. The format follows [Keep a 
 - `systems/nes`: MMC2 (mapper 9, PxROM: Punch-Out!!), its registers kept in MMC3's and its latches in save-state word 4; Holy Mapperel's MMC2 ROM in the golden list (189 ROMs), in the sim with its CHR in the SDRAM and behind AXI.
 - `systems/nes`: MMC6 (StarTropics): MMC3 with its 1 KB of PRG RAM at `$7000-$7FFF`, the halves enabled by `$A001` bits 7-4 and all of it by `$8000` bit 5; register `2C` bit 4 picks it, and save-state word 2 keeps `$A001`'s four bits. The harness picks MMC6 by a NES 2.0 header's submapper 1, or for an iNES 1.0 dump by its PRG ROM's CRC (as MesenCE's database does).
 - Harness: battery saves. `Console::battery_ram`, `set_battery_ram` and `battery_crc` read and write a game's battery-backed PRG RAM as a `.sav` holds it (`battery_size`: MMC6's 1 KB, else the PRG RAM) while it runs; golden lines take `sav=` (power up with a save), `again` (run twice, the second time from the battery RAM the first left) and `savcrc=` (MesenCE's battery RAM at the end), which `tools/mesen/frames.py` writes from the manifest's `sav` and `again`. Holy Mapperel's MMC1 battery ROM checks it (190 ROMs).
+- `boards/gowin-eda`: builds with Gowin's own tools (Gowin EDA, its free Education edition), headless through gw_sh, with the open flow's arguments; a setup or hold miss fails the build. `boards/tang-console-138k` builds with it (decided Nov 1): its NES on the GW5A's PLL (37.1875 MHz for the system, 74.375 and 371.875 for HDMI) with HDMI at 720p (`nes.cst`); on the board it passes every test the other boards do, the golden ROMs that fit (188 of 190), save states and HDMI's video CRCs. `boards/tang-console-138k/README.md`: setting up Gowin EDA. `harness`: `make_nes_bram_hdmi_sim`, the 138K's NES with HDMI; `Console::wait_stopped` lets a system keeping pace wait on its display.
 
 ### Changed
 
@@ -109,6 +110,7 @@ All notable changes to this project are listed here. The format follows [Keep a 
 
 ### Fixed
 
+- `video/ppu-2c02`: the sprite pixel is taken by shifting the line buffer's bytes. GowinSynthesis (1.9.11.03) merged `sl_lo` and `sl_hi` into one register RAM and read the pair of bit-selects from the wrong bits, so on the Tang Console 138K a transparent sprite pixel read as opaque (a false sprite-0 hit); 8 test ROMs and the save-state round trip failed there. The RTL's behaviour is unchanged.
 - `boards/tang-nano-20k`, `boards/pynq-z2`: the NES's dots run 2% faster than NTSC's (13/110 and 9/61 of the clock), so that keeping pace with the display it has room for memory waits: at NTSC's rate a frame took 99.84% of a 60 Hz display frame, and one that overran waited for the next, so busy games stuttered (Kirby's Adventure on the PYNQ-Z2). The NES waits at each frame's end, so it still makes 60 frames a second, with the same sound.
 - `cpu/6502`: the unstable unofficial opcodes (XAA, LAX `#imm`, LAS, SHY, SHX, AHX, TAS) run as MesenCE runs them, instead of halting.
 - `systems/nes`: a DMA's dummy cycles no longer clock the pads during a `$4016`/`$4017` read; only its halt cycle does, as on an NES.

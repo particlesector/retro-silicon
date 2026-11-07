@@ -34,6 +34,9 @@ std::unique_ptr<SimLink> make_nes_hdmi_sim(std::function<void(uint32_t)> on_symb
 // bitstream) as make_nes_hdmi_sim() has the test build: writes only, and its
 // picture and sound only on HDMI. Reports RS_NES_BUILD_ID.
 std::unique_ptr<SimLink> make_nes_lean_sim(std::function<void(uint32_t)> on_symbol = {});
+// The Tang Console 138K's system with HDMI: block RAM, the system clock at
+// half the pixel clock (37.1875 and 74.375 MHz), keeping pace with the display.
+std::unique_ptr<SimLink> make_nes_bram_hdmi_sim(std::function<void(uint32_t)> on_symbol = {});
 // The Tang Nano 20K's system as make_nes_hdmi_sim() has it, CHR ROM from the
 // SDRAM included, but without the display: no pacing, and no pixel clock.
 // Reports RS_NES_BUILD_ID.
