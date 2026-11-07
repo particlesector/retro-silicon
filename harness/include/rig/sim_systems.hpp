@@ -8,6 +8,7 @@
 #include <functional>
 #include <memory>
 
+#include "rig/sdram_test.hpp"
 #include "rig/sim_link.hpp"
 
 namespace rig {
@@ -15,6 +16,11 @@ namespace rig {
 std::unique_ptr<SimLink> make_uart_echo_sim();
 std::unique_ptr<SimLink> make_shell_ram_sim();    // reports RS_SHELL_RAM_BUILD_ID
 std::unique_ptr<SimLink> make_shell_sdram_sim();  // reports RS_SHELL_SDRAM_BUILD_ID
+// shell-sdram as the Tang Console 138K builds it: its SDRAM module's two 16M x
+// 16 chips (64 MB; the address bit 25 picks one), at 50 MHz and 33 clocks a
+// bit. Reports RS_SHELL_SDRAM_BUILD_ID; its layout is kSdramX16Layout.
+std::unique_ptr<SimLink> make_shell_sdram_x16_sim();
+inline constexpr SdramLayout kSdramX16Layout{64u << 20, 8};
 // shell-axi with an AXI memory model (memory/axi-bridge's) as its memory.
 std::unique_ptr<SimLink> make_shell_axi_sim();    // reports RS_SHELL_AXI_BUILD_ID
 std::unique_ptr<SimLink> make_nes_sim();          // reports RS_NES_BUILD_ID

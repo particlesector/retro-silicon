@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
-// SDRAM test system: the test shell with the 8 MB SDRAM on its bus, mirrored
-// through the whole address space. The harness writes, CRCs and reads back
+// SDRAM test system: the test shell with an SDRAM on its bus (or two on the
+// same pins, RANKS=2: see memory/sdram), mirrored through the whole address
+// space. The geometry is memory/sdram's (the defaults are
+// the Tang Nano 20K's 8 MB chip). The harness writes, CRCs and reads back
 // SDRAM through it, which is how ROMs will be uploaded.
 // LEDs (active low): led[0] a corrupt command frame was seen, led[1] a stalled
 // one (both sticky until reload), led[2] the SDRAM is ready, led[5] heartbeat.
@@ -8,28 +10,35 @@ module shell_sdram #(
     parameter int          CLKS_PER_BIT = 18,       // 27 MHz / 18 = 1.5 Mbaud
     parameter int          IDLE_CLKS    = 270_000,  // 10 ms at 27 MHz
     parameter int          FREQ_MHZ     = 27,
-    parameter logic [31:0] BUILD_ID     = '0
+    parameter logic [31:0] BUILD_ID     = '0,
+    parameter int          REFRESH_NS   = 15_000,
+    parameter int          DQ_W         = 32,
+    parameter int          ROW_W        = 11,
+    parameter int          COL_W        = 8,
+    parameter int          RANKS        = 1,
+    localparam int         NB           = DQ_W / 8,
+    localparam int         AW           = (RANKS > 1 ? 1 : 0) + 2 + ROW_W + COL_W + $clog2(NB)  // byte address bits
 ) (
     input  logic        clk,
     input  logic        uart_rx,
     output logic        uart_tx,
     output logic [5:0]  led,
 
-    output logic        sd_cke,
-    output logic        sd_cs_n,
-    output logic        sd_ras_n,
-    output logic        sd_cas_n,
-    output logic        sd_we_n,
-    output logic [1:0]  sd_ba,
-    output logic [10:0] sd_addr,
-    output logic [3:0]  sd_dqm,
-    output logic [31:0] sd_dq_o,
-    output logic        sd_dq_oe,
-    input  logic [31:0] sd_dq_i
+    output logic             sd_cke,
+    output logic             sd_cs_n,
+    output logic             sd_ras_n,
+    output logic             sd_cas_n,
+    output logic             sd_we_n,
+    output logic [1:0]       sd_ba,
+    output logic [ROW_W-1:0] sd_addr,
+    output logic [NB-1:0]    sd_dqm,
+    output logic [DQ_W-1:0]  sd_dq_o,
+    output logic             sd_dq_oe,
+    input  logic [DQ_W-1:0]  sd_dq_i
 );
     logic        rst;
     /* verilator lint_off UNUSEDSIGNAL */
-    logic [31:0] bus_addr;  // only [22:0] is decoded: the SDRAM mirrors through the address space
+    logic [31:0] bus_addr;  // only the SDRAM's bits are decoded: the SDRAM mirrors through the address space
     /* verilator lint_on UNUSEDSIGNAL */
     logic        bus_req, bus_we, bus_ack;
     logic [7:0]  bus_wdata, bus_rdata;
@@ -47,12 +56,13 @@ module shell_sdram #(
 
     // The controller ignores req until its power-up sequence is done.
     /* verilator lint_off UNUSEDSIGNAL */
-    logic [31:0] rdata_w;  // the shell reads bytes
+    logic [DQ_W-1:0] rdata_w;  // the shell reads bytes
     /* verilator lint_on UNUSEDSIGNAL */
 
-    sdram_ctrl #(.FREQ_MHZ(FREQ_MHZ)) u_sdram (
+    sdram_ctrl #(.FREQ_MHZ(FREQ_MHZ), .REFRESH_NS(REFRESH_NS), .DQ_W(DQ_W), .ROW_W(ROW_W), .COL_W(COL_W),
+                 .RANKS(RANKS)) u_sdram (
         .clk, .rst,
-        .req(bus_req), .we(bus_we), .addr(bus_addr[22:0]), .wdata(bus_wdata),
+        .req(bus_req), .we(bus_we), .addr(bus_addr[AW-1:0]), .wdata(bus_wdata),
         .ack(bus_ack), .rdata(bus_rdata), .rdata_w(rdata_w), .ready, .ref_hold(1'b0),
         .sd_cke, .sd_cs_n, .sd_ras_n, .sd_cas_n, .sd_we_n, .sd_ba, .sd_addr, .sd_dqm,
         .sd_dq_o, .sd_dq_oe, .sd_dq_i);

@@ -30,3 +30,16 @@ TEST_CASE("the SDRAM test passes through memory/axi-bridge to an AXI memory, wit
     REQUIRE(r.bytes == 65536);
     REQUIRE(r.crc32 == it->second);
 }
+
+TEST_CASE("the SDRAM test passes on the Tang Console 138K's two 16-bit chips with the golden CRC") {
+    auto golden = golden_crcs(RS_SDRAM_X16_GOLDEN);
+    auto it = golden.find({65536, 1});
+    REQUIRE(it != golden.end());
+
+    auto link = rig::make_shell_sdram_x16_sim();
+    auto r = rig::sdram_test(*link, 65536, 1, RS_SHELL_SDRAM_BUILD_ID, rig::kSdramX16Layout);
+    INFO(r.detail << " / " << r.notes);
+    REQUIRE(r.passed);
+    REQUIRE(r.bytes == 65536);
+    REQUIRE(r.crc32 == it->second);
+}

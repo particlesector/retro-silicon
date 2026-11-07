@@ -4,6 +4,7 @@
 # Board tops: a system plus this board's pins. Linted with or without the tools.
 rs_component(console_echo_top RTL rtl/echo_top.sv DEPENDS uart_echo TOPS echo_top)
 rs_component(console_shell_ram_top RTL rtl/shell_ram_top.sv DEPENDS shell_ram TOPS shell_ram_top)
+rs_component(console_shell_sdram_top RTL rtl/shell_sdram_top.sv DEPENDS shell_sdram TOPS shell_sdram_top)
 rs_component(console_nes_top RTL rtl/nes_top.sv DEPENDS nes_bram tmds_phy TOPS nes_top
              LINT ${PROJECT_SOURCE_DIR}/boards/gowin/lint/gowin_prims.sv)
 
@@ -18,6 +19,10 @@ rs_board_bitstream(console_uart_echo BUILD ${build} VENDOR gowin-eda COMPONENT c
 get_property(shell_ram_id GLOBAL PROPERTY RS_SHELL_RAM_BUILD_ID)
 rs_board_bitstream(console_shell_ram BUILD ${build} VENDOR gowin-eda COMPONENT console_shell_ram_top TOP shell_ram_top CST pins.cst
                    PARAMS BUILD_ID=${shell_ram_id})
+# The SDRAM module's two chips, on the 50 MHz oscillator (rtl/shell_sdram_top.sv).
+get_property(shell_sdram_id GLOBAL PROPERTY RS_SHELL_SDRAM_BUILD_ID)
+rs_board_bitstream(console_shell_sdram BUILD ${build} VENDOR gowin-eda COMPONENT console_shell_sdram_top TOP shell_sdram_top
+                   CST sdram.cst PARAMS BUILD_ID=${shell_sdram_id})
 get_property(nes_bram_id GLOBAL PROPERTY RS_NES_BRAM_BUILD_ID)
 # The NES's clocks come from the PLL (rtl/nes_top.sv): 37.1875 MHz for the
 # system, 74.375 for the pixels, 371.875 for the serializers, constrained in

@@ -1,13 +1,26 @@
 // SPDX-License-Identifier: Apache-2.0
-// Controller for a 2M x 32 SDR SDRAM (4 banks, 2048 rows, 256 columns), such as
-// the 64 Mbit chip inside the Tang Nano 20K's GW2AR-18. The user side is a byte
+// Controller for an SDR SDRAM with 4 banks, 2^ROW_W rows of 2^COL_W columns,
+// DQ_W (16 or 32) bits wide. The defaults are the 2M x 32 chip (2048 rows,
+// 256 columns) inside the Tang Nano 20K's GW2AR-18; a 16M x 16 chip such as
+// the W9825G6KH is DQ_W=16, ROW_W=13, COL_W=9 with REFRESH_NS=7_500 (8192
+// rows per 64 ms). The byte address is {bank, row, column, byte lane}. The user side is a byte
 // port: hold req (with addr, we, wdata) until ack, which also marks rdata valid
 // on a read; req may still be high the clock after ack. Each access opens a row and closes it again with auto-precharge, so
 // every access takes the same time unless a refresh is under way. A read's
-// whole 32-bit word comes out on rdata_w too, its byte lanes in address
+// whole word comes out on rdata_w too, its byte lanes in address
 // order. While ref_hold is high, a due refresh waits, so a user with a
 // deadline can keep it out of the way; the user must let it through often
 // enough (a refresh is due every REFRESH_NS).
+//
+// RANKS=2 drives two chips on the same pins, as MiSTer's dual-chip SDRAM
+// boards wire them: the second chip's CS is the first's through an inverter,
+// so CS low commands one chip and CS high the other (RAS, CAS and WE high is
+// a NOP to whichever is selected). The address gains a bit above the bank
+// for the chip, the power-up commands and each refresh go to both, the
+// second a clock after the first. Those boards also wire each chip's DQML
+// and DQMH to A11 and A12, which a 16-bit chip with at least 13 row bits
+// ignores in a column command, so the controller puts the byte mask there as
+// well as on sd_dqm, whichever pins the board uses.
 //
 // The SDRAM's clock must be the inverse of clk (the board inverts it), so the
 // chip samples commands half a cycle after they're registered and its read data
@@ -16,18 +29,25 @@ module sdram_ctrl #(
     parameter int FREQ_MHZ    = 27,   // clk frequency; sets the timings below in clocks
     parameter int CAS_LATENCY = 2,
     parameter int INIT_US     = 200,  // power-up wait before the first command
-    parameter int REFRESH_NS  = 15_000 // one row refresh this often (4096 rows per 64 ms is 15,625)
+    parameter int REFRESH_NS  = 15_000, // one row refresh this often (4096 rows per 64 ms is 15,625)
+    parameter int DQ_W        = 32,     // data bus width: 16 or 32
+    parameter int ROW_W       = 11,     // row address bits, at least 11 (A10 is the precharge bit)
+    parameter int COL_W       = 8,      // column address bits, at most 10
+    parameter int RANKS       = 1,      // chips on the pins: 1, or 2 with the second on CS high
+    localparam int NB         = DQ_W / 8,                  // byte lanes
+    localparam int LB         = $clog2(NB),                // byte-lane address bits
+    localparam int AW         = (RANKS > 1 ? 1 : 0) + 2 + ROW_W + COL_W + LB  // byte address bits
 ) (
     input  logic        clk,
     input  logic        rst,          // synchronous; restarts the power-up sequence
 
     input  logic        req,
     input  logic        we,
-    input  logic [22:0] addr,         // byte address: bank, row, column, byte lane
+    input  logic [AW-1:0] addr,       // byte address: chip (RANKS=2), bank, row, column, byte lane
     input  logic [7:0]  wdata,
     output logic        ack,          // one-cycle pulse
     output logic [7:0]  rdata,
-    output logic [31:0] rdata_w,      // the word a read's byte is in
+    output logic [DQ_W-1:0] rdata_w,  // the word a read's byte is in
     output logic        ready,        // the power-up sequence is done
     input  logic        ref_hold,     // keep a due refresh waiting
 
@@ -37,11 +57,11 @@ module sdram_ctrl #(
     output logic        sd_cas_n,
     output logic        sd_we_n,
     output logic [1:0]  sd_ba,
-    output logic [10:0] sd_addr,
-    output logic [3:0]  sd_dqm,
-    output logic [31:0] sd_dq_o,
-    output logic        sd_dq_oe,
-    input  logic [31:0] sd_dq_i
+    output logic [ROW_W-1:0] sd_addr,
+    output logic [NB-1:0]    sd_dqm,
+    output logic [DQ_W-1:0]  sd_dq_o,
+    output logic             sd_dq_oe,
+    input  logic [DQ_W-1:0]  sd_dq_i
 );
     // Nanoseconds to clocks, rounded up.
     function automatic int clocks(input int ns);
@@ -61,6 +81,7 @@ module sdram_ctrl #(
     localparam int T_MRD  = 2;                        // MODE to anything
     localparam int T_INIT = INIT_US * FREQ_MHZ;
     localparam int T_REFI = REFRESH_NS * FREQ_MHZ / 1000;
+    localparam int AGAIN  = RANKS > 1 ? 1 : 0;         // the clock a both-chips command takes again
     localparam int INIT_REFRESHES = 8;
 
     // Column commands auto-precharge, so they wait until the precharge can't
@@ -74,17 +95,30 @@ module sdram_ctrl #(
     localparam int READ_GAP  = at_least(T_RC - T_RD_DLY, 1 + T_RP);
     localparam int WRITE_GAP = at_least(T_RC - T_WR_DLY, T_WR + T_RP);
 
-    // Mode register: burst length 1, sequential, CAS latency, single-location writes.
-    localparam logic [10:0] MODE = {4'b0000, 3'(CAS_LATENCY), 4'b0000};
+    // The byte mask on A11 and A12 too (see above), where a column command leaves them free.
+    localparam bit DQM_ON_A = NB == 2 && ROW_W >= 13 && COL_W <= 10;
 
-    // {cs_n, ras_n, cas_n, we_n}
-    localparam logic [3:0] C_NOP       = 4'b0111;
-    localparam logic [3:0] C_ACTIVE    = 4'b0011;
-    localparam logic [3:0] C_READ      = 4'b0101;
-    localparam logic [3:0] C_WRITE     = 4'b0100;
-    localparam logic [3:0] C_PRECHARGE = 4'b0010;
-    localparam logic [3:0] C_REFRESH   = 4'b0001;
-    localparam logic [3:0] C_MODE      = 4'b0000;
+    // Mode register: burst length 1, sequential, CAS latency, single-location writes.
+    localparam logic [ROW_W-1:0] MODE = ROW_W'({3'(CAS_LATENCY), 4'b0000});
+    localparam logic [ROW_W-1:0] A10  = ROW_W'(1) << 10;  // all banks, or auto-precharge
+
+    initial begin
+        if (DQ_W != 16 && DQ_W != 32)
+            $error("sdram_ctrl: DQ_W must be 16 or 32");
+        if (ROW_W < 11 || COL_W > 10)
+            $error("sdram_ctrl: ROW_W must be at least 11 and COL_W at most 10");
+        if (RANKS != 1 && RANKS != 2)
+            $error("sdram_ctrl: RANKS must be 1 or 2");
+    end
+
+    // {ras_n, cas_n, we_n}; CS is cs_n below.
+    localparam logic [2:0] C_NOP       = 3'b111;
+    localparam logic [2:0] C_ACTIVE    = 3'b011;
+    localparam logic [2:0] C_READ      = 3'b101;
+    localparam logic [2:0] C_WRITE     = 3'b100;
+    localparam logic [2:0] C_PRECHARGE = 3'b010;
+    localparam logic [2:0] C_REFRESH   = 3'b001;
+    localparam logic [2:0] C_MODE      = 3'b000;
 
     localparam int CW = $clog2(T_INIT + 1) > 8 ? $clog2(T_INIT + 1) : 8;
     localparam int RW = $clog2(T_REFI + 1);
@@ -96,18 +130,29 @@ module sdram_ctrl #(
     logic [3:0]  refs_left;
     logic [RW-1:0] refi_n;     // clocks until the next refresh is due
     logic        ref_due;
-    logic [1:0]  lane;
+    logic [LB-1:0] lane;
     logic        is_write;
     logic [1:0]  cl_n;
-    logic [3:0]  cmd;
+    logic [2:0]  cmd;
+    logic        cs_n;        // low for the first chip, high for the second (RANKS=2)
+    logic        again;       // give the last command to the second chip (RANKS=2)
+    logic [NB-1:0] wmask;     // a write's byte mask: all but its lane
 
-    assign {sd_cs_n, sd_ras_n, sd_cas_n, sd_we_n} = cmd;
+    assign wmask = ~(NB'(1) << lane);
+
+    assign {sd_ras_n, sd_cas_n, sd_we_n} = cmd;
+    assign sd_cs_n = cs_n;
 
     always_ff @(posedge clk) begin
         cmd      <= C_NOP;
         sd_dq_oe <= 1'b0;
-        sd_dqm   <= 4'b0000;
+        sd_dqm   <= '0;
         ack      <= 1'b0;
+        again    <= 1'b0;
+        if (again) begin  // the second chip; every both-chips wait is a clock longer
+            cmd  <= cmd;
+            cs_n <= 1'b1;
+        end
         if (wait_n != '0)
             wait_n <= wait_n - 1'b1;
 
@@ -122,8 +167,10 @@ module sdram_ctrl #(
             S_INIT:
                 if (wait_n == '0) begin
                     cmd        <= C_PRECHARGE;
-                    sd_addr    <= 11'b100_0000_0000;  // all banks
-                    wait_n     <= CW'(T_RP - 1);
+                    cs_n       <= 1'b0;
+                    again      <= RANKS > 1;
+                    sd_addr    <= A10;  // all banks
+                    wait_n     <= CW'(T_RP - 1 + AGAIN);
                     refs_left  <= 4'(INIT_REFRESHES);
                     state      <= S_INIT_PRE;
                 end
@@ -131,14 +178,18 @@ module sdram_ctrl #(
                 if (wait_n == '0) begin
                     if (refs_left != '0) begin
                         cmd       <= C_REFRESH;
-                        wait_n    <= CW'(T_RC - 1);
+                        cs_n      <= 1'b0;
+                        again     <= RANKS > 1;
+                        wait_n    <= CW'(T_RC - 1 + AGAIN);
                         refs_left <= refs_left - 1'b1;
                         state     <= S_INIT_REF;
                     end else begin
                         cmd     <= C_MODE;
+                        cs_n    <= 1'b0;
+                        again   <= RANKS > 1;
                         sd_ba   <= 2'b00;
                         sd_addr <= MODE;
-                        wait_n  <= CW'(T_MRD - 1);
+                        wait_n  <= CW'(T_MRD - 1 + AGAIN);
                         state   <= S_INIT_MODE;
                     end
                 end
@@ -153,15 +204,18 @@ module sdram_ctrl #(
                 if (wait_n == '0) begin
                     if (ref_due && !ref_hold) begin
                         cmd     <= C_REFRESH;
-                        wait_n  <= CW'(T_RC - 1);
+                        cs_n    <= 1'b0;
+                        again   <= RANKS > 1;
+                        wait_n  <= CW'(T_RC - 1 + AGAIN);
                         ref_due <= 1'b0;
                     end else if (req && !ack) begin  // a requester drops req the clock after ack
                         cmd      <= C_ACTIVE;
-                        sd_ba    <= addr[22:21];
-                        sd_addr  <= addr[20:10];
-                        lane     <= addr[1:0];
+                        cs_n     <= RANKS > 1 ? addr[AW-1] : 1'b0;
+                        sd_ba    <= addr[2 + ROW_W + COL_W + LB - 1 -: 2];
+                        sd_addr  <= addr[LB + COL_W +: ROW_W];
+                        lane     <= addr[LB-1:0];
                         is_write <= we;
-                        sd_dq_o  <= {4{wdata}};
+                        sd_dq_o  <= {NB{wdata}};
                         wait_n   <= CW'((we ? T_WR_DLY : T_RD_DLY) - 1);
                         state    <= S_RCD;
                     end
@@ -169,11 +223,12 @@ module sdram_ctrl #(
             S_RCD:
                 if (wait_n == '0) begin
                     // Column, with A10 set for auto-precharge.
-                    sd_addr <= {3'b100, addr[9:2]};
+                    sd_addr <= A10 | ROW_W'(addr[LB +: COL_W])
+                             | (DQM_ON_A && is_write ? ROW_W'({wmask, 11'b0}) : '0);
                     if (is_write) begin
                         cmd      <= C_WRITE;
                         sd_dq_oe <= 1'b1;
-                        sd_dqm   <= ~(4'b0001 << lane);
+                        sd_dqm   <= wmask;
                         ack      <= 1'b1;
                         wait_n   <= CW'(WRITE_GAP - 1);
                         state    <= S_IDLE;
@@ -203,6 +258,8 @@ module sdram_ctrl #(
             ref_due <= 1'b0;
             refi_n  <= RW'(T_REFI - 1);
             cmd     <= C_NOP;
+            cs_n    <= 1'b0;
+            again   <= 1'b0;
             ack     <= 1'b0;
         end
     end
