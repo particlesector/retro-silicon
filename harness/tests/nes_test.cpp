@@ -79,7 +79,7 @@ namespace {
 
 // Runs a ROM in the sim to its golden frame: it must pass its own check and
 // show MesenCE's frame. `bram` runs it as the Tang Console 138K does.
-enum class Sim { kDefault, kBram, kExt, kAxi };
+enum class Sim { kDefault, kBram, kExt, kAxi, kX16 };
 
 void matches_mesen(const std::string& id, Sim sim = Sim::kDefault) {
     auto [g, rom] = golden_rom(id);
@@ -87,6 +87,7 @@ void matches_mesen(const std::string& id, Sim sim = Sim::kDefault) {
     auto link = bram ? rig::make_nes_bram_sim()
                 : sim == Sim::kExt ? rig::make_nes_ext_sim()
                 : sim == Sim::kAxi ? rig::make_nes_axi_sim()
+                : sim == Sim::kX16 ? rig::make_nes_x16_sim()
                                    : rig::make_nes_sim();
     uint32_t build_id = bram ? RS_NES_BRAM_BUILD_ID : sim == Sim::kAxi ? RS_NES_AXI_BUILD_ID : RS_NES_BUILD_ID;
     auto r = rig::nes::rom_test(*link, g.check, rom, g.frames, build_id);
@@ -385,6 +386,19 @@ MATCHES_MESEN_AXI("cpu_interrupts-5")
 // 256 KB MMC1 ROMs, whose bank switches the cache and its prefetch have to follow.
 MATCHES_MESEN_AXI("ppu_vbl_nmi")
 MATCHES_MESEN_AXI("instr_test-official")
+// As the Tang Console 138K runs it, PRG ROM in its SDRAM module (two 16-bit
+// chips on one bus) and 256 KB of CHR in block RAM: the largest ROMs, and
+// timing-sensitive ones.
+#define MATCHES_MESEN_X16(id) \
+    TEST_CASE(id " matches MesenCE's frame with its PRG ROM in the Tang Console 138K's SDRAM module") { \
+        matches_mesen(id, Sim::kX16); \
+    }
+MATCHES_MESEN_X16("mapperel-mmc1-p512k")
+MATCHES_MESEN_X16("mapperel-mmc3-c256k")
+MATCHES_MESEN_X16("mapperel-mmc1-battery")
+MATCHES_MESEN_X16("mmc3_irq-4")
+MATCHES_MESEN_X16("cpu_interrupts-5")
+MATCHES_MESEN_X16("instr_test-official")
 
 // And ROMs with 8 KB of CHR ROM put there on purpose: the same frames as
 // from block RAM.
