@@ -1,7 +1,7 @@
 CAPI=2:
 # SPDX-License-Identifier: Apache-2.0
 name: retro-silicon:memory:sdram:0.1.0
-description: Byte-port controller for a 2M x 32 SDR SDRAM, such as the Tang Nano 20K's
+description: Byte-port controller for an SDR SDRAM, 16 or 32 bits wide, or two chips on one bus
 
 filesets:
   rtl:

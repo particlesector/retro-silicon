@@ -15,8 +15,6 @@ namespace rig {
 
 namespace {
 
-constexpr uint32_t kSdramSize = 8u << 20;
-constexpr uint32_t kQuarter = kSdramSize / 4;
 constexpr uint32_t kSample = 512;  // bytes read back from the start, middle and end of each region
 
 std::string hex32(uint32_t x) {
@@ -27,7 +25,8 @@ std::string hex32(uint32_t x) {
 
 } // namespace
 
-TestResult sdram_test(Link& link, uint32_t bytes, unsigned seed, std::optional<uint32_t> build_id) {
+TestResult sdram_test(Link& link, uint32_t bytes, unsigned seed, std::optional<uint32_t> build_id,
+                      SdramLayout layout) {
     TestResult r;
     r.name = "sdram";
     auto t0 = std::chrono::steady_clock::now();
@@ -54,14 +53,15 @@ TestResult sdram_test(Link& link, uint32_t bytes, unsigned seed, std::optional<u
             return finish("build ID " + hex32(info.build_id) + ", expected " + hex32(*build_id) +
                           ": the wrong bitstream is loaded");
 
-        const uint32_t size = std::clamp<uint32_t>(bytes / 4, 1, kQuarter);
+        const uint32_t part = layout.size / layout.regions;
+        const uint32_t size = std::clamp<uint32_t>(bytes / layout.regions, 1, part);
         struct Region {
             uint32_t base;
             std::vector<uint8_t> data;
         };
         std::vector<Region> regions;
-        for (uint32_t q = 0; q < 4; q++) {
-            Region g{q * kQuarter + static_cast<uint32_t>(rng() % (kQuarter - size + 1)), std::vector<uint8_t>(size)};
+        for (uint32_t q = 0; q < layout.regions; q++) {
+            Region g{q * part + static_cast<uint32_t>(rng() % (part - size + 1)), std::vector<uint8_t>(size)};
             for (auto& b : g.data) b = static_cast<uint8_t>(rng());
             client.write(g.base, g.data);
             regions.push_back(std::move(g));

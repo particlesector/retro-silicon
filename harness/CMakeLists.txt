@@ -27,6 +27,10 @@ target_link_libraries(rs_sim_link PUBLIC rs_harness)
 rs_verilate(rs_sim_link COMPONENT uart_echo PREFIX Vuart_echo_sim PARAMS CLKS_PER_BIT=18)
 rs_verilate(rs_sim_link COMPONENT shell_ram PREFIX Vshell_ram_sim PARAMS CLKS_PER_BIT=18 BUILD_ID=${shell_ram_id})
 rs_verilate(rs_sim_link COMPONENT shell_sdram PREFIX Vshell_sdram_sim PARAMS CLKS_PER_BIT=18 BUILD_ID=${shell_sdram_id})
+# As the Tang Console 138K builds it (boards/tang-console-138k/rtl/shell_sdram_top.sv).
+rs_verilate(rs_sim_link COMPONENT shell_sdram PREFIX Vshell_sdram_x16_sim
+            PARAMS CLKS_PER_BIT=33 IDLE_CLKS=500000 FREQ_MHZ=50 REFRESH_NS=7500 DQ_W=16 ROW_W=13 COL_W=9 RANKS=2
+                   BUILD_ID=${shell_sdram_id})
 rs_verilate(rs_sim_link COMPONENT shell_axi PREFIX Vshell_axi_sim PARAMS CLKS_PER_BIT=18 BUILD_ID=${shell_axi_id})
 rs_verilate(rs_sim_link COMPONENT nes_sdram PREFIX Vnes_sim PARAMS CLKS_PER_BIT=18 BUILD_ID=${nes_id})
 # The NES as the Tang Console 138K runs it: block RAM, and a 50 MHz clock's
@@ -71,6 +75,7 @@ target_compile_definitions(harness_test PRIVATE
     RS_ECHO_GOLDEN="${CMAKE_CURRENT_SOURCE_DIR}/golden/echo_crc32.txt"
     RS_SHELL_GOLDEN="${CMAKE_CURRENT_SOURCE_DIR}/golden/shell_crc32.txt"
     RS_SDRAM_GOLDEN="${CMAKE_CURRENT_SOURCE_DIR}/golden/sdram_crc32.txt"
+    RS_SDRAM_X16_GOLDEN="${CMAKE_CURRENT_SOURCE_DIR}/golden/sdram_x16_crc32.txt"
     RS_NES_TRACE_GOLDEN="${CMAKE_CURRENT_SOURCE_DIR}/golden/nes_trace_crc32.txt"
     RS_NES_FRAMES_GOLDEN="${CMAKE_CURRENT_SOURCE_DIR}/golden/nes_frames_crc32.txt"
     RS_NES_FRAMES_ONES_GOLDEN="${CMAKE_CURRENT_SOURCE_DIR}/golden/nes_frames_ones_crc32.txt"

@@ -22,6 +22,7 @@ All notable changes to this project are listed here. The format follows [Keep a 
 - `cpu/6502`: NMOS 6502, cycle-exact on the bus, with the stable unofficial opcodes and optional NMOS decimal mode; checked against perfect6502 in lockstep, nestest and blargg's instr_test.
 - `cmake/Perfect6502.cmake`: fetches perfect6502 at a pinned commit, with SHA-256 checks, for the CPU's lockstep test.
 - `memory/sdram`: byte-port controller for a 2M x 32 SDR SDRAM such as the Tang Nano 20K's, with a timing-checking chip model for sim tests.
+- `memory/sdram`: 16-bit chips and any geometry (`DQ_W`, `ROW_W`, `COL_W`), and two chips on one bus (`RANKS=2`, the second on CS high, as on MiSTer's dual-chip boards, with the byte masks on A11 and A12 too); `systems/shell-sdram` takes them, with a Tang Console 138K build for its 64 MB SDRAM module and the harness's SDRAM test over any size (`rig::SdramLayout`).
 - `systems/shell-sdram`: the test shell with the SDRAM, with a Tang Nano 20K build and the harness's SDRAM test.
 - `systems/nes`: the CPU with RAM, PRG RAM and NROM PRG from SDRAM, run control, a reset-vector override, a stop-at-cycle register and a CRC of the CPU's bus; a Tang Nano 20K build; nestest passes on it with the CPU bench's trace CRC.
 - `harness`: iNES parsing, the NES console client and nestest runner, and optional host timing jitter in `SimLink`.

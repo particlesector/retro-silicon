@@ -1,7 +1,7 @@
 CAPI=2:
 # SPDX-License-Identifier: Apache-2.0
 name: retro-silicon:system:shell-sdram:0.1.0
-description: Test shell with the 8 MB SDRAM on its bus, for testing the SDRAM and uploads
+description: Test shell with an SDRAM on its bus, for testing the SDRAM and uploads
 
 filesets:
   rtl:

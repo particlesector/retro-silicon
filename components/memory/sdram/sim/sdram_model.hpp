@@ -1,8 +1,9 @@
 // SPDX-License-Identifier: Apache-2.0
 #pragma once
-// Cycle model of a 2M x 32 SDR SDRAM (4 banks, 2048 rows, 256 columns, burst
-// length 1) that checks the controller's command timing against the chip's
-// limits. The SDRAM's clock is the controller's inverted, so the chip samples
+// Cycle model of an SDR SDRAM with 4 banks (burst length 1) that checks the controller's command timing against the chip's
+// limits. Its geometry defaults to the 2M x 32 chip in the Tang Nano 20K's
+// GW2AR-18 (2048 rows, 256 columns); Geometry{2, 13, 9} is a 16M x 16 such as
+// the W9825G6KH. The SDRAM's clock is the controller's inverted, so the chip samples
 // each command half a cycle after the controller registers it.
 //
 // Call step() once per controller clock, after the rising edge has settled,
@@ -10,6 +11,10 @@
 // see on its DQ inputs at the next edge. Read data is valid only at the edge
 // CAS latency + 1 cycles after the READ; at every other edge the bus carries
 // a scrambled value, so an off-by-one capture reads garbage.
+//
+// With dqm_on_addr set, the chip is wired as on MiSTer's SDRAM boards: its
+// DQML and DQMH are A11 and A12, so a WRITE takes its byte mask from them
+// and the DQM pins aren't connected.
 
 #include <array>
 #include <cstdint>
@@ -21,8 +26,13 @@ struct SdramPins {
     uint8_t ba;
     uint16_t addr;
     uint8_t dqm;
-    uint32_t dq;  // what the controller drives
+    uint32_t dq;  // what the controller drives (the low 16 bits of a 16-bit chip)
     bool dq_oe;
+};
+
+// Bytes per word (2 or 4), and row and column address bits.
+struct SdramGeometry {
+    int bytes = 4, row_bits = 11, col_bits = 8;
 };
 
 class SdramModel {
@@ -33,38 +43,61 @@ public:
         int mrd = 2;  // clocks
     };
 
-    SdramModel(double clk_mhz, Timing t) : ns_per_clk_(1000.0 / clk_mhz), t_(t) { mem_.assign(kWords, 0); }
-    explicit SdramModel(double clk_mhz) : SdramModel(clk_mhz, Timing{}) {}
+    using Geometry = SdramGeometry;
+
+    SdramModel(double clk_mhz, Timing t, Geometry g = {})
+        : ns_per_clk_(1000.0 / clk_mhz), t_(t), g_(g),
+          lane_bits_(g.bytes == 2 ? 1 : 2),
+          data_mask_(g.bytes == 2 ? 0xFFFFu : 0xFFFFFFFFu) {
+        mem_.assign(size_t{4} << (g.row_bits + g.col_bits), 0);
+    }
+    explicit SdramModel(double clk_mhz, Geometry g = {}) : SdramModel(clk_mhz, timing_for(g), g) {}
+
+    // The default timing, with tREFI for the chip: 4096 refreshes per 64 ms
+    // up to 4096 rows (the 20K's 2048-row chip asks for 4096 too), else one
+    // per row.
+    static Timing timing_for(const Geometry& g) {
+        Timing t;
+        t.refi = 64e6 / (g.row_bits <= 12 ? 4096 : 1 << g.row_bits);
+        return t;
+    }
+
+    // Bytes the chip holds.
+    uint64_t size() const { return uint64_t{mem_.size()} * g_.bytes; }
 
     std::vector<std::string> errors;
     uint64_t refreshes = 0;
+    bool dqm_on_addr = false;
+    bool drove = false;  // the last step's value is read data, driven by the chip
 
     uint32_t step(const SdramPins& p) {
         const double now = static_cast<double>(clk_) * ns_per_clk_;
         update_precharges(now);
+        drove = false;
         if (!p.cs_n) command(p, now);
-        uint32_t out = scramble(clk_);
+        uint32_t out = scramble(clk_) & data_mask_;
         if (pending_valid_ && pending_at_ == clk_) {
             out = pending_data_;
             pending_valid_ = false;
+            drove = true;
         }
         clk_++;
         return out;
     }
 
     // Direct access for test setup and checks: byte address as the controller sees it.
-    uint8_t byte(uint32_t a) const { return static_cast<uint8_t>(mem_[a >> 2] >> ((a & 3) * 8)); }
+    uint8_t byte(uint32_t a) const {
+        return static_cast<uint8_t>(mem_[a >> lane_bits_] >> ((a & (g_.bytes - 1)) * 8));
+    }
     void set_byte(uint32_t a, uint8_t v) {
-        uint32_t& w = mem_[a >> 2];
-        const int sh = (a & 3) * 8;
+        uint32_t& w = mem_[a >> lane_bits_];
+        const int sh = (a & (g_.bytes - 1)) * 8;
         w = (w & ~(0xFFu << sh)) | (uint32_t{v} << sh);
     }
 
     bool initialised() const { return mode_set_; }
 
 private:
-    static constexpr uint32_t kWords = 1u << 21;
-
     struct Bank {
         bool open = false;
         int row = 0;
@@ -135,7 +168,7 @@ private:
             if (now < b.idle_at) error("ACTIVE before tRP");
             if (now < b.act_at + t_.rc) error("ACTIVE before tRC");
             b.open = true;
-            b.row = p.addr & 0x7FF;
+            b.row = p.addr & ((1 << g_.row_bits) - 1);
             b.act_at = now;
             break;
         case 5:  // READ
@@ -145,7 +178,11 @@ private:
                 break;
             }
             if (now < b.act_at + t_.rcd) error("column command before tRCD");
-            const uint32_t word = (uint32_t{p.ba & 3u} << 19) | (uint32_t(b.row) << 8) | (p.addr & 0xFF);
+            const uint32_t word = (uint32_t{p.ba & 3u} << (g_.row_bits + g_.col_bits)) |
+                                  (uint32_t(b.row) << g_.col_bits) | (p.addr & ((1u << g_.col_bits) - 1));
+            const uint32_t dqm_bits = dqm_on_addr ? 0x1800u : 0u;
+            if (p.addr & ~((1u << g_.col_bits) - 1) & ~0x400u & ~dqm_bits) error("column address bits above the chip's");
+            const uint8_t dqm = dqm_on_addr ? static_cast<uint8_t>(p.addr >> 11 & 3) : p.dqm;
             if (c == 5) {
                 pending_valid_ = true;
                 pending_at_ = clk_ + cas_latency_;
@@ -153,9 +190,9 @@ private:
             } else {
                 if (!p.dq_oe) error("WRITE without driving DQ");
                 uint32_t mask = 0;
-                for (int i = 0; i < 4; i++)
-                    if (!(p.dqm >> i & 1)) mask |= 0xFFu << (8 * i);
-                mem_[word] = (mem_[word] & ~mask) | (p.dq & mask);
+                for (int i = 0; i < g_.bytes; i++)
+                    if (!(dqm >> i & 1)) mask |= 0xFFu << (8 * i);
+                mem_[word] = (mem_[word] & ~mask) | (p.dq & mask & data_mask_);
             }
             if (p.addr & 0x400) {
                 // Auto-precharge: after the data for a read, after tWR for a write.
@@ -177,6 +214,9 @@ private:
 
     double ns_per_clk_;
     Timing t_;
+    Geometry g_;
+    int lane_bits_;
+    uint32_t data_mask_;
     std::vector<uint32_t> mem_;
     std::array<Bank, 4> banks_{};
     uint64_t clk_ = 0;
