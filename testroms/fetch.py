@@ -4,12 +4,14 @@
 
 usage: testroms/fetch.py [--dest DIR]
 
+The NES's ROMs are in manifest.toml, the Atari 2600's in manifest-2600.toml.
 DIR defaults to $RS_TESTROMS, else ~/.cache/retro-silicon/testroms. Files land
 in DIR/<source>/<path>. A file already there with the right sum is kept; a sum
 mismatch is an error. A source with `url` is downloaded; one with `git`,
 `commit` and `build` is cloned at that commit into DIR/<source> and built
 there (homebrew from source; the build needs the tools its README names, such
-as ca65 and Pillow). A ROM whose sha256 is empty is built and its sum printed,
+as ca65 and Pillow); one with `dir` and `build` is our own, in testroms/<dir>,
+copied into DIR/<source> and built there the same way. A ROM whose sha256 is empty is built and its sum printed,
 to put in the manifest, and counts as a failure until it's there. Exit codes:
 0 all present, 1 a download, build or sum failed.
 """
@@ -17,13 +19,15 @@ to put in the manifest, and counts as a failure until it's there. Exit codes:
 import argparse
 import hashlib
 import os
+import shutil
 import subprocess
 import sys
 import tomllib
 import urllib.request
 from pathlib import Path
 
-MANIFEST = Path(__file__).with_name("manifest.toml")
+HERE = Path(__file__).parent
+MANIFESTS = [HERE / "manifest.toml", HERE / "manifest-2600.toml"]
 
 
 def sha256(path):
@@ -45,8 +49,12 @@ def files(manifest):
 
 
 def build(dest, source, spec):
-    """Checks out a git source at its commit in dest/source and runs its build."""
+    """Checks out a git source at its commit in dest/source, or copies our own, and runs its build."""
     work = dest / source
+    if "dir" in spec:
+        shutil.copytree(HERE / spec["dir"], work, dirs_exist_ok=True)
+        subprocess.run(spec["build"], cwd=work, check=True)
+        return
 
     def git(*a):
         return subprocess.run(["git", "-C", str(work), *a], check=True, capture_output=True, text=True).stdout
@@ -69,7 +77,11 @@ def main():
     parser.add_argument("--dest", type=Path, default=Path(default))
     args = parser.parse_args()
 
-    manifest = tomllib.loads(MANIFEST.read_text())
+    manifest = {"sources": {}, "rom": []}
+    for path in MANIFESTS:
+        part = tomllib.loads(path.read_text())
+        manifest["sources"].update(part.get("sources", {}))
+        manifest["rom"] += part.get("rom", [])
     failed = 0
     built = set()
     for source, path, want in files(manifest):
@@ -77,7 +89,7 @@ def main():
         if want and out.exists() and sha256(out) == want:
             continue
         spec = manifest["sources"][source]
-        if "git" in spec:
+        if "git" in spec or "dir" in spec:
             if source not in built:
                 built.add(source)
                 try:

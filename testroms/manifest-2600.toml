@@ -1,0 +1,51 @@
+# SPDX-License-Identifier: Apache-2.0
+# Test cartridges for the Atari 2600, fetched or built by fetch.py and checked
+# against these SHA-256 sums; the built files are never committed.
+#
+# The 2600 has no public test suite like the NES's, so these are our own,
+# in testroms/a2600 (ca65 and ld65 from cc65, GNU Make), each drawing what it
+# finds as background colours (show.inc), so the frame is the result.
+# check = "frame": the core's frame `frames` must match Stella's
+# (my-fpga-rig's stella-frames: 160 x 228 TIA colour values from the 23rd
+# line after VSYNC ends). stella: what that frame shows in Stella, so the
+# expected result is on record.
+# needs: the parts of the console the cartridge exercises.
+
+[sources.a2600-carts]
+dir = "a2600"
+build = ["make"]
+license = "Apache-2.0"
+credit = "retro-silicon"
+
+[[rom]]
+id = "tia_colours"
+source = "a2600-carts"
+path = "tia_colours.bin"
+sha256 = "ad0f6b54233d51a30bc802c892ec28134df4cb16ed4ff82e714b480ffc5f1ca6"
+needs = "cpu, tia"
+covers = "Every NTSC colour, 16 hues in 8 luminances, one per picture line"
+check = "frame"
+frames = 30
+stella = "Lines 0-127 each one colour, 2x for line x: all 128 distinct; lines 128-191 repeat the first 64"
+
+[[rom]]
+id = "riot_ram"
+source = "a2600-carts"
+path = "riot_ram.bin"
+sha256 = "835cb2f402d609370674b077713981a8605df80a362728198d4a600d8b318317"
+needs = "cpu, riot, tia"
+covers = "The RIOT's RAM through $80, $180, $480 and $D80, and the stack at $1FF"
+check = "frame"
+frames = 30
+stella = "Results 00 00 00 00 00 a5 a5 ff, then 0: no errors through any mirror"
+
+[[rom]]
+id = "riot_timer"
+source = "a2600-carts"
+path = "riot_timer.bin"
+sha256 = "f81c8e66d4da94b8c9e33b92fda52a87e2a27911b911f4b93f027aabb7b29b77"
+needs = "cpu, riot, tia"
+covers = "The RIOT's timer at each divider: count down, underflow, one a clock after it, the divider restored by reading INTIM, TIMINT's flag"
+check = "frame"
+frames = 30
+stella = "Results ff f8 f1 ea e3 dc d5 ce, 01 00 fe fd fd fc fb fa, fc fc fc fc, fc fc fc fc, 80 f6 00 e8 00 da 00 cc"

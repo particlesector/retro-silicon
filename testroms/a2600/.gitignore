@@ -1,0 +1,4 @@
+# SPDX-License-Identifier: Apache-2.0
+# Built cartridges are never committed.
+*.bin
+*.o
