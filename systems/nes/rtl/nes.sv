@@ -312,7 +312,14 @@ module nes #(
     logic [7:0]  dbg_a, dbg_x, dbg_y, dbg_s, dbg_p;
     /* verilator lint_on UNUSEDSIGNAL */
 
-    cpu_6502 #(.DECIMAL(0), .SAVE_STATE(SAVE_STATE)) u_cpu (
+    // DIN_REG: the CPU takes its read data a clock before its cycle's end
+    // (ce, C_END), from a register. Every source below holds by then: PRG and
+    // RAM data arrive by the third dot, the PPU's from the clock after reg_ce,
+    // the APU's and the pads' shift registers change only on ce, and the pads
+    // themselves at a frame's end, the clock after a dot, never the clock
+    // before ce. So the path from the CPU's address through the read decode
+    // stops at that register instead of going on into the ALU.
+    cpu_6502 #(.DECIMAL(0), .SAVE_STATE(SAVE_STATE), .DIN_REG(1'b1)) u_cpu (
         .clk, .rst(sys_rst), .soft_rst(sreset), .ce,
         .addr(cpu_addr), .we(cpu_we), .dout(cpu_dout), .din(cpu_din),
         .rdy(cpu_rdy), .irq_n, .nmi_n,

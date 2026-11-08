@@ -8,7 +8,10 @@
 // Bus timing: the CPU advances one cycle on each clock with `ce` high. During a
 // cycle, addr/we/dout describe its access (combinationally from CPU state); a
 // read's data must be on `din` by the clock edge that ends the cycle, and a
-// write takes effect on that edge.
+// write takes effect on that edge. With DIN_REG = 1, din goes through a
+// register first, so it must be there a clock earlier and hold; that splits
+// the path from the address through the system's read decode and into the
+// ALU at a register.
 //
 // Covers every official opcode and the unofficial ones (LAX, SAX, DCP, ISC,
 // SLO, RLA, SRE, RRA, ANC, ALR, ARR, AXS, SBC $EB, the NOPs, and the unstable
@@ -24,7 +27,9 @@
 //      snapshot, IRQ and NMI samples, NMI pending, NMI vector
 module cpu_6502 #(
     parameter bit DECIMAL    = 1'b1,  // 0 for the NES's 2A03
-    parameter bit SAVE_STATE = 1'b1   // 0 leaves out the save-state port's logic: writes do nothing, reads give 0
+    parameter bit SAVE_STATE = 1'b1,  // 0 leaves out the save-state port's logic: writes do nothing, reads give 0
+    parameter bit DIN_REG    = 1'b0   // 1: din is registered on every clock, so a read's data is needed a clock
+                                      // before the edge that ends the cycle; ce must then come at least 2 clocks apart
 ) (
     input  logic        clk,
     input  logic        rst,      // synchronous; the CPU runs its reset sequence after it falls
@@ -57,6 +62,18 @@ module cpu_6502 #(
     input  logic        st_we,
     input  logic [31:0] st_wdata
 );
+
+    // ---- Read data ----
+    logic [7:0] rdata;  // din, or din as it was a clock ago (DIN_REG)
+
+    if (DIN_REG) begin : g_din_reg
+        logic [7:0] din_q;
+        always_ff @(posedge clk)
+            din_q <= din;
+        assign rdata = din_q;
+    end else begin : g_din
+        assign rdata = din;
+    end
     // ---- Decoding ----
     typedef enum logic [4:0] {
         M_IMP, M_IMM, M_ZP, M_ZPX, M_ZPY, M_ABS, M_ABX, M_ABY, M_IZX, M_IZY,
@@ -486,7 +503,7 @@ module cpu_6502 #(
         addr = pc;
         we   = 1'b0;
         dout = 8'h00;
-        m    = din;
+        m    = rdata;
         cin  = fc;
         n_phase = phase;
         n_t = t + 3'd1;
@@ -521,7 +538,7 @@ module cpu_6502 #(
                 end
                 default:
                     case (t)
-                        3'd0: n_dl = din;
+                        3'd0: n_dl = rdata;
                         3'd1: begin
                             we = 1'b1;
                             dout = dl;  // the original writes the unmodified value back first
@@ -545,14 +562,14 @@ module cpu_6502 #(
                 M_IMP: begin exec = 1'b1; last = 1'b1; end  // dummy read of the next byte
                 M_IMM: begin n_pc = pc + 16'd1; exec = 1'b1; last = 1'b1; end
                 M_ZP: begin
-                    n_ad = {8'h00, din};
+                    n_ad = {8'h00, rdata};
                     n_pc = pc + 16'd1;
                     n_phase = P_DATA;
                     n_t = 3'd0;
                 end
                 M_ZPX, M_ZPY:
                     if (t == 3'd1) begin
-                        n_ad = {8'h00, din};
+                        n_ad = {8'h00, rdata};
                         n_pc = pc + 16'd1;
                     end else begin
                         addr = ad;  // dummy read before indexing
@@ -562,10 +579,10 @@ module cpu_6502 #(
                     end
                 M_ABS:
                     if (t == 3'd1) begin
-                        n_ad[7:0] = din;
+                        n_ad[7:0] = rdata;
                         n_pc = pc + 16'd1;
                     end else begin
-                        n_ad[15:8] = din;
+                        n_ad[15:8] = rdata;
                         n_pc = pc + 16'd1;
                         n_phase = P_DATA;
                         n_t = 3'd0;
@@ -574,36 +591,36 @@ module cpu_6502 #(
                     // Steps to the effective address; `step` lines (zp,X) and (zp),Y up with abs,X.
                     case ({d_mode == M_IZX || d_mode == M_IZY, t})
                         // abs,X / abs,Y
-                        4'b0_001: begin n_ad[7:0] = din; n_pc = pc + 16'd1; end
+                        4'b0_001: begin n_ad[7:0] = rdata; n_pc = pc + 16'd1; end
                         4'b0_010: begin
-                            n_ad = {din, lo_sum[7:0]};
+                            n_ad = {rdata, lo_sum[7:0]};
                             n_page_x = lo_sum[8];
                             n_pc = pc + 16'd1;
                         end
                         // (zp,X): t1 pointer, t2 dummy read and add X, t3/t4 address
                         // (zp),Y: t1 pointer, t2/t3 address and add Y
-                        4'b1_001: begin n_bal = din; n_pc = pc + 16'd1; end
+                        4'b1_001: begin n_bal = rdata; n_pc = pc + 16'd1; end
                         4'b1_010:
                             if (d_mode == M_IZX) begin
                                 addr = {8'h00, bal};
                                 n_bal = bal + x;
                             end else begin
                                 addr = {8'h00, bal};
-                                n_ad[7:0] = din;
+                                n_ad[7:0] = rdata;
                             end
                         4'b1_011:
                             if (d_mode == M_IZX) begin
                                 addr = {8'h00, bal};
-                                n_ad[7:0] = din;
+                                n_ad[7:0] = rdata;
                             end else begin
                                 addr = {8'h00, bal + 8'd1};
-                                n_ad = {din, lo_sum[7:0]};
+                                n_ad = {rdata, lo_sum[7:0]};
                                 n_page_x = lo_sum[8];
                             end
                         4'b1_100:
                             if (d_mode == M_IZX) begin
                                 addr = {8'h00, bal + 8'd1};
-                                n_ad[15:8] = din;
+                                n_ad[15:8] = rdata;
                                 n_phase = P_DATA;
                                 n_t = 3'd0;
                             end
@@ -632,7 +649,7 @@ module cpu_6502 #(
                 M_REL:
                     case (t)
                         3'd1: begin
-                            n_dl = din;
+                            n_dl = rdata;
                             n_pc = pc + 16'd1;
                             n_int_snap = int_now;
                             if (!taken) last = 1'b1;
@@ -652,46 +669,46 @@ module cpu_6502 #(
                     endcase
                 M_JMP:
                     if (t == 3'd1) begin
-                        n_ad[7:0] = din;
+                        n_ad[7:0] = rdata;
                         n_pc = pc + 16'd1;
                     end else begin
-                        n_pc = {din, ad[7:0]};
+                        n_pc = {rdata, ad[7:0]};
                         last = 1'b1;
                     end
                 M_JMPI:
                     case (t)
-                        3'd1: begin n_ad[7:0] = din; n_pc = pc + 16'd1; end
-                        3'd2: begin n_ad[15:8] = din; n_pc = pc + 16'd1; end
-                        3'd3: begin addr = ad; n_dl = din; end
+                        3'd1: begin n_ad[7:0] = rdata; n_pc = pc + 16'd1; end
+                        3'd2: begin n_ad[15:8] = rdata; n_pc = pc + 16'd1; end
+                        3'd3: begin addr = ad; n_dl = rdata; end
                         default: begin
                             addr = {ad[15:8], ad[7:0] + 8'd1};  // the pointer doesn't carry into its high byte
-                            n_pc = {din, dl};
+                            n_pc = {rdata, dl};
                             last = 1'b1;
                         end
                     endcase
                 M_JSR:
                     case (t)
-                        3'd1: begin n_dl = din; n_pc = pc + 16'd1; end
+                        3'd1: begin n_dl = rdata; n_pc = pc + 16'd1; end
                         3'd2: addr = stack;  // dummy read
                         3'd3: begin addr = stack; we = 1'b1; dout = pc[15:8]; n_s = s - 8'd1; end
                         3'd4: begin addr = stack; we = 1'b1; dout = pc[7:0]; n_s = s - 8'd1; end
-                        default: begin n_pc = {din, dl}; last = 1'b1; end
+                        default: begin n_pc = {rdata, dl}; last = 1'b1; end
                     endcase
                 M_RTS:
                     case (t)
                         3'd1: ;  // dummy read
                         3'd2: begin addr = stack; n_s = s + 8'd1; end
-                        3'd3: begin addr = stack; n_pc[7:0] = din; n_s = s + 8'd1; end
-                        3'd4: begin addr = stack; n_pc[15:8] = din; end
+                        3'd3: begin addr = stack; n_pc[7:0] = rdata; n_s = s + 8'd1; end
+                        3'd4: begin addr = stack; n_pc[15:8] = rdata; end
                         default: begin n_pc = pc + 16'd1; last = 1'b1; end
                     endcase
                 M_RTI:
                     case (t)
                         3'd1: ;
                         3'd2: begin addr = stack; n_s = s + 8'd1; end
-                        3'd3: begin addr = stack; m = din; exec = 1'b1; n_s = s + 8'd1; end  // P
-                        3'd4: begin addr = stack; n_pc[7:0] = din; n_s = s + 8'd1; end
-                        default: begin addr = stack; n_pc[15:8] = din; last = 1'b1; end
+                        3'd3: begin addr = stack; m = rdata; exec = 1'b1; n_s = s + 8'd1; end  // P
+                        3'd4: begin addr = stack; n_pc[7:0] = rdata; n_s = s + 8'd1; end
+                        default: begin addr = stack; n_pc[15:8] = rdata; last = 1'b1; end
                     endcase
                 M_PUSH:
                     if (t == 3'd2) begin
@@ -722,10 +739,10 @@ module cpu_6502 #(
                                 n_ad = int_src == I_RESET ? 16'hFFFC : nmi_pend ? 16'hFFFA : 16'hFFFE;
                             end
                         end
-                        3'd5: begin addr = ad; n_dl = din; n_fi = 1'b1; end
+                        3'd5: begin addr = ad; n_dl = rdata; n_fi = 1'b1; end
                         default: begin
                             addr = {ad[15:8], ad[7:0] + 8'd1};
-                            n_pc = {din, dl};
+                            n_pc = {rdata, dl};
                             n_int_src = I_NONE;
                             n_nmi_vec = 1'b0;
                             nmi_done = nmi_vec;
@@ -790,7 +807,7 @@ module cpu_6502 #(
                         int_src <= nmi_pend ? I_NMI : I_IRQ;
                     int_go <= 1'b0;
                 end else begin
-                    ir <= din;
+                    ir <= rdata;
                     pc <= pc + 16'd1;
                 end
             end

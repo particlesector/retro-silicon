@@ -67,6 +67,13 @@ public:
             m.din = c.data;
         }
         m.eval();
+#ifdef RS_CPU_DIN_REG
+        // DIN_REG: din goes through a register, so it's there a clock early
+        // and holds; ce comes every other clock.
+        m.ce = 0;
+        clock();
+        m.ce = 1;
+#endif
         clock();
         if (c.write) write(c.addr, c.data);
         cycles++;

@@ -6,10 +6,22 @@ target_compile_definitions(cpu_6502_test PRIVATE RS_TESTROMS="${RS_TESTROMS}"
     RS_NES_TRACE_GOLDEN="${PROJECT_SOURCE_DIR}/harness/golden/nes_trace_crc32.txt")
 target_include_directories(cpu_6502_test PRIVATE ${PROJECT_SOURCE_DIR}/harness/tests)  # golden.hpp
 
+# The same with DIN_REG: read data registered a clock before the cycle ends,
+# ce every other clock.
+rs_sim_test(cpu_6502_din_reg_test PREFIX "DIN_REG: " SOURCES cpu_test.cpp nes_roms_test.cpp)
+rs_verilate(cpu_6502_din_reg_test COMPONENT cpu_6502 PARAMS DECIMAL=0 DIN_REG=1)
+target_compile_definitions(cpu_6502_din_reg_test PRIVATE RS_CPU_DIN_REG RS_TESTROMS="${RS_TESTROMS}"
+    RS_NES_TRACE_GOLDEN="${PROJECT_SOURCE_DIR}/harness/golden/nes_trace_crc32.txt")
+target_include_directories(cpu_6502_din_reg_test PRIVATE ${PROJECT_SOURCE_DIR}/harness/tests)
+
 include(${PROJECT_SOURCE_DIR}/cmake/Perfect6502.cmake)
 if(TARGET perfect6502)
     # A stock NMOS 6502, decimal mode included, as perfect6502 models.
     rs_sim_test(cpu_6502_lockstep SOURCES perfect6502_test.cpp)
     rs_verilate(cpu_6502_lockstep COMPONENT cpu_6502 PARAMS DECIMAL=1)
     target_link_libraries(cpu_6502_lockstep PRIVATE perfect6502)
+    rs_sim_test(cpu_6502_din_reg_lockstep PREFIX "DIN_REG: " SOURCES perfect6502_test.cpp)
+    rs_verilate(cpu_6502_din_reg_lockstep COMPONENT cpu_6502 PARAMS DECIMAL=1 DIN_REG=1)
+    target_compile_definitions(cpu_6502_din_reg_lockstep PRIVATE RS_CPU_DIN_REG)
+    target_link_libraries(cpu_6502_din_reg_lockstep PRIVATE perfect6502)
 endif()
