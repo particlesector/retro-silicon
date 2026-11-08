@@ -7,7 +7,7 @@ Module `cpu_6502` (the folder name can't start a module name).
 ## Timing
 
 - **Clock enable:** the CPU advances one cycle on each clock with `ce` high.
-- **Bus:** during a cycle, `addr`, `we` and `dout` describe its access, combinationally from the CPU's state. A read's data must be on `din` by the clock edge that ends the cycle, and a write takes effect on that edge.
+- **Bus:** during a cycle, `addr`, `we` and `dout` describe its access, combinationally from the CPU's state. A read's data must be on `din` by the clock edge that ends the cycle, and a write takes effect on that edge. With `DIN_REG = 1`, `din` goes through a register first, so a read's data must be there a clock earlier, by the edge before the one that ends the cycle, and hold; `ce` pulses must then be at least 2 clocks apart.
 - **Inputs:** `irq_n`, `nmi_n` and `rdy` are sampled at the clock edge before the cycle they apply to. That is the real chip's pin timing, moved half a cycle to the single clock edge.
 - **Interrupts:** polled before each instruction's last cycle. Branches follow the chip's exceptions: a taken branch that stays on its page doesn't poll before its last cycle. An NMI edge arriving before the end of an NMI sequence merges into it, and one arriving later waits for the handler's first instruction. An NMI arriving by the fourth cycle of a BRK or IRQ sequence takes over its vector.
 
@@ -21,7 +21,7 @@ Module `cpu_6502` (the folder name can't start a module name).
 | `addr` | out | 16 | This cycle's address |
 | `we` | out | 1 | This cycle writes `dout` |
 | `dout` | out | 8 | Data written |
-| `din` | in | 8 | Data read, needed by the edge that ends the cycle |
+| `din` | in | 8 | Data read, needed by the edge that ends the cycle (a clock earlier with `DIN_REG`) |
 | `rdy` | in | 1 | Low stalls the CPU on read cycles; writes always complete |
 | `irq_n` | in | 1 | Interrupt request, level-sensitive, active low |
 | `nmi_n` | in | 1 | Non-maskable interrupt, falling-edge-sensitive |
@@ -36,6 +36,7 @@ Module `cpu_6502` (the folder name can't start a module name).
 | --- | --- | --- |
 | `DECIMAL` | 1 | NMOS decimal mode, including its flag quirks (ADC: N and V from an intermediate result, Z from the binary sum; SBC: binary flags). 0 for the NES's 2A03, where ADC and SBC are binary whatever D says |
 | `SAVE_STATE` | 1 | 0 leaves out the save-state port's logic: writes do nothing and reads give 0. For a board short of logic |
+| `DIN_REG` | 0 | 1 registers `din`, splitting the path from the address through the system's read decode into the ALU at a register, for a faster clock; the read's data is then needed a clock earlier (Timing, above). `systems/nes` uses it |
 
 ## Save state
 
@@ -75,6 +76,7 @@ Sim tests:
 - **perfect6502 lockstep:** every cycle's bus access matches perfect6502, a transistor-level simulation of the chip, on random code with random IRQs and NMIs (2 million cycles), and on 1,500 decimal-mode ADC and SBC cases, invalid BCD digits included.
 - **nestest:** all 8,991 lines of `nestest.log` match: registers, flags and cycle counts.
 - **blargg:** `instr_test-v5/official_only` passes.
+- **`DIN_REG`:** the lockstep, nestest, blargg and the unit tests run again on a second build with `DIN_REG = 1`, its bench giving each cycle an extra clock (test names start `DIN_REG:`).
 - **Save state:** 40 random programs with random IRQs and NMIs, saved at a random cycle, restored into another CPU and run on: the same 400 bus cycles each. Leaving out the NMI pending flag, the address register or the cycle counter fails it.
 - **Unit tests:** hand-written checks of the documented bus patterns (indexed addressing, read-modify-write, JMP's page-wrap bug, branches, JSR and RTS, BRK and RTI, reset), interrupt timing, RDY and JAM.
 

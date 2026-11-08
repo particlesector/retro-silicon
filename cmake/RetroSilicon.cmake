@@ -203,11 +203,12 @@ endfunction()
 #
 # A Catch2 test executable whose test cases ctest runs one by one. Warnings
 # apply to these sources only: Verilator's generated code isn't -Wextra clean.
+# PREFIX goes before each test's name, for a second build of the same tests.
 function(rs_sim_test target)
-    cmake_parse_arguments(PARSE_ARGV 1 arg "" "" "SOURCES")
+    cmake_parse_arguments(PARSE_ARGV 1 arg "" "PREFIX" "SOURCES")
     add_executable(${target} ${arg_SOURCES})
     set_source_files_properties(${arg_SOURCES} PROPERTIES COMPILE_OPTIONS "-Wall;-Wextra")
     target_compile_features(${target} PRIVATE cxx_std_20)
     target_link_libraries(${target} PRIVATE Catch2::Catch2WithMain)
-    catch_discover_tests(${target})
+    catch_discover_tests(${target} TEST_PREFIX "${arg_PREFIX}")
 endfunction()
