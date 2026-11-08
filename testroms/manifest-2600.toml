@@ -6,8 +6,8 @@
 # in testroms/a2600 (ca65 and ld65 from cc65, GNU Make), each drawing what it
 # finds as background colours (show.inc), so the frame is the result.
 # check = "frame": the core's frame `frames` must match Stella's
-# (my-fpga-rig's stella-frames: 160 x 228 TIA colour values from the 23rd
-# line after VSYNC ends). stella: what that frame shows in Stella, so the
+# (tools/stella/frames.py: 160 x 228 TIA colour values from the 23rd line
+# after VSYNC ends). stella: what that frame shows in Stella, so the
 # expected result is on record.
 # needs: the parts of the console the cartridge exercises.
 

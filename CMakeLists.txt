@@ -53,6 +53,7 @@ add_subdirectory(boards/tang-nano-20k)
 add_subdirectory(boards/tang-console-138k)
 add_subdirectory(boards/pynq-z2)
 add_subdirectory(harness)
+add_subdirectory(tools/stella)
 
 find_program(RS_FUSESOC fusesoc)
 if(RS_FUSESOC)
