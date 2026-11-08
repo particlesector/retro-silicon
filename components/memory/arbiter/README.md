@@ -1,6 +1,6 @@
 # arbiter
 
-Shares one byte-port memory among N clients by fixed priority, client 0 first. A system takes its memory through this, so a board can put any memory behind the one port: `memory/sdram` on the Tang Nano 20K, `memory/bram` on the Tang Console 138K.
+Shares one byte-port memory among N clients by fixed priority, client 0 first. A system takes its memory through this, so a board can put any memory behind the one port: `memory/sdram` on the Tang boards, `memory/cache` and the DDR3 on the PYNQ-Z2.
 
 Module `mem_arbiter`.
 

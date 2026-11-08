@@ -26,7 +26,7 @@ openFPGALoader -b pynq_z2 build/fpga/pynq_uart_echo/pynq_echo_top.bit
 | --- | --- | --- | --- |
 | `pynq_uart_echo_bitstream` | `systems/uart-echo` | `rtl/pynq_echo_top.sv` | 1.506 Mbaud (`CLKS_PER_BIT=83`), `pins.xdc` |
 | `pynq_shell_ram_bitstream` | `systems/shell-ram` | `rtl/pynq_shell_ram_top.sv` | As echo; `BUILD_ID` from the RTL's SHA-256, the same as the Tang boards' |
-| `pynq_nes_bitstream` | `systems/nes` through `nes_bram`, with HDMI | `rtl/pynq_nes_top.sv` | `nes.xdc`; its own clocks (below), 1.485 Mbaud (`CLKS_PER_BIT=25`), 32 KB of block RAM for the memory, paced by the display |
+| `pynq_nes_bitstream` | `systems/nes` through `nes_axi`, with HDMI | `rtl/pynq_nes_top.sv` | `nes.xdc`; its own clocks (below), 1.485 Mbaud (`CLKS_PER_BIT=25`), PRG ROM in the DDR3 and 256 KB of CHR in block RAM, paced by the display |
 
 ## Clocks
 
@@ -36,7 +36,7 @@ The NES makes the Tang Nano 20K's HDMI clocks, 371.25 MHz for the serializers an
 
 ## Memory
 
-`nes_bram` has 32 KB here, NROM's largest PRG ROM. Yosys builds anything deeper from pairs of cascaded block RAMs, and nextpnr-xilinx fails to place them; the mappers of milestone 9 will need a way round that, or the DDR3, which only the processor's side reaches.
+`nes_axi` keeps PRG ROM in the DDR3 from 0x10000000, through HP0 and `memory/cache`, with HP0 and the AXI bridge on the 74.25 MHz pixel clock. CHR's 256 KB of block RAM is built in 32 KB banks: Yosys builds anything deeper from pairs of cascaded block RAMs, and nextpnr-xilinx fails to place them.
 
 ## HDMI
 

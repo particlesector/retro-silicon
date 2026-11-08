@@ -44,15 +44,14 @@ Built from `common/por`, `common/clock-enable`, `common/crc32`, `common/save-sta
 
 ## Memory
 
-`nes` takes the board's memory as a byte port, `memory/sdram`'s user port, which `memory/arbiter` shares between the CPU's PRG reads, first, and the shell. Three wrappers put memory behind it:
+`nes` takes the board's memory as a byte port, `memory/sdram`'s user port, which `memory/arbiter` shares between the CPU's PRG reads, first, and the shell. Two wrappers put memory behind it:
 
 | Module | Memory | Used by |
 | --- | --- | --- |
 | `nes_sdram` | `memory/sdram`, its first 8 MB, of any geometry (`DQ_W`, `ROW_W`, `COL_W`, `RANKS`, `REFRESH_NS`, as `sdram_ctrl`'s); with `CHR_EXT` (a 32-bit chip only), CHR ROM too | The Tang Nano 20K (`boards/tang-nano-20k/rtl/nes_top.sv`, `CHR_EXT = 1`); the Tang Console 138K (`boards/tang-console-138k/rtl/nes_top.sv`: its SDRAM module, two 16-bit chips on one bus, and 256 KB of CHR in block RAM); and the sim |
-| `nes_bram` | `memory/bram`, 256 KB (`MEM_AW`) mirrored through the 8 MB window, and `CHR_AW` of CHR, both in banks of 2^`BANK_AW` | A board whose memory the system can't use yet, and the sim |
 | `nes_axi` | An AXI memory's 8 MB from `BASE`, through `memory/cache` (32 KB, `CACHE_IDX`, with next-line prefetch), `memory/port-cdc` when `ASYNC` puts the AXI side on its own clock `aclk`, and `memory/axi-bridge`; `CHR_AW` of CHR in block RAM | The PYNQ-Z2 (`boards/pynq-z2/rtl/pynq_nes_top.sv`: the DDR3 through HP0 at 74.25 MHz, 256 KB of CHR in 32 KB banks), and the sim (`make_nes_axi_sim`, synchronous) |
 
-All three also hold `nes_video`, the HDMI output (below), with a pixel-clock input and the TMDS symbols out for the board's serializers.
+Both also hold `nes_video`, the HDMI output (below), with a pixel-clock input and the TMDS symbols out for the board's serializers.
 
 The system's behaviour doesn't depend on which, or on the clock: a CPU cycle's last dot waits for its PRG read, if it isn't back.
 
@@ -216,7 +215,7 @@ It plays exactly what the test build plays: in the sim (`make_nes_lean_sim`, the
 | `v_cap_t`, `v_crc`, `v_crc_ok`, `v_crc_t`, `v_shown`, `v_late`, `v_overrun` | | | The video CRC and counts, from `nes_video` |
 | `a_valid`, `a_pcm` | out | 1, 16 | The sound: a one-clock pulse with each 48 kHz sample, signed |
 
-`nes_sdram` has the SDRAM pins instead, as on `sdram_ctrl`, and `nes_bram` no memory ports; both have `pclk` in and `tmds0`-`tmds2` out in place of the video ports.
+`nes_sdram` has the SDRAM pins instead, as on `sdram_ctrl`, and `nes_axi` an AXI master; both have `pclk` in and `tmds0`-`tmds2` out in place of the video ports.
 
 ## Parameters
 
@@ -227,8 +226,8 @@ It plays exactly what the test build plays: in the sim (`make_nes_lean_sim`, the
 | `DOT_NUM`, `DOT_DEN` | 35, 176 | PPU dots per clocks: 189, 1760 at 50 MHz. Dots must come at least 5 clocks apart, so a CPU cycle leaves SDRAM its 10 |
 | `LEAD_DOTS` | 5 | PPU dots after reset before the CPU's first cycle, register `8F`'s power-up value |
 | `PACE` | 0 | Keep pace with the display from power-up (register `3C` bit 0) |
-| `CHR_AW`, `CHR_BANK_AW` | 13, `CHR_AW` | CHR's block RAM: 2^`CHR_AW` bytes, in banks of 2^`CHR_BANK_AW` (`nes_bram`'s `CHR_AW` and `BANK_AW`; `nes_sdram` passes both) |
-| `MEM_AW` | 23 | The board's memory's size, for the harness (`nes_bram` passes its own) |
+| `CHR_AW`, `CHR_BANK_AW` | 13, `CHR_AW` | CHR's block RAM: 2^`CHR_AW` bytes, in banks of 2^`CHR_BANK_AW` (`nes_sdram` and `nes_axi` pass both) |
+| `MEM_AW` | 23 | The board's memory's size, for the harness |
 | `CHR_EXT` | 0 | CHR ROM can come from the board's memory (`nes_sdram`'s too); needs 8 or more clocks a dot |
 | `TRACE_AW` | 10 | The trace buffer keeps the last 2^`TRACE_AW` CPU cycles (4 bytes each, in byte-wide block RAM) |
 | `SAVE_STATE` | 1 | 0 builds the system without save states (no save-state controller or its 32 KB buffer; the CPU's, PPU's, APU's and resampler's ports do nothing; OAM can still be cleared; register `3A` bit 0 reads 0): the Tang Nano 20K's NES, which fits only so with the APU and HDMI audio |

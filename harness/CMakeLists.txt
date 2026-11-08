@@ -19,8 +19,6 @@ get_property(shell_axi_id GLOBAL PROPERTY RS_SHELL_AXI_BUILD_ID)
 string(REPLACE "32'h" "0x" shell_axi_id_c ${shell_axi_id})
 get_property(nes_id GLOBAL PROPERTY RS_NES_BUILD_ID)
 string(REPLACE "32'h" "0x" nes_id_c ${nes_id})
-get_property(nes_bram_id GLOBAL PROPERTY RS_NES_BRAM_BUILD_ID)
-string(REPLACE "32'h" "0x" nes_bram_id_c ${nes_bram_id})
 add_library(rs_sim_link STATIC src/sim_systems.cpp)
 set_source_files_properties(src/sim_systems.cpp PROPERTIES COMPILE_OPTIONS "-Wall;-Wextra")
 target_link_libraries(rs_sim_link PUBLIC rs_harness)
@@ -33,11 +31,6 @@ rs_verilate(rs_sim_link COMPONENT shell_sdram PREFIX Vshell_sdram_x16_sim
                    BUILD_ID=${shell_sdram_id})
 rs_verilate(rs_sim_link COMPONENT shell_axi PREFIX Vshell_axi_sim PARAMS CLKS_PER_BIT=18 BUILD_ID=${shell_axi_id})
 rs_verilate(rs_sim_link COMPONENT nes_sdram PREFIX Vnes_sim PARAMS CLKS_PER_BIT=18 BUILD_ID=${nes_id})
-# nes_bram, block RAM for its memory, at a 50 MHz clock's rates (1.515 Mbaud,
-# and the dot rate at 189/1760 of the clock): for a board whose memory the
-# system can't use yet.
-rs_verilate(rs_sim_link COMPONENT nes_bram PREFIX Vnes_bram_sim
-            PARAMS CLKS_PER_BIT=33 IDLE_CLKS=500000 DOT_NUM=189 DOT_DEN=1760 CHR_AW=17 BUILD_ID=${nes_bram_id})
 # The NES as the Tang Nano 20K runs it with HDMI (boards/tang-nano-20k/rtl/nes_top.sv's
 # parameters): 46.40625 MHz, keeping pace with its display, without save states.
 rs_verilate(rs_sim_link COMPONENT nes_sdram PREFIX Vnes_hdmi_sim
@@ -69,8 +62,7 @@ target_compile_definitions(rs_sim_link PUBLIC RS_SHELL_RAM_BUILD_ID=${shell_ram_
                                               RS_SHELL_SDRAM_BUILD_ID=${shell_sdram_id_c}
                                               RS_SHELL_AXI_BUILD_ID=${shell_axi_id_c}
                                               RS_NES_AXI_BUILD_ID=${nes_axi_id_c}
-                                              RS_NES_BUILD_ID=${nes_id_c}
-                                              RS_NES_BRAM_BUILD_ID=${nes_bram_id_c})
+                                              RS_NES_BUILD_ID=${nes_id_c})
 
 rs_sim_test(harness_test SOURCES tests/echo_test_test.cpp tests/sim_link_test.cpp tests/shell_test.cpp
                                tests/sdram_test.cpp tests/nes_test.cpp tests/hdmi_test.cpp)

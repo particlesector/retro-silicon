@@ -64,7 +64,7 @@ module nes #(
     parameter bit          PACE         = 1'b0,     // keep pace with a display from reset
     parameter bit          SAVE_STATE   = 1'b1,     // 0 leaves out save states, for a board short of logic
     parameter int          CHR_AW       = 13,       // CHR ROM or RAM: 2^CHR_AW bytes of block RAM
-    parameter int          CHR_BANK_AW  = CHR_AW,   // ...built from banks of 2^CHR_BANK_AW (see memory/bram)
+    parameter int          CHR_BANK_AW  = CHR_AW,   // ...built from banks of 2^CHR_BANK_AW (openXC7: 32 KB)
     parameter int          MEM_AW       = 23,       // the board's memory: 2^MEM_AW bytes, for PRG ROM
     parameter bit          CHR_EXT      = 1'b0,     // CHR ROM can come from the board's memory
     parameter int          TRACE_AW     = 10,       // the trace buffer keeps the last 2^TRACE_AW CPU cycles
