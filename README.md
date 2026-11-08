@@ -20,8 +20,10 @@ cmake --build --preset default    # also builds the boards' bitstreams when next
 ctest --preset default
 
 testroms/fetch.py                 # test ROMs into ~/.cache/retro-silicon/testroms; homebrew is
-                                  #   built from source (needs cc65's ca65 and Python's Pillow)
-tools/mesen/check.py              # check they pass in MesenCE, the reference
+                                  #   built from source (needs cc65's ca65 and Python's Pillow), and so
+                                  #   are our own Atari 2600 test cartridges (testroms/a2600)
+tools/mesen/check.py              # check they pass in MesenCE, the NES's reference
+tools/stella/frames.py            # the Atari 2600's golden frames from Stella (tools/stella/README.md)
 ```
 
 Use a component from another FuseSoC project:
@@ -40,9 +42,9 @@ then depend on it by name, for example `retro-silicon:common:uart`.
 | `systems/` | Top levels that wire components together |
 | `boards/` | Pins, clocks and the bitstream build for each board |
 | `harness/` | C++ test harness core: the link interface, UART models, test-shell client, tests and the Verilator backend |
-| `testroms/` | Test-ROM manifest (sources, SHA-256 sums, expected results) and fetch script; the ROMs themselves aren't committed |
+| `testroms/` | Test-ROM manifests (the NES's `manifest.toml`, the Atari 2600's `manifest-2600.toml`: sources, SHA-256 sums, expected results), the fetch script, and the source of our own 2600 test cartridges (`a2600/`); the ROMs themselves aren't committed |
 | `cmake/` | Shared CMake helpers |
-| `tools/` | Host tools: the MesenCE test-ROM runner and golden-frame generator, and `frame.py` (frame to PNG, frame diff) |
+| `tools/` | Host tools: the MesenCE test-ROM runner and golden-frame generator, Stella's for the Atari 2600 (`stella-frames`), and `frame.py` (frame to PNG, frame diff) |
 | `docs/` | Conventions and design decisions |
 
 See [CONTRIBUTING.md](CONTRIBUTING.md) for what each component folder holds and how to add one.
