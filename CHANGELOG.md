@@ -117,6 +117,7 @@ All notable changes to this project are listed here. The format follows [Keep a 
 
 ### Fixed
 
+- `testroms`: Concentration Room rebuilds to its pinned SHA-256 from a fresh fetch: its title screen shows the build time (ca65's `.time`), so its build now fixes that at the time of the pinned build.
 - `video/ppu-2c02`: the sprite pixel is taken by shifting the line buffer's bytes. GowinSynthesis (1.9.11.03) merged `sl_lo` and `sl_hi` into one register RAM and read the pair of bit-selects from the wrong bits, so on the Tang Console 138K a transparent sprite pixel read as opaque (a false sprite-0 hit); 8 test ROMs and the save-state round trip failed there. The RTL's behaviour is unchanged.
 - `boards/tang-nano-20k`, `boards/pynq-z2`: the NES's dots run 2% faster than NTSC's (13/110 and 9/61 of the clock), so that keeping pace with the display it has room for memory waits: at NTSC's rate a frame took 99.84% of a 60 Hz display frame, and one that overran waited for the next, so busy games stuttered (Kirby's Adventure on the PYNQ-Z2). The NES waits at each frame's end, so it still makes 60 frames a second, with the same sound.
 - `cpu/6502`: the unstable unofficial opcodes (XAA, LAX `#imm`, LAS, SHY, SHX, AHX, TAS) run as MesenCE runs them, instead of halting.

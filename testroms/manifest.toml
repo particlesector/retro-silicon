@@ -1769,7 +1769,9 @@ credit = "Thwaite by Damian Yerrick"
 [sources.croom]
 git = "https://github.com/pinobatch/croom-nes"
 commit = "ed19c3c07ca389b70cf2e0dd2ce0320df28d511d"
-build = ["make", "croom.nes"]
+# Its title screen's notice shows the build time (ca65's .time, the clock at
+# assembly), so the build fixes it at the time of the build pinned here.
+build = ["sh", "-c", "sed -i 's/decbytes [.]time$/decbytes 1793298223/' src/litetitle.s && make croom.nes"]
 license = "GPL-3.0-or-later"
 credit = "Concentration Room by Damian Yerrick"
 
