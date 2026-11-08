@@ -24,9 +24,6 @@ inline constexpr SdramLayout kSdramX16Layout{64u << 20, 8};
 // shell-axi with an AXI memory model (memory/axi-bridge's) as its memory.
 std::unique_ptr<SimLink> make_shell_axi_sim();    // reports RS_SHELL_AXI_BUILD_ID
 std::unique_ptr<SimLink> make_nes_sim();          // reports RS_NES_BUILD_ID
-// nes_bram: block RAM for its memory, and a 50 MHz clock (33 clocks a bit).
-// Reports RS_NES_BRAM_BUILD_ID.
-std::unique_ptr<SimLink> make_nes_bram_sim();
 // The NES as the Tang Console 138K runs it: PRG ROM in its SDRAM module (two
 // 16M x 16 chips on one bus, a model each), 256 KB of CHR in block RAM, at
 // 37.1875 MHz (25 clocks a bit, dots at 35/242), without the display.

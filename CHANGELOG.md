@@ -110,6 +110,10 @@ All notable changes to this project are listed here. The format follows [Keep a 
 - `boards/gowin/build.sh` synthesises without wide multiplexers (`synth_gowin -nowidelut`): Yosys padded each MUX2_LUT5 input that wasn't a LUT's output with a LUT1. The Tang Nano 20K's NES goes from 15,915 LUT4s at 53 MHz to 14,341 at 62 MHz, and the Tang Console 138K's from 20,157 at 54 MHz to 16,924 at 56 MHz.
 - `systems/nes`: without save states (`SAVE_STATE=0`) the save-state controller and its 32 KB buffer are left out, and register `3A` bit 0 says whether a build has them; the Tang Nano 20K's NES goes from 42 to 26 of its 46 block RAMs. `harness`: `Console::has_save_states()`, and `save_state()`/`load_state()` refuse on a build without them; `make_nes_hdmi_sim` is built with `SAVE_STATE=0`, as the 20K is.
 
+### Removed
+
+- `memory/bram` and `systems/nes`'s `nes_bram`: every board's NES now has its own memory (the Tang boards' SDRAM, the PYNQ-Z2's DDR3), so no board built them. `harness`: `make_nes_bram_sim` is gone; its tests (a save state moved from the 20K's NES, nestest, and four timing-sensitive ROMs against MesenCE) run on `make_nes_x16_sim`, the Tang Console 138K's NES.
+
 ### Fixed
 
 - `video/ppu-2c02`: the sprite pixel is taken by shifting the line buffer's bytes. GowinSynthesis (1.9.11.03) merged `sl_lo` and `sl_hi` into one register RAM and read the pair of bit-selects from the wrong bits, so on the Tang Console 138K a transparent sprite pixel read as opaque (a false sprite-0 hit); 8 test ROMs and the save-state round trip failed there. The RTL's behaviour is unchanged.

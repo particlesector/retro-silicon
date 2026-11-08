@@ -78,18 +78,16 @@ TEST_CASE("iNES parsing rejects files that aren't ROMs or are cut short") {
 namespace {
 
 // Runs a ROM in the sim to its golden frame: it must pass its own check and
-// show MesenCE's frame. `bram` runs it as the Tang Console 138K does.
-enum class Sim { kDefault, kBram, kExt, kAxi, kX16 };
+// show MesenCE's frame. `kX16` runs it as the Tang Console 138K does.
+enum class Sim { kDefault, kExt, kAxi, kX16 };
 
 void matches_mesen(const std::string& id, Sim sim = Sim::kDefault) {
     auto [g, rom] = golden_rom(id);
-    bool bram = sim == Sim::kBram;
-    auto link = bram ? rig::make_nes_bram_sim()
-                : sim == Sim::kExt ? rig::make_nes_ext_sim()
+    auto link = sim == Sim::kExt ? rig::make_nes_ext_sim()
                 : sim == Sim::kAxi ? rig::make_nes_axi_sim()
                 : sim == Sim::kX16 ? rig::make_nes_x16_sim()
                                    : rig::make_nes_sim();
-    uint32_t build_id = bram ? RS_NES_BRAM_BUILD_ID : sim == Sim::kAxi ? RS_NES_AXI_BUILD_ID : RS_NES_BUILD_ID;
+    uint32_t build_id = sim == Sim::kAxi ? RS_NES_AXI_BUILD_ID : RS_NES_BUILD_ID;
     auto r = rig::nes::rom_test(*link, g.check, rom, g.frames, build_id);
     INFO(r.detail << " / " << r.notes);
     CHECK(r.passed);
@@ -106,11 +104,6 @@ void matches_mesen(const std::string& id, Sim sim = Sim::kDefault) {
 
 #define MATCHES_MESEN(id) \
     TEST_CASE(id " passes in the sim and its frame matches MesenCE's") { matches_mesen(id); }
-
-// The same on block RAM at a 50 MHz clock's rates, as the Tang Console 138K
-// runs it: a few ROMs whose timing is the most sensitive.
-#define MATCHES_MESEN_BRAM(id) \
-    TEST_CASE(id " matches MesenCE's frame on block RAM at 50 MHz") { matches_mesen(id, Sim::kBram); }
 
 // The same as the Tang Nano 20K runs it, with CHR ROM bigger than CHR's
 // block RAM in the SDRAM.
@@ -150,10 +143,6 @@ MATCHES_MESEN_ONES("blargg_apu-07")
 MATCHES_MESEN_LEAD("full_palette", 6)
 MATCHES_MESEN_LEAD("full_palette", 7)
 
-MATCHES_MESEN_BRAM("oam_read")
-MATCHES_MESEN_BRAM("ppu_vbl_nmi-10")
-MATCHES_MESEN_BRAM("sprite_hit-09")
-MATCHES_MESEN_BRAM("nmi_sync")
 
 TEST_CASE("a save-state round trip gives the uninterrupted run's frames, trace and cycles") {
     for (const char* id : {"nmi_sync", "sprite_overflow-3"}) {
@@ -196,7 +185,7 @@ TEST_CASE("a build without save states says so, and refuses them") {
     CHECK(nb.has_save_states());
 }
 
-TEST_CASE("a state saved on SDRAM at 27 MHz finishes the same on block RAM at 50 MHz") {
+TEST_CASE("a state saved on SDRAM at 27 MHz finishes the same on the Tang Console 138K's SDRAM module at 37 MHz") {
     auto [g, rom] = golden_rom("sprite_hit-09");
     auto a = rig::make_nes_sim();
     rig::shell::Client ca(*a);
@@ -210,7 +199,7 @@ TEST_CASE("a state saved on SDRAM at 27 MHz finishes the same on block RAM at 50
     auto state = na.save_state();
     uint32_t trace_a = na.trace_crc();
 
-    auto b = rig::make_nes_bram_sim();
+    auto b = rig::make_nes_x16_sim();
     rig::shell::Client cb(*b);
     rig::nes::Console nb(cb);
     nb.hold_reset();
@@ -228,7 +217,7 @@ TEST_CASE("a state saved on SDRAM at 27 MHz finishes the same on block RAM at 50
     CHECK(crc->second == g.frames - 1);
 }
 
-TEST_CASE("nestest on block RAM at 50 MHz has the CPU bench's trace CRC") {
+TEST_CASE("nestest on the Tang Console 138K's SDRAM module at 37 MHz has the CPU bench's trace CRC") {
     std::string path = std::string(RS_TESTROMS) + "/nes-test-roms/other/nestest.nes";
     if (!std::filesystem::exists(path)) SKIP(path << " not found: run testroms/fetch.py");
     auto golden = golden_crcs(RS_NES_TRACE_GOLDEN);
@@ -236,8 +225,8 @@ TEST_CASE("nestest on block RAM at 50 MHz has the CPU bench's trace CRC") {
     REQUIRE(it != golden.end());
     auto rom = rig::load_ines(path);
     REQUIRE(std::holds_alternative<rig::NesRom>(rom));
-    auto link = rig::make_nes_bram_sim();
-    auto r = rig::nes::nestest(*link, std::get<rig::NesRom>(rom), rig::nes::kNestestCycles, RS_NES_BRAM_BUILD_ID);
+    auto link = rig::make_nes_x16_sim();
+    auto r = rig::nes::nestest(*link, std::get<rig::NesRom>(rom), rig::nes::kNestestCycles, RS_NES_BUILD_ID);
     INFO(r.detail << " / " << r.notes);
     REQUIRE(r.passed);
     REQUIRE(r.crc32 == it->second);
@@ -399,6 +388,10 @@ MATCHES_MESEN_X16("mapperel-mmc1-battery")
 MATCHES_MESEN_X16("mmc3_irq-4")
 MATCHES_MESEN_X16("cpu_interrupts-5")
 MATCHES_MESEN_X16("instr_test-official")
+MATCHES_MESEN_X16("oam_read")
+MATCHES_MESEN_X16("ppu_vbl_nmi-10")
+MATCHES_MESEN_X16("sprite_hit-09")
+MATCHES_MESEN_X16("nmi_sync")
 
 // And ROMs with 8 KB of CHR ROM put there on purpose: the same frames as
 // from block RAM.

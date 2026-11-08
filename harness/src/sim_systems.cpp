@@ -2,7 +2,6 @@
 #include "rig/sim_systems.hpp"
 
 #include "Vshell_ram_sim.h"
-#include "Vnes_bram_sim.h"
 #include "Vnes_axi_sim.h"
 #include "Vnes_ext_sim.h"
 #include "Vnes_x16_hdmi_sim.h"
@@ -251,10 +250,6 @@ std::unique_ptr<SimLink> make_nes_sim() { return std::make_unique<SimLink>(std::
 std::unique_ptr<SimLink> make_nes_ext_sim() {
     return std::make_unique<SimLink>(std::make_unique<WithSdram<Vnes_ext_sim>>(kNesHdmiClockHz / 1e6),
                                      kNesHdmiClksPerBit, 64, kNesHdmiClockHz);
-}
-
-std::unique_ptr<SimLink> make_nes_bram_sim() {
-    return std::make_unique<SimLink>(std::make_unique<Verilated<Vnes_bram_sim>>(), 33, 64, 50'000'000);
 }
 
 std::unique_ptr<SimLink> make_nes_x16_sim() {

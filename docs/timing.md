@@ -6,14 +6,13 @@ How to read it:
 
 - A placement is one seed of many, so a speed moves by a few percent from run to run: compare a component with itself across changes, not two components to the last MHz.
 - A component alone is faster than inside a system, where it shares the chip and its paths run further. The systems' clocks: the NES at 46.4 MHz on the Tang Nano 20K, 50 MHz on the Tang Console 138K and 37.125 MHz on the PYNQ-Z2, with HDMI's pixels at 74.25 MHz.
-- The figures are at each component's default parameters. `bram_mem`'s default, 256 KB, needs 128 block RAMs, more than the GW2A-18C or the XC7Z020 can give it as one memory (—). `cdc_sync` on the XC7Z020 is two flip-flops and no logic, which nextpnr-xilinx won't place alone (—).
+- The figures are at each component's default parameters. `cdc_sync` on the XC7Z020 is two flip-flops and no logic, which nextpnr-xilinx won't place alone (—).
 
 | Module | Component | Tang Nano 20K (GW2A-18C) | Tang Console 138K (GW5AST-138C) | PYNQ-Z2 (XC7Z020) |
 | --- | --- | --- | --- | --- |
 | `apu_2a03` | `components/audio/apu-2a03` | 107 MHz, 2995 LUTs | 120 MHz, 2854 LUTs | 89 MHz, 2183 LUTs |
 | `apu_mixer` | `components/audio/apu-2a03` | 216 MHz, 143 LUTs, 1 BRAM | 230 MHz, 131 LUTs, 1 BRAM | 212 MHz, 196 LUTs |
 | `axi_bridge` | `components/memory/axi-bridge` | 613 MHz, 144 LUTs | 239 MHz, 146 LUTs | 265 MHz, 111 LUTs |
-| `bram_mem` | `components/memory/bram` | — | 66 MHz, 164 LUTs, 128 BRAM | — |
 | `cdc_sync` | `components/common/cdc` | 3759 MHz, 0 LUTs | 3759 MHz, 0 LUTs | — |
 | `clock_enable` | `components/common/clock-enable` | 1550 MHz, 2 LUTs | 2451 MHz, 2 LUTs | 1086 MHz, 2 LUTs |
 | `cpu_6502` | `components/cpu/6502` | 91 MHz, 2705 LUTs | 93 MHz, 2620 LUTs | 83 MHz, 2071 LUTs |
