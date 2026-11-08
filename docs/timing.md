@@ -28,6 +28,7 @@ How to read it:
 | `ppu_2c02_rgb` | `components/video/ppu-2c02` | 371 MHz, 9 LUTs, 1 BRAM | 371 MHz, 9 LUTs, 1 BRAM | 552 MHz, 9 LUTs, 1 BRAM |
 | `resampler` | `components/audio/resampler` | 229 MHz, 561 LUTs, 1 DSP | 150 MHz, 957 LUTs | 139 MHz, 419 LUTs, 3 DSP |
 | `save_state_ctrl` | `components/common/save-state` | 392 MHz, 119 LUTs | 277 MHz, 114 LUTs | 168 MHz, 103 LUTs |
+| `riot_6532` | `components/io/riot-6532` | 272 MHz, 719 LUTs | 281 MHz, 707 LUTs | 241 MHz, 416 LUTs |
 | `sdram_ctrl` | `components/memory/sdram` | 332 MHz, 207 LUTs | 297 MHz, 206 LUTs | 212 MHz, 188 LUTs |
 | `test_shell` | `components/debug/test-shell` | 181 MHz, 1567 LUTs, 1 BRAM | 164 MHz, 1518 LUTs, 1 BRAM | 142 MHz, 1293 LUTs, 1 BRAM |
 | `tmds_encoder` | `components/video/hdmi` | 168 MHz, 140 LUTs | 172 MHz, 128 LUTs | 168 MHz, 114 LUTs |
