@@ -5,7 +5,7 @@
 rs_component(console_echo_top RTL rtl/echo_top.sv DEPENDS uart_echo TOPS echo_top)
 rs_component(console_shell_ram_top RTL rtl/shell_ram_top.sv DEPENDS shell_ram TOPS shell_ram_top)
 rs_component(console_shell_sdram_top RTL rtl/shell_sdram_top.sv DEPENDS shell_sdram TOPS shell_sdram_top)
-rs_component(console_nes_top RTL rtl/nes_top.sv DEPENDS nes_bram tmds_phy TOPS nes_top
+rs_component(console_nes_top RTL rtl/nes_top.sv DEPENDS nes_sdram tmds_phy TOPS nes_top
              LINT ${PROJECT_SOURCE_DIR}/boards/gowin/lint/gowin_prims.sv)
 
 if(NOT RS_BITSTREAMS OR NOT DEFINED ENV{RS_GOWIN_EDA})
@@ -23,7 +23,7 @@ rs_board_bitstream(console_shell_ram BUILD ${build} VENDOR gowin-eda COMPONENT c
 get_property(shell_sdram_id GLOBAL PROPERTY RS_SHELL_SDRAM_BUILD_ID)
 rs_board_bitstream(console_shell_sdram BUILD ${build} VENDOR gowin-eda COMPONENT console_shell_sdram_top TOP shell_sdram_top
                    CST sdram.cst PARAMS BUILD_ID=${shell_sdram_id})
-get_property(nes_bram_id GLOBAL PROPERTY RS_NES_BRAM_BUILD_ID)
+get_property(nes_sdram_id GLOBAL PROPERTY RS_NES_BUILD_ID)
 # The NES's clocks come from the PLL (rtl/nes_top.sv): 37.1875 MHz for the
 # system, 74.375 for the pixels, 371.875 for the serializers, constrained in
 # nes.sdc as generated clocks of the 50 MHz input, so Gowin times the paths
@@ -32,6 +32,6 @@ get_property(nes_bram_id GLOBAL PROPERTY RS_NES_BRAM_BUILD_ID)
 # chip). Gowin's timing-driven placement and routing take the system from 33
 # to 41 MHz.
 rs_board_bitstream(console_nes BUILD ${build} VENDOR gowin-eda COMPONENT console_nes_top TOP nes_top CST nes.cst
-                   PARAMS BUILD_ID=${nes_bram_id}
+                   PARAMS BUILD_ID=${nes_sdram_id}
                    SDC nes.sdc
                    OPTIONS timing_driven=1 place_option=2 route_option=2)

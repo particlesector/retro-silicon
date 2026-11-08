@@ -5,7 +5,8 @@
 #include "Vnes_bram_sim.h"
 #include "Vnes_axi_sim.h"
 #include "Vnes_ext_sim.h"
-#include "Vnes_bram_hdmi_sim.h"
+#include "Vnes_x16_hdmi_sim.h"
+#include "Vnes_x16_sim.h"
 #include "Vnes_hdmi_sim.h"
 #include "Vnes_lean_sim.h"
 #include "Vnes_sim.h"
@@ -57,6 +58,60 @@ public:
 private:
     V m_;
     SdramModel sdram_;
+};
+
+// Two 16-bit chips on the same pins (memory/sdram's RANKS=2), wired as on
+// MiSTer's dual-chip boards: the second chip's CS is the first's inverted,
+// and each chip's DQML and DQMH are A11 and A12. Only a chip with read data
+// drives DQ; with none, chip 0's garbage stands for a floating bus.
+class SdramPair {
+public:
+    SdramPair(double mhz, SdramModel::Geometry g) : sdram_{SdramModel(mhz, g), SdramModel(mhz, g)} {
+        for (auto& c : sdram_) c.dqm_on_addr = true;
+    }
+
+    template <class V> void step(V& m) {
+        uint32_t dq_i = 0;
+        int driving = 0;
+        for (int c = 0; c < 2; c++) {
+            SdramPins p{(m.sd_cs_n != 0) != (c == 1), m.sd_ras_n != 0, m.sd_cas_n != 0, m.sd_we_n != 0,
+                        m.sd_ba, m.sd_addr, m.sd_dqm, m.sd_dq_o, m.sd_dq_oe != 0};
+            uint32_t v = sdram_[c].step(p);
+            if (c == 0 || sdram_[c].drove) dq_i = v;
+            driving += sdram_[c].drove;
+            if (!sdram_[c].errors.empty())
+                throw RigError("SDRAM model " + std::to_string(c) + ": " + sdram_[c].errors.front());
+        }
+        if (driving > 1) throw RigError("SDRAM models: both chips drive DQ");
+        m.sd_dq_i = dq_i;
+    }
+
+private:
+    SdramModel sdram_[2];
+};
+
+// The Tang Console 138K's SDRAM module: two W9825G6KH, 16M x 16.
+constexpr SdramModel::Geometry kX16{2, 13, 9};
+
+// A system with the 138K's SDRAM module on its pins.
+template <class V> class WithSdramPair : public SimModel {
+public:
+    explicit WithSdramPair(double mhz) : sdram_(mhz, kX16) {}
+
+    bool tick(bool rx) override {
+        m_.uart_rx = rx;
+        if constexpr (requires { m_.pclk; }) m_.pclk = 0;  // a system with a display: it isn't shown
+        m_.clk = 0;
+        m_.eval();
+        m_.clk = 1;
+        m_.eval();
+        sdram_.step(m_);
+        return m_.uart_tx;
+    }
+
+private:
+    V m_;
+    SdramPair sdram_;
 };
 
 // A system with an AXI master's ports (memory/axi-bridge's), with the AXI
@@ -129,12 +184,12 @@ private:
 };
 
 using NesHdmi = NesHdmiT<Vnes_hdmi_sim>;
-// The NES as the Tang Console 138K runs it with HDMI: block RAM, the system
-// clock at half the pixel clock, both from one PLL: a pixel clock on every
-// system clock's edge, and one between.
-class NesBramHdmi : public SimModel {
+// The NES as the Tang Console 138K runs it with HDMI: its SDRAM module, the
+// system clock at half the pixel clock, both from one PLL: a pixel clock on
+// every system clock's edge, and one between.
+class NesX16Hdmi : public SimModel {
 public:
-    explicit NesBramHdmi(std::function<void(uint32_t)> on_symbol) : on_symbol_(std::move(on_symbol)) {}
+    explicit NesX16Hdmi(std::function<void(uint32_t)> on_symbol) : on_symbol_(std::move(on_symbol)) {}
 
     bool tick(bool rx) override {
         m_.uart_rx = rx;
@@ -145,6 +200,7 @@ public:
         m_.pclk = 1;
         m_.eval();
         symbol();
+        sdram_.step(m_);
         m_.pclk = 0;
         m_.eval();
         m_.pclk = 1;
@@ -158,7 +214,8 @@ private:
         if (on_symbol_) on_symbol_(m_.tmds0 | m_.tmds1 << 10 | static_cast<uint32_t>(m_.tmds2) << 20);
     }
 
-    Vnes_bram_hdmi_sim m_;
+    Vnes_x16_hdmi_sim m_;
+    SdramPair sdram_{kNesX16ClockHz / 1e6, kX16};
     std::function<void(uint32_t)> on_symbol_;
 };
 
@@ -167,44 +224,6 @@ private:
 std::unique_ptr<SimLink> make_uart_echo_sim() {
     return std::make_unique<SimLink>(std::make_unique<Verilated<Vuart_echo_sim>>());
 }
-
-// shell-sdram with two 16-bit chips on the same pins (RANKS=2), wired as on
-// MiSTer's dual-chip boards: the second chip's CS is the first's inverted, and
-// each chip's DQML and DQMH are A11 and A12.
-class WithSdramPair : public SimModel {
-public:
-    WithSdramPair(double mhz, SdramModel::Geometry g) : sdram_{SdramModel(mhz, g), SdramModel(mhz, g)} {
-        for (auto& c : sdram_) c.dqm_on_addr = true;
-    }
-
-    bool tick(bool rx) override {
-        m_.uart_rx = rx;
-        m_.clk = 0;
-        m_.eval();
-        m_.clk = 1;
-        m_.eval();
-        // Only a chip with read data drives DQ; with none, chip 0's garbage
-        // stands for a floating bus.
-        uint32_t dq_i = 0;
-        int driving = 0;
-        for (int c = 0; c < 2; c++) {
-            SdramPins p{(m_.sd_cs_n != 0) != (c == 1), m_.sd_ras_n != 0, m_.sd_cas_n != 0, m_.sd_we_n != 0,
-                        m_.sd_ba, m_.sd_addr, m_.sd_dqm, m_.sd_dq_o, m_.sd_dq_oe != 0};
-            uint32_t v = sdram_[c].step(p);
-            if (c == 0 || sdram_[c].drove) dq_i = v;
-            driving += sdram_[c].drove;
-            if (!sdram_[c].errors.empty())
-                throw RigError("SDRAM model " + std::to_string(c) + ": " + sdram_[c].errors.front());
-        }
-        if (driving > 1) throw RigError("SDRAM models: both chips drive DQ");
-        m_.sd_dq_i = dq_i;
-        return m_.uart_tx;
-    }
-
-private:
-    Vshell_sdram_x16_sim m_;
-    SdramModel sdram_[2];
-};
 
 std::unique_ptr<SimLink> make_shell_ram_sim() {
     return std::make_unique<SimLink>(std::make_unique<Verilated<Vshell_ram_sim>>());
@@ -215,7 +234,7 @@ std::unique_ptr<SimLink> make_shell_sdram_sim() {
 }
 
 std::unique_ptr<SimLink> make_shell_sdram_x16_sim() {
-    return std::make_unique<SimLink>(std::make_unique<WithSdramPair>(50.0, SdramModel::Geometry{2, 13, 9}), 33, 64,
+    return std::make_unique<SimLink>(std::make_unique<WithSdramPair<Vshell_sdram_x16_sim>>(50.0), 33, 64,
                                      50'000'000);
 }
 
@@ -238,8 +257,13 @@ std::unique_ptr<SimLink> make_nes_bram_sim() {
     return std::make_unique<SimLink>(std::make_unique<Verilated<Vnes_bram_sim>>(), 33, 64, 50'000'000);
 }
 
-std::unique_ptr<SimLink> make_nes_bram_hdmi_sim(std::function<void(uint32_t)> on_symbol) {
-    return std::make_unique<SimLink>(std::make_unique<NesBramHdmi>(std::move(on_symbol)), 25, 64, 37'187'500);
+std::unique_ptr<SimLink> make_nes_x16_sim() {
+    return std::make_unique<SimLink>(std::make_unique<WithSdramPair<Vnes_x16_sim>>(kNesX16ClockHz / 1e6), 25, 64,
+                                     kNesX16ClockHz);
+}
+
+std::unique_ptr<SimLink> make_nes_x16_hdmi_sim(std::function<void(uint32_t)> on_symbol) {
+    return std::make_unique<SimLink>(std::make_unique<NesX16Hdmi>(std::move(on_symbol)), 25, 64, kNesX16ClockHz);
 }
 
 std::unique_ptr<SimLink> make_nes_hdmi_sim(std::function<void(uint32_t)> on_symbol) {

@@ -48,8 +48,8 @@ Built from `common/por`, `common/clock-enable`, `common/crc32`, `common/save-sta
 
 | Module | Memory | Used by |
 | --- | --- | --- |
-| `nes_sdram` | `memory/sdram`, 8 MB; with `CHR_EXT`, CHR ROM too | The Tang Nano 20K (`boards/tang-nano-20k/rtl/nes_top.sv`, `CHR_EXT = 1`), and the sim |
-| `nes_bram` | `memory/bram`, 256 KB (`MEM_AW`) mirrored through the 8 MB window, and `CHR_AW` of CHR, both in banks of 2^`BANK_AW` | The Tang Console 138K (`boards/tang-console-138k/rtl/nes_top.sv`: 128 KB of CHR) and its sim |
+| `nes_sdram` | `memory/sdram`, its first 8 MB, of any geometry (`DQ_W`, `ROW_W`, `COL_W`, `RANKS`, `REFRESH_NS`, as `sdram_ctrl`'s); with `CHR_EXT` (a 32-bit chip only), CHR ROM too | The Tang Nano 20K (`boards/tang-nano-20k/rtl/nes_top.sv`, `CHR_EXT = 1`); the Tang Console 138K (`boards/tang-console-138k/rtl/nes_top.sv`: its SDRAM module, two 16-bit chips on one bus, and 256 KB of CHR in block RAM); and the sim |
+| `nes_bram` | `memory/bram`, 256 KB (`MEM_AW`) mirrored through the 8 MB window, and `CHR_AW` of CHR, both in banks of 2^`BANK_AW` | A board whose memory the system can't use yet, and the sim |
 | `nes_axi` | An AXI memory's 8 MB from `BASE`, through `memory/cache` (32 KB, `CACHE_IDX`, with next-line prefetch), `memory/port-cdc` when `ASYNC` puts the AXI side on its own clock `aclk`, and `memory/axi-bridge`; `CHR_AW` of CHR in block RAM | The PYNQ-Z2 (`boards/pynq-z2/rtl/pynq_nes_top.sv`: the DDR3 through HP0 at 74.25 MHz, 256 KB of CHR in 32 KB banks), and the sim (`make_nes_axi_sim`, synchronous) |
 
 All three also hold `nes_video`, the HDMI output (below), with a pixel-clock input and the TMDS symbols out for the board's serializers.
@@ -227,7 +227,7 @@ It plays exactly what the test build plays: in the sim (`make_nes_lean_sim`, the
 | `DOT_NUM`, `DOT_DEN` | 35, 176 | PPU dots per clocks: 189, 1760 at 50 MHz. Dots must come at least 5 clocks apart, so a CPU cycle leaves SDRAM its 10 |
 | `LEAD_DOTS` | 5 | PPU dots after reset before the CPU's first cycle, register `8F`'s power-up value |
 | `PACE` | 0 | Keep pace with the display from power-up (register `3C` bit 0) |
-| `CHR_AW`, `CHR_BANK_AW` | 13, `CHR_AW` | CHR's block RAM: 2^`CHR_AW` bytes, in banks of 2^`CHR_BANK_AW` (`nes_bram`'s `CHR_AW` and `BANK_AW`) |
+| `CHR_AW`, `CHR_BANK_AW` | 13, `CHR_AW` | CHR's block RAM: 2^`CHR_AW` bytes, in banks of 2^`CHR_BANK_AW` (`nes_bram`'s `CHR_AW` and `BANK_AW`; `nes_sdram` passes both) |
 | `MEM_AW` | 23 | The board's memory's size, for the harness (`nes_bram` passes its own) |
 | `CHR_EXT` | 0 | CHR ROM can come from the board's memory (`nes_sdram`'s too); needs 8 or more clocks a dot |
 | `TRACE_AW` | 10 | The trace buffer keeps the last 2^`TRACE_AW` CPU cycles (4 bytes each, in byte-wide block RAM) |

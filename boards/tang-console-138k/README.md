@@ -37,7 +37,7 @@ openFPGALoader -b tangconsole build/fpga/console_nes/nes_top.fs
 | `console_uart_echo_bitstream` | `systems/uart-echo` | `rtl/echo_top.sv` | On the 50 MHz oscillator: 1.515 Mbaud (`CLKS_PER_BIT=33`); `pins.cst` |
 | `console_shell_ram_bitstream` | `systems/shell-ram` | `rtl/shell_ram_top.sv` | As echo; `BUILD_ID` from the RTL's SHA-256, the same as the Tang Nano 20K's |
 | `console_shell_sdram_bitstream` | `systems/shell-sdram` | `rtl/shell_sdram_top.sv` | As echo, with the SDRAM module (below); `sdram.cst` |
-| `console_nes_bitstream` | `systems/nes` through `nes_bram` | `rtl/nes_top.sv` | Its PLL's clocks (below), HDMI at 720p; `nes.cst` |
+| `console_nes_bitstream` | `systems/nes` through `nes_sdram` | `rtl/nes_top.sv` | Its PLL's clocks (below), PRG ROM in the SDRAM module, HDMI at 720p; `nes.cst` |
 
 ## Clocks
 
@@ -49,11 +49,11 @@ The HDMI connector's pairs, as emulated LVDS (`tmds_phy`'s `ELVDS_OBUF`, `LVCMOS
 
 ## Memory
 
-The DDR3 needs a controller, so `systems/nes` runs on `nes_bram`: 256 KB of PRG ROM and 128 KB of CHR in block RAM. The shell's 8 MB memory window mirrors it.
+`systems/nes` runs on `nes_sdram`, with PRG ROM in the SDRAM module (below): the NES's 8 MB window is the module's first 8 MB. CHR, up to 256 KB, is in block RAM: CHR from the SDRAM (`CHR_EXT`) reads 32-bit words and needs 8 clocks a dot, and the module is 16 bits wide and this board's NES has 6.9 clocks a dot. The DDR3 needs a controller.
 
 ### SDRAM module
 
-The console has two 40-pin SDRAM connectors in MiSTer's layout: SDRAM0 (J9, near the PCIe connector) and SDRAM1 (J10, near the PMOD sockets, which Sipeed's schematic gives to a GBA cartridge adapter and which shares pins with the configuration SPI). Sipeed's SDRAM module plugs into SDRAM0: two Winbond W9825G6KH (16M × 16, 32 MB each, 64 MB in all), wired as MiSTer's dual-chip boards are, both on the same pins with the second chip's CS inverted, so `memory/sdram` drives it with `RANKS=2`. The pins, from Sipeed's schematic (`Tang_Mega_138K_Console_32001C`), are in `sdram.cst`; DQM0 and DQM1 reach the connector's pins 29 and 30 through the board's 0-ohm links, and the controller also puts the byte masks on A11 and A12, where MiSTer's boards wire them. The module ties CKE high. `shell_sdram_top` runs it on the 50 MHz oscillator, its clock the oscillator's inverse, with a refresh every 7.5 µs (8192 rows in 64 ms); Gowin EDA places it at about 100 MHz.
+The console has two 40-pin SDRAM connectors in MiSTer's layout: SDRAM0 (J9, near the PCIe connector) and SDRAM1 (J10, near the PMOD sockets, which Sipeed's schematic gives to a GBA cartridge adapter and which shares pins with the configuration SPI). Sipeed's SDRAM module plugs into SDRAM0: two Winbond W9825G6KH (16M × 16, 32 MB each, 64 MB in all), wired as MiSTer's dual-chip boards are, both on the same pins with the second chip's CS inverted, so `memory/sdram` drives it with `RANKS=2`. The pins, from Sipeed's schematic (`Tang_Mega_138K_Console_32001C`), are in `sdram.cst`; DQM0 and DQM1 reach the connector's pins 29 and 30 through the board's 0-ohm links, and the controller also puts the byte masks on A11 and A12, where MiSTer's boards wire them. The module ties CKE high. `shell_sdram_top` runs it on the 50 MHz oscillator, its clock the oscillator's inverse, with a refresh every 7.5 µs (8192 rows in 64 ms); Gowin EDA places it at about 100 MHz. In `nes_top` it runs on the NES's 37.1875 MHz system clock (`FREQ_MHZ=38`, rounded up for the timings), its clock that clock's inverse.
 
 ## UART
 
@@ -69,8 +69,7 @@ GowinSynthesis (1.9.11.03) can merge small arrays that are written at the same a
 
 - **User LEDs.** The two LEDs are on G11 and U12, the DONE and READY configuration pins. Gowin EDA's build lets them be used as GPIO (`use_done_as_gpio`, `use_ready_as_gpio`), but no design drives them yet.
 - **DDR3:** needs a controller.
-- **The NES on the SDRAM module:** `systems/nes` still runs on block RAM here; the module would hold PRG and CHR ROM as the 20K's SDRAM does.
 
 ## Status
 
-Built with Gowin EDA, the board tests give the other boards' results: echo's and the shell's CRCs; nestest's trace CRC; the save-state round trip; every golden ROM that fits (188 of 190: SUROM's 512 KB of PRG and MMC3's 256 KB of CHR don't) with MesenCE's frame CRCs; and on HDMI, the 20K's video CRCs for `oam_read` and `full_palette`. The sim runs the NES with HDMI as this board does (`make_nes_bram_hdmi_sim`), and at the open flow's 50 MHz rates (`make_nes_bram_sim`). The SDRAM module passes the harness's SDRAM test over its 64 MB with the sim's CRC32, and a distinct byte at every power-of-two address up to bit 25 reads back. `console_nes` uses 18,850 of 138,240 LUTs and ALUs (14%), 7,298 registers, 229 of 340 block RAMs and 1 of 12 PLLs.
+Built with Gowin EDA, the board tests give the other boards' results: echo's and the shell's CRCs; nestest's trace CRC; the save-state round trip; all 190 golden ROMs with MesenCE's frame CRCs, SUROM's 512 KB of PRG and MMC3's 256 KB of CHR included, with PRG ROM in the SDRAM module; and on HDMI, the 20K's video CRCs for `oam_read` and `full_palette`, with no clock waiting for memory. The sim runs the NES as this board does, with a model for each of the module's chips, with HDMI (`make_nes_x16_hdmi_sim`) and without (`make_nes_x16_sim`). The SDRAM module passes the harness's SDRAM test over its 64 MB with the sim's CRC32, and a distinct byte at every power-of-two address up to bit 25 reads back. `console_nes` uses 19,335 of 138,240 LUTs and ALUs (14%), 7,373 registers, 165 of 340 block RAMs and 1 of 12 PLLs, and Gowin EDA places its system clock at 38.7 MHz.

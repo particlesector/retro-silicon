@@ -1,7 +1,10 @@
 // SPDX-License-Identifier: Apache-2.0
 // systems/nes on the Tang Console 138K, built with Gowin EDA (build.sh), with
-// its memory in block RAM (nes_bram: the board's DDR3 needs a controller) and
-// its picture on the HDMI connector at 720p.
+// PRG ROM in its SDRAM module (nes_sdram: two W9825G6KH on the SDRAM0
+// connector, RANKS=2; see README.md), 256 KB of CHR in block RAM, and its
+// picture on the HDMI connector at 720p. The NES's 8 MB window is the
+// module's first 8 MB. CHR stays in block RAM because CHR from the SDRAM
+// (CHR_EXT) needs a 32-bit chip and 8 clocks a dot, and this one has 6.9.
 //
 // Clocks: the GW5A's PLL runs its VCO at 743.75 MHz from the 50 MHz
 // oscillator (x14.875, its multiplier taking eighths; the VCO must be 650 to
@@ -25,13 +28,26 @@ module nes_top #(
     output logic       tmds_clk_p,
     output logic       tmds_clk_n,
     output logic [2:0] tmds_d_p,
-    output logic [2:0] tmds_d_n
+    output logic [2:0] tmds_d_n,
+
+    output logic        O_sdram_clk,
+    output logic        O_sdram_cs_n,
+    output logic        O_sdram_ras_n,
+    output logic        O_sdram_cas_n,
+    output logic        O_sdram_wen_n,
+    output logic [1:0]  O_sdram_ba,
+    output logic [12:0] O_sdram_addr,
+    output logic [1:0]  O_sdram_dqm,
+    inout  wire  [15:0] IO_sdram_dq
 );
     logic fclk, sclk_u, lock, sclk, pclk;
     /* verilator lint_off UNUSEDSIGNAL */
     logic co1, co3, co4, co5, co6, cfb;
     logic [5:0] led;
+    logic       cke;  // the module ties CKE high
     /* verilator lint_on UNUSEDSIGNAL */
+    logic [15:0] dq_o;
+    logic        dq_oe;
 
     PLL #(
         .FCLKIN("50"), .IDIV_SEL(1), .FBDIV_SEL(1), .MDIV_SEL(14), .MDIV_FRAC_SEL(7),
@@ -52,10 +68,23 @@ module nes_top #(
 
     logic [9:0] tmds0, tmds1, tmds2;
 
-    nes_bram #(.CLKS_PER_BIT(CLKS_PER_BIT), .IDLE_CLKS(371_875), .DOT_NUM(35), .DOT_DEN(242), .CHR_AW(17),
-               .PACE(1'b1), .BUILD_ID(BUILD_ID)) u_sys (
+    // FREQ_MHZ rounds the system clock up, so the SDRAM's timings have margin;
+    // but then a refresh period counted in clocks is 2% longer than
+    // REFRESH_NS, and a due refresh can wait for an access, so 7,000 ns keeps
+    // each under the chips' 7,812 (8192 rows in 64 ms; at 7,500 the sim's
+    // model saw 7,879).
+    nes_sdram #(.CLKS_PER_BIT(CLKS_PER_BIT), .IDLE_CLKS(371_875), .FREQ_MHZ(38), .DOT_NUM(35), .DOT_DEN(242),
+                .PACE(1'b1), .CHR_AW(18), .DQ_W(16), .ROW_W(13), .COL_W(9), .RANKS(2), .REFRESH_NS(7_000),
+                .BUILD_ID(BUILD_ID)) u_sys (
         .clk(sclk), .uart_rx, .uart_tx, .led,
+        .sd_cke(cke), .sd_cs_n(O_sdram_cs_n), .sd_ras_n(O_sdram_ras_n), .sd_cas_n(O_sdram_cas_n),
+        .sd_we_n(O_sdram_wen_n), .sd_ba(O_sdram_ba), .sd_addr(O_sdram_addr), .sd_dqm(O_sdram_dqm),
+        .sd_dq_o(dq_o), .sd_dq_oe(dq_oe), .sd_dq_i(IO_sdram_dq),
         .pclk, .tmds0, .tmds1, .tmds2);
+
+    // The SDRAM's clock is the system clock's inverse (see memory/sdram).
+    assign O_sdram_clk = ~sclk;
+    assign IO_sdram_dq = dq_oe ? dq_o : 'z;
 
     tmds_phy u_phy (
         .pclk, .fclk, .rst(!lock), .tmds0, .tmds1, .tmds2,

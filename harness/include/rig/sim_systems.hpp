@@ -24,9 +24,15 @@ inline constexpr SdramLayout kSdramX16Layout{64u << 20, 8};
 // shell-axi with an AXI memory model (memory/axi-bridge's) as its memory.
 std::unique_ptr<SimLink> make_shell_axi_sim();    // reports RS_SHELL_AXI_BUILD_ID
 std::unique_ptr<SimLink> make_nes_sim();          // reports RS_NES_BUILD_ID
-// The NES as the Tang Console 138K runs it: block RAM for its memory, and a
-// 50 MHz clock (33 clocks a bit). Reports RS_NES_BRAM_BUILD_ID.
+// nes_bram: block RAM for its memory, and a 50 MHz clock (33 clocks a bit).
+// Reports RS_NES_BRAM_BUILD_ID.
 std::unique_ptr<SimLink> make_nes_bram_sim();
+// The NES as the Tang Console 138K runs it: PRG ROM in its SDRAM module (two
+// 16M x 16 chips on one bus, a model each), 256 KB of CHR in block RAM, at
+// 37.1875 MHz (25 clocks a bit, dots at 35/242), without the display.
+// Reports RS_NES_BUILD_ID.
+inline constexpr unsigned kNesX16ClockHz = 37'187'500;
+std::unique_ptr<SimLink> make_nes_x16_sim();
 // The NES as the Tang Nano 20K runs it: 46.40625 MHz (31 clocks a bit, the
 // dot rate at 13/110, 2% fast, for room to keep pace), and its HDMI output on
 // a 74.25 MHz pixel clock from the same PLL, keeping pace with the display. Each pixel clock's TMDS symbols
@@ -40,9 +46,9 @@ std::unique_ptr<SimLink> make_nes_hdmi_sim(std::function<void(uint32_t)> on_symb
 // bitstream) as make_nes_hdmi_sim() has the test build: writes only, and its
 // picture and sound only on HDMI. Reports RS_NES_BUILD_ID.
 std::unique_ptr<SimLink> make_nes_lean_sim(std::function<void(uint32_t)> on_symbol = {});
-// The Tang Console 138K's system with HDMI: block RAM, the system clock at
-// half the pixel clock (37.1875 and 74.375 MHz), keeping pace with the display.
-std::unique_ptr<SimLink> make_nes_bram_hdmi_sim(std::function<void(uint32_t)> on_symbol = {});
+// The Tang Console 138K's system with HDMI: make_nes_x16_sim() with the pixel
+// clock at twice the system clock (74.375 MHz), keeping pace with the display.
+std::unique_ptr<SimLink> make_nes_x16_hdmi_sim(std::function<void(uint32_t)> on_symbol = {});
 // The Tang Nano 20K's system as make_nes_hdmi_sim() has it, CHR ROM from the
 // SDRAM included, but without the display: no pacing, and no pixel clock.
 // Reports RS_NES_BUILD_ID.

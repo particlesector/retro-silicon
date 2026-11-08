@@ -1,8 +1,12 @@
 // SPDX-License-Identifier: Apache-2.0
-// systems/nes with its memory in a 2M x 32 SDRAM (memory/sdram), such as the
-// Tang Nano 20K's. The board drives the chip's clock with the inverse of clk
-// and splits the data bus for its tristate buffer. Its picture goes out as
-// HDMI, picture and sound, through nes_video.
+// systems/nes with its memory in an SDRAM (memory/sdram): by default the
+// 2M x 32 chip of the Tang Nano 20K; DQ_W, ROW_W, COL_W and RANKS take
+// others, such as the Tang Console 138K's module, two 16M x 16 chips on one
+// bus. The system's 8 MB window is the SDRAM's first 8 MB. CHR ROM from the
+// SDRAM (CHR_EXT) reads whole 32-bit words, so it needs a 32-bit chip; with
+// a 16-bit one CHR stays in block RAM (CHR_AW). The board drives the chip's
+// clock with the inverse of clk and splits the data bus for its tristate
+// buffer. Its picture goes out as HDMI, picture and sound, through nes_video.
 module nes_sdram #(
     parameter int          CLKS_PER_BIT = 18,
     parameter int          IDLE_CLKS    = 270_000,
@@ -13,7 +17,16 @@ module nes_sdram #(
     parameter bit          SAVE_STATE   = 1'b1,
     parameter bit          CHR_EXT      = 1'b0,  // CHR ROM from the SDRAM; needs 8 clocks a dot or more
     parameter bit          DEBUG        = 1'b1,  // 0: the lean build (systems/nes's DEBUG), without the video CRC
-    parameter logic [31:0] BUILD_ID     = '0
+    parameter int          CHR_AW       = 13,    // CHR in block RAM: 2^CHR_AW bytes
+    parameter int          CHR_BANK_AW  = CHR_AW,
+    parameter int          DQ_W         = 32,    // the SDRAM's geometry, as memory/sdram's
+    parameter int          ROW_W        = 11,
+    parameter int          COL_W        = 8,
+    parameter int          RANKS        = 1,
+    parameter int          REFRESH_NS   = 15_000, // with CHR_EXT, 52% of it (7,800 for 15,000; see below)
+    parameter logic [31:0] BUILD_ID     = '0,
+    localparam int         NB           = DQ_W / 8,
+    localparam int         AW           = (RANKS > 1 ? 1 : 0) + 2 + ROW_W + COL_W + $clog2(NB)
 ) (
     input  logic        clk,
     input  logic        uart_rx,
@@ -26,11 +39,11 @@ module nes_sdram #(
     output logic        sd_cas_n,
     output logic        sd_we_n,
     output logic [1:0]  sd_ba,
-    output logic [10:0] sd_addr,
-    output logic [3:0]  sd_dqm,
-    output logic [31:0] sd_dq_o,
+    output logic [ROW_W-1:0] sd_addr,
+    output logic [NB-1:0]    sd_dqm,
+    output logic [DQ_W-1:0]  sd_dq_o,
     output logic        sd_dq_oe,
-    input  logic [31:0] sd_dq_i,
+    input  logic [DQ_W-1:0]  sd_dq_i,
 
     input  logic        pclk,   // HDMI pixel clock, 74.25 MHz
     output logic [9:0]  tmds0,  // TMDS symbols for the board's serializers
@@ -41,7 +54,8 @@ module nes_sdram #(
     logic        req, we, ack, ready;
     logic [22:0] addr;
     logic [7:0]  wdata, rdata;
-    logic [31:0] rdata_w;
+    logic [DQ_W-1:0] rdata_w;
+    logic [31:0] rdata_w32;  // the NES's CHR_EXT word; only a 32-bit chip has one
     logic        ref_hold;
 
     // The picture, out through nes_video.
@@ -55,11 +69,17 @@ module nes_sdram #(
 
     por u_por (.clk, .rst);
 
+    initial
+        if (CHR_EXT && DQ_W != 32)
+            $error("nes_sdram: CHR_EXT needs a 32-bit SDRAM");
+    assign rdata_w32 = 32'(rdata_w);
+
     nes #(.CLKS_PER_BIT(CLKS_PER_BIT), .IDLE_CLKS(IDLE_CLKS), .DOT_NUM(DOT_NUM), .DOT_DEN(DOT_DEN),
-          .PACE(PACE), .SAVE_STATE(SAVE_STATE), .CHR_EXT(CHR_EXT), .DEBUG(DEBUG), .BUILD_ID(BUILD_ID)) u_nes (
+          .PACE(PACE), .SAVE_STATE(SAVE_STATE), .CHR_EXT(CHR_EXT), .DEBUG(DEBUG), .CHR_AW(CHR_AW),
+          .CHR_BANK_AW(CHR_BANK_AW), .BUILD_ID(BUILD_ID)) u_nes (
         .clk, .uart_rx, .uart_tx, .led,
         .mem_req(req), .mem_we(we), .mem_addr(addr), .mem_wdata(wdata),
-        .mem_ack(ack), .mem_rdata(rdata), .mem_rdata_w(rdata_w), .mem_ready(ready), .mem_ref_hold(ref_hold), .mem_stats(96'h0),
+        .mem_ack(ack), .mem_rdata(rdata), .mem_rdata_w(rdata_w32), .mem_ready(ready), .mem_ref_hold(ref_hold), .mem_stats(96'h0),
         .pix_valid, .pix, .pix_x, .pix_y, .v_waiting, .v_req, .v_cap_t,
         .v_crc, .v_crc_ok, .v_crc_t, .v_shown, .v_late, .v_overrun,
         .a_valid, .a_pcm);
@@ -72,9 +92,10 @@ module nes_sdram #(
 
     // With CHR from the SDRAM, a due refresh can wait for a few dots (see
     // nes.sv), so it falls due twice as often as it must.
-    sdram_ctrl #(.FREQ_MHZ(FREQ_MHZ), .REFRESH_NS(CHR_EXT ? 7_800 : 15_000)) u_sdram (
+    sdram_ctrl #(.FREQ_MHZ(FREQ_MHZ), .REFRESH_NS(CHR_EXT ? REFRESH_NS * 52 / 100 : REFRESH_NS),
+                 .DQ_W(DQ_W), .ROW_W(ROW_W), .COL_W(COL_W), .RANKS(RANKS)) u_sdram (
         .clk, .rst,
-        .req, .we, .addr, .wdata, .ack, .rdata, .rdata_w, .ready, .ref_hold,
+        .req, .we, .addr(AW'(addr)), .wdata, .ack, .rdata, .rdata_w, .ready, .ref_hold,
         .sd_cke, .sd_cs_n, .sd_ras_n, .sd_cas_n, .sd_we_n, .sd_ba, .sd_addr, .sd_dqm,
         .sd_dq_o, .sd_dq_oe, .sd_dq_i);
 endmodule

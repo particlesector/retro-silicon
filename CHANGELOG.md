@@ -23,6 +23,7 @@ All notable changes to this project are listed here. The format follows [Keep a 
 - `cmake/Perfect6502.cmake`: fetches perfect6502 at a pinned commit, with SHA-256 checks, for the CPU's lockstep test.
 - `memory/sdram`: byte-port controller for a 2M x 32 SDR SDRAM such as the Tang Nano 20K's, with a timing-checking chip model for sim tests.
 - `memory/sdram`: 16-bit chips and any geometry (`DQ_W`, `ROW_W`, `COL_W`), and two chips on one bus (`RANKS=2`, the second on CS high, as on MiSTer's dual-chip boards, with the byte masks on A11 and A12 too); `systems/shell-sdram` takes them, with a Tang Console 138K build for its 64 MB SDRAM module and the harness's SDRAM test over any size (`rig::SdramLayout`).
+- `systems/nes`: `nes_sdram` takes the SDRAM's geometry and CHR's block RAM size; the Tang Console 138K's NES keeps PRG ROM in its SDRAM module and 256 KB of CHR in block RAM, so all 190 golden ROMs run on it (188 on block RAM). `harness`: `make_nes_x16_sim` and `make_nes_x16_hdmi_sim`, the 138K's NES on a model of each of the module's chips, in place of `make_nes_bram_hdmi_sim`.
 - `systems/shell-sdram`: the test shell with the SDRAM, with a Tang Nano 20K build and the harness's SDRAM test.
 - `systems/nes`: the CPU with RAM, PRG RAM and NROM PRG from SDRAM, run control, a reset-vector override, a stop-at-cycle register and a CRC of the CPU's bus; a Tang Nano 20K build; nestest passes on it with the CPU bench's trace CRC.
 - `harness`: iNES parsing, the NES console client and nestest runner, and optional host timing jitter in `SimLink`.
