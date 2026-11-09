@@ -5,8 +5,10 @@
 // extra copies 12, 28 or 60, as the players'); the missile shows 4 ticks later, for 1, 2, 4 or 8 ticks
 // (NUSIZ bits 5-4). `on` is this colour clock's pixel, from the state before its tick. Writes land on
 // the edge after their colour clock: `tick` first, then NUSIZ, RESM, RESMP, then ENAM as the TIA hands
-// it over a clock late. RESMP holds the missile hidden and unstarted; clearing it moves the missile to
-// its player's position (`pl_pos`).
+// it over a clock late. RESMP hides the missile (its copies still start and run, as on the chip; Stella
+// doesn't start them), and puts it on its player
+// (`pl_pos`) whenever the player's main copy passes the reset point (`pl_trig`), which is where
+// Stella's release would have put it; the release itself moves nothing.
 //
 // HMOVE: the TIA gives extra ticks (`tick` without `regular`) in horizontal blank. While the missile is
 // still moving (`moving`) its regular ticks draw it as the chip's merged clocks do (Stella's
@@ -34,7 +36,8 @@ module tia_missile (
     input  logic [7:0] resp_count, // 157 in the picture, 159 in blank, 158 late in an HMOVE blank
     input  logic       w_resmp,
     input  logic       resmp,
-    input  logic [7:0] pl_pos,     // the player's position counter for RESMP, as the write lands
+    input  logic [7:0] pl_pos,     // where RESMP puts the missile: its player's counter, less 5, 8 or 12
+    input  logic       pl_trig,    // the player's main copy reaches the point RESMP resets the missile at
     input  logic       w_enam,     // ENAM lands
     input  logic       enam,
 
@@ -105,7 +108,7 @@ module tia_missile (
 
             // The tick.
             if (tick) begin
-                if (decode(ds, c) && !locked) begin
+                if (decode(ds, c)) begin
                     r  = 1'b1;
                     rc = -5'sd4;
                 end else if (r) begin
@@ -160,14 +163,16 @@ module tia_missile (
                 end
             end
 
-            // RESMP: releasing it puts the missile on its player. RESMP, then ENAM landing, changing
-            // whether the missile is enabled, recheck `cv`.
+            // RESMP: while it's set, the missile is put on its player each time the player's main copy
+            // passes the reset point (`pl_trig`); releasing it leaves the missile where that last put
+            // it, as the chip does (Stella moves it on the release instead). RESMP, then ENAM landing,
+            // changing whether the missile is enabled, recheck `cv`.
             lk  = locked;
             enn = en;
             sched_r <= 1'b0;
+            if (locked && pl_trig) c = pl_pos;
             if (w_resmp && resmp != locked) begin
                 lk = resmp;
-                if (!resmp) c = pl_pos;
                 cvn = v && en && !lk;
                 sched_r <= 1'b1;
             end
