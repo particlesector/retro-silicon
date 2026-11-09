@@ -82,3 +82,14 @@ covers = "The missiles and ball: every missile and ball width, the missiles' cop
 check = "frame"
 frames = 30
 stella = "Eight bands over a green playfield: missile 0 (red) and the ball (green) stepping right 3 pixels a line, missile 1 (blue) in that band's copies, red playfield in the score bands, the ball missing in bands 5 and 7"
+
+[[rom]]
+id = "tia_hmove"
+source = "a2600-carts"
+path = "tia_hmove.bin"
+sha256 = "55e5fa413fa8c54d61637557abe2a0db09a9362752b918b6df5bfa3e106c268a"
+needs = "cpu, tia"
+covers = "HMOVE: all 16 HM values on every object, HMOVE written at each cycle from the line's start to its end (the comb, movement during the picture, Stella's starfield widths for the missiles and ball, movement running on into the next line), and HMCLR during a movement"
+check = "frame"
+frames = 30
+stella = "Eight bands of the five objects drifting and smearing: an 8-pixel black comb on the left of bands 0-2, 6 and 7; tall columns in bands 3-5 where the late HMOVEs leave objects nearly still"

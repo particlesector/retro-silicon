@@ -3,14 +3,19 @@
 //
 // So far: the line (228 colour clocks: 68 of horizontal blank, then 160 pixels), VSYNC, VBLANK,
 // WSYNC, the background, the playfield with its colours, reflection, score mode and priority, the two
-// players (`tia_player`), the two missiles (`tia_missile`) and the ball (`tia_ball`). HMOVE, collisions,
-// the input ports and sound come next.
+// players (`tia_player`), the two missiles (`tia_missile`), the ball (`tia_ball`) and HMOVE. Collisions,
+// the input ports, RSYNC and sound come next.
 //
 // Timing, as Stella 7.0 runs it:
 // - Each CPU cycle is 3 colour clocks; `ce` marks the colour clock that ends one, and the cycle's access
 //   (`cs`, `addr`, `we`, `din`) is taken then. A write lands after that clock, so the next colour clock
 //   sees it, except those the chip delays: VBLANK, GRP0, GRP1 (with the vertical-delay shuffles),
-//   REFP0, REFP1, ENAM0, ENAM1 and ENABL by 1 clock, PF0-PF2 by 2.
+//   REFP0, REFP1, ENAM0, ENAM1 and ENABL by 1 clock, PF0-PF2 and HMP0-HMCLR by 2, HMOVE by 6.
+// - HMOVE starts a movement clock that steps every 4 colour clocks (on colour clocks 0 mod 4 in the
+//   line). Each object keeps moving until the step count equals its HM value's count ((HM >> 4) ^ 8,
+//   so 0-15), and gets an extra tick on each step while the TIA is in horizontal blank. An HMOVE that
+//   lands in horizontal blank before colour clock 68 extends the blank by 8 colour clocks (the
+//   "comb"): those pixels are colour 0, and the objects don't tick on them.
 // - WSYNC holds `rdy` low from the write to the line's end, so the CPU's next read cycle completes as
 //   the first cycle of the next line (`cpu/6502` repeats a read cycle that ends with rdy low). A write
 //   in the cycle that ends the line doesn't hold it.
@@ -53,7 +58,9 @@ module tia #(
                            NUSIZ0 = 6'h04, NUSIZ1 = 6'h05, REFP0 = 6'h0B, REFP1 = 6'h0C,
                            RESP0 = 6'h10, RESP1 = 6'h11, RESM0 = 6'h12, RESM1 = 6'h13, RESBL = 6'h14,
                            GRP0 = 6'h1B, GRP1 = 6'h1C, ENAM0 = 6'h1D, ENAM1 = 6'h1E, ENABL = 6'h1F,
-                           VDELP0 = 6'h25, VDELP1 = 6'h26, VDELBL = 6'h27, RESMP0 = 6'h28, RESMP1 = 6'h29;
+                           HMP0 = 6'h20, HMP1 = 6'h21, HMM0 = 6'h22, HMM1 = 6'h23, HMBL = 6'h24,
+                           VDELP0 = 6'h25, VDELP1 = 6'h26, VDELBL = 6'h27, RESMP0 = 6'h28, RESMP1 = 6'h29,
+                           HMOVE = 6'h2A, HMCLR = 6'h2B;
 
     // ---- State ----
     logic [7:0]  hctr;                   // colour clock in the line, 0-227
@@ -90,11 +97,37 @@ module tia #(
 
     wire wr = ce && cs && we;
 
+    // ---- Horizontal blank and HMOVE ----
+    // `hblank` is the TIA's state as this colour clock starts: blank from colour clock 0 to 67, or to
+    // 75 when an HMOVE has landed in blank before 68 (`ext`, which colour clock 0 clears). Objects tick
+    // on every colour clock out of blank, and on HMOVE's movement steps in it.
+    logic       hblank, ext;
+    logic [5:0] hmove_sr;                // HMOVE writes on their way: lands as bit 5 is set
+    logic [1:0] hmw_sr;                  // an HM write on its way, as hmw_sr[1] lands
+    logic [2:0] hmw_sel;                 // 0-4 HMP0, HMP1, HMM0, HMM1, HMBL; 5 HMCLR
+    logic [3:0] hmw_val;
+    logic [3:0] hm [5];                  // each object's count: P0, P1, M0, M1, BL
+    logic [4:0] moving;
+    logic       mactive;                 // a movement is in progress
+    logic [4:0] mclk;                    // the movement clock, 16 once past 15
+
+    wire        regular  = !hblank;
+    wire        mstep    = mactive && hctr[1:0] == 2'd0;
+    wire  [3:0] mcount   = mclk[4] ? 4'd0 : mclk[3:0];
+    logic [4:0] mstop, extra, moving_now;
+    always_comb
+        for (int i = 0; i < 5; i++) begin
+            mstop[i]      = mstep && moving[i] && mcount == hm[i];
+            moving_now[i] = moving[i] && !mstop[i];
+            extra[i]      = mstep && moving[i] && !mstop[i] && hblank;
+        end
+    wire  [4:0] obj_tick = {5{regular}} | extra;
+    wire        hblank_next = last ? 1'b1 : ((hctr == 8'd67 && !ext) || hctr == 8'd75) ? 1'b0 : hblank;
+
     // ---- Players ----
-    // Writes taken after this colour clock see the TIA as it will be for the next: in blank before
-    // pixel 0 (and after the line's last clock).
+    // Writes taken after this colour clock see the TIA as it will be for the next.
     wire  [7:0] hctr_next = last ? 8'd0 : hctr + 8'd1;
-    wire        hb_next   = hctr_next < 8'd68;
+    wire        hb_next   = hblank_next;
     wire  [7:0] resp_count = !hb_next ? 8'd157 : hctr_next >= 8'd73 ? 8'd158 : 8'd159;
 
     // GRP and REFP land a colour clock after the write.
@@ -107,7 +140,7 @@ module tia #(
     logic [2:0]  p0_div, p1_div;
     logic [31:0] p0_st0, p0_st1, p1_st0, p1_st1;
     tia_player u_p0 (
-        .clk, .rst, .cc, .tick(in_pic),
+        .clk, .rst, .cc, .tick(obj_tick[0]),
         .w_nusiz(wr && addr == NUSIZ0), .nusiz(din[2:0]), .w_hblank(hb_next),
         .w_resp(wr && addr == RESP0), .resp_count,
         .w_vdel(wr && addr == VDELP0), .vdel(din[0]),
@@ -118,7 +151,7 @@ module tia #(
         .st_wdata, .st_word0(p0_st0), .st_word1(p0_st1)
     );
     tia_player u_p1 (
-        .clk, .rst, .cc, .tick(in_pic),
+        .clk, .rst, .cc, .tick(obj_tick[1]),
         .w_nusiz(wr && addr == NUSIZ1), .nusiz(din[2:0]), .w_hblank(hb_next),
         .w_resp(wr && addr == RESP1), .resp_count,
         .w_vdel(wr && addr == VDELP1), .vdel(din[0]),
@@ -136,9 +169,9 @@ module tia #(
     logic       enam0_pend, enam1_pend, enabl_pend;
     logic       enam0_new, enam1_new, enabl_new;
 
-    function automatic logic [7:0] resmp_pos(input logic [7:0] pos, input logic [2:0] div);
+    function automatic logic [7:0] resmp_pos(input logic t, input logic [7:0] pos, input logic [2:0] div);
         logic [7:0] p, back;
-        p    = (in_pic && pos == 8'd159) ? 8'd0 : in_pic ? pos + 8'd1 : pos;
+        p    = (t && pos == 8'd159) ? 8'd0 : t ? pos + 8'd1 : pos;
         back = div == 3'd4 ? 8'd12 : div == 3'd2 ? 8'd8 : 8'd5;
         resmp_pos = p >= back ? p - back : p + 8'd160 - back;
     endfunction
@@ -146,25 +179,25 @@ module tia #(
     logic        m0_on, m1_on, bl_on;
     logic [31:0] m0_st, m1_st, bl_st;
     tia_missile u_m0 (
-        .clk, .rst, .cc, .tick(in_pic),
+        .clk, .rst, .cc, .tick(obj_tick[2]), .regular, .moving(moving_now[2]), .hc(hctr[1:0]),
         .w_nusiz(wr && addr == NUSIZ0), .nusiz(din[5:0]), .w_hblank(hb_next),
         .w_resm(wr && addr == RESM0), .resp_count,
-        .w_resmp(wr && addr == RESMP0), .resmp(din[1]), .pl_pos(resmp_pos(p0_pos, p0_div)),
+        .w_resmp(wr && addr == RESMP0), .resmp(din[1]), .pl_pos(resmp_pos(obj_tick[0], p0_pos, p0_div)),
         .w_enam(enam0_pend), .enam(enam0_new),
         .on(m0_on),
         .st_we(SAVE_STATE && st_we && st_addr == 4'd10), .st_wdata, .st_word(m0_st)
     );
     tia_missile u_m1 (
-        .clk, .rst, .cc, .tick(in_pic),
+        .clk, .rst, .cc, .tick(obj_tick[3]), .regular, .moving(moving_now[3]), .hc(hctr[1:0]),
         .w_nusiz(wr && addr == NUSIZ1), .nusiz(din[5:0]), .w_hblank(hb_next),
         .w_resm(wr && addr == RESM1), .resp_count,
-        .w_resmp(wr && addr == RESMP1), .resmp(din[1]), .pl_pos(resmp_pos(p1_pos, p1_div)),
+        .w_resmp(wr && addr == RESMP1), .resmp(din[1]), .pl_pos(resmp_pos(obj_tick[1], p1_pos, p1_div)),
         .w_enam(enam1_pend), .enam(enam1_new),
         .on(m1_on),
         .st_we(SAVE_STATE && st_we && st_addr == 4'd11), .st_wdata, .st_word(m1_st)
     );
     tia_ball u_bl (
-        .clk, .rst, .cc, .tick(in_pic),
+        .clk, .rst, .cc, .tick(obj_tick[4]), .regular, .moving(moving_now[4]), .mstep,
         .w_ctrlpf(wr && addr == CTRLPF), .size(din[5:4]),
         .w_resbl(wr && addr == RESBL), .resp_count,
         .w_vdel(wr && addr == VDELBL), .vdel(din[0]),
@@ -239,13 +272,23 @@ module tia #(
             enam0_new   <= 1'b0;
             enam1_new   <= 1'b0;
             enabl_new   <= 1'b0;
+            hblank      <= 1'b1;
+            ext         <= 1'b0;
+            hmove_sr    <= 6'd0;
+            hmw_sr      <= 2'd0;
+            hmw_sel     <= 3'd0;
+            hmw_val     <= 4'd0;
+            for (int i = 0; i < 5; i++) hm[i] <= 4'd0;
+            moving      <= 5'd0;
+            mactive     <= 1'b0;
+            mclk        <= 5'd0;
             pix         <= 8'd0;
             pix_on      <= 1'b0;
             x           <= 8'd0;
             line_end    <= 1'b0;
         end else if (cc) begin
             // Draw this colour clock.
-            pix      <= {(in_pic && !vblank_r) ? col : 7'd0, 1'b0};
+            pix      <= {(in_pic && !hblank && !vblank_r) ? col : 7'd0, 1'b0};
             pix_on   <= in_pic;
             x        <= xc;
             line_end <= last;
@@ -255,6 +298,31 @@ module tia #(
             end
             hctr <= last ? 8'd0 : hctr + 8'd1;
             if (last) wsync <= 1'b0;
+
+            // HMOVE: this colour clock's movement step, unless an HMOVE lands for the next, which
+            // restarts the movement and, before colour clock 68, extends the blank.
+            hblank   <= hblank_next;
+            hmove_sr <= {hmove_sr[4:0], wr && addr == HMOVE};
+            if (hmove_sr[5]) begin
+                mclk    <= 5'd0;
+                mactive <= 1'b1;
+                moving  <= 5'b11111;
+                ext     <= 1'b1;
+            end else begin
+                if (hctr == 8'd0) ext <= 1'b0;
+                if (mstep) begin
+                    moving  <= moving_now;
+                    mactive <= |moving_now;
+                    if (!mclk[4]) mclk <= mclk + 5'd1;
+                end
+            end
+            hmw_sr <= {hmw_sr[0], 1'b0};
+            if (hmw_sr[1]) begin
+                if (hmw_sel == 3'd5)
+                    for (int i = 0; i < 5; i++) hm[i] <= 4'd8;
+                else
+                    hm[hmw_sel] <= hmw_val;
+            end
 
             // Writes waiting their clock land after it.
             grp0_pend  <= 1'b0;
@@ -291,6 +359,11 @@ module tia #(
                     ENAM0: begin enam0_new <= din[1]; enam0_pend <= 1'b1; end
                     ENAM1: begin enam1_new <= din[1]; enam1_pend <= 1'b1; end
                     ENABL: begin enabl_new <= din[1]; enabl_pend <= 1'b1; end
+                    HMP0, HMP1, HMM0, HMM1, HMBL, HMCLR: begin
+                        hmw_sr[0] <= 1'b1;
+                        hmw_sel   <= addr == HMCLR ? 3'd5 : 3'(addr - HMP0);
+                        hmw_val   <= din[7:4] ^ 4'd8;
+                    end
                     PF0, PF1, PF2: begin
                         // A second write before the first lands replaces it.
                         pf_new <= pf_with(pf_cnt != 2'd0 ? pf_new : pf, addr, din);
@@ -309,6 +382,8 @@ module tia #(
                 4'd2: pf <= st_wdata[19:0];
                 4'd3: pf_new <= st_wdata[19:0];
                 4'd4: {line_end, x, pix_on, pix} <= st_wdata[17:0];
+                4'd13: {hmove_sr, hmw_sr, hmw_sel, hmw_val, mclk, mactive, ext, hblank} <= st_wdata[22:0];
+                4'd14: {moving, hm[4], hm[3], hm[2], hm[1], hm[0]} <= st_wdata[24:0];
                 default: ;
             endcase
         end
@@ -340,6 +415,8 @@ module tia #(
                 4'd10: st_rdata <= m0_st;
                 4'd11: st_rdata <= m1_st;
                 4'd12: st_rdata <= bl_st;
+                4'd13: st_rdata <= {9'd0, hmove_sr, hmw_sr, hmw_sel, hmw_val, mclk, mactive, ext, hblank};
+                4'd14: st_rdata <= {7'd0, moving, hm[4], hm[3], hm[2], hm[1], hm[0]};
                 default: st_rdata <= '0;
             endcase
     end else begin : g_no_st
