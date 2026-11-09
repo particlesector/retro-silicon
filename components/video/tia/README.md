@@ -4,6 +4,22 @@ The Atari 2600's Television Interface Adaptor (NTSC), colour-clock exact: it dra
 
 Modules `tia`, `tia_player` (each of the two players), `tia_missile` (each of the two missiles) and `tia_ball`. **In progress:** so far the line, VSYNC, VBLANK, WSYNC, the background, the playfield, the players, the missiles, the ball, HMOVE, collisions, the fire buttons' input ports and RSYNC. The paddles' ports and sound come next, each with a test cartridge.
 
+## What it draws, and why the names sound like one game
+
+The TIA has no frame buffer: the 2600 has 128 bytes of RAM in all, far too little to hold a picture. Instead the chip draws each line as the TV's beam crosses the screen, from a handful of registers, and it can draw only six things: a playfield and five small movable objects. Their names, players, missiles and a ball, come from the games the chip was built for. In 1975-76 Atari wanted one console that could run home versions of its arcade *Tank* (two tanks, each firing shells) and *Pong* (two paddles and a ball), instead of one custom chip per game as its earlier home *Pong* had used. Joe Decuir designed the system around it, and Jay Miner led the design of the TIA. Two tanks, two shells and a ball became two players, two missiles and a ball, and *Tank* grew into *Combat*, the console's first pack-in game.
+
+The names stuck in Atari's own documentation, Steve Wright's *Stella Programmer's Guide*, but the objects aren't tied to any game. Each is general-purpose drawing hardware: a shape, a position on the line, a width and a colour. A game is free to use any of them for anything, or not at all, and it can change them on every line as the beam goes down. So this component models them as the chip has them, under the chip's names, and every game uses the same objects in its own way.
+
+| Object | What the chip gives it | What games use it for |
+| --- | --- | --- |
+| Playfield | 40 blocks across the line (20 bits, repeated or mirrored on the right half), in one colour, rewritable each line | Walls, mazes, ground and sky, large blocky shapes; in score mode each half takes a player's colour, for two scores side by side |
+| Players (2) | 8 pixels of graphics, each 1, 2 or 4 pixels wide, mirrorable, in up to three copies spaced across the line; vertical delay to update both players on alternate lines | Any character or sprite: a hero, an enemy, a car, a letter. Copies give rows of enemies from one object; both players' copies side by side, rewritten mid-line, make 48-pixel-wide text and scores |
+| Missiles (2) | A line 1, 2, 4 or 8 pixels wide, in its player's colour, following its player's copies; RESMP centres it on its player | Bullets and shells, but also any thin bar or detail drawn in a player's colour |
+| Ball | Like a missile, but in the playfield's colour, with vertical delay | A ball, or anything else that should match the playfield: a cursor, a wall piece, an extra bullet |
+| Background | One colour behind everything | Sky, floor or space; changed per line for colour bands |
+
+Beyond that the chip finds, for every pair of the six, whether they ever drew the same pixel (the 15 collision latches), so a game can tell a shell hit a tank or a ball hit a wall without working it out itself. A game that needs more moving things than five draws different ones on alternate frames, which is the flicker many 2600 games show, or moves the same object to a new place further down the screen.
+
 ## Timing
 
 As Stella 7.0 runs it:
@@ -101,7 +117,8 @@ In `systems/atari-2600`'s sim, its frames match the golden frames of the `tia_co
 
 ## References
 
-- Steve Wright, *Stella Programmer's Guide* (1979): the registers and what they do.
+- Steve Wright, *Stella Programmer's Guide* (1979): the registers and what they do, and the objects' names.
+- Joe Decuir and others, ["Inventing the Atari 2600"](https://spectrum.ieee.org/atari-2600), IEEE Spectrum: the console built to run *Tank* and *Pong*.
 - Stella 7.0 (`src/emucore/tia`), read for the timing of each write, the playfield and the frame; nothing copied.
 - Gopher2600 0.57.2 (`hardware/tia/video`), read for RESMP's reset point; nothing copied.
 - The TIA's transistor-level netlist from Visual6502.org (in Greg James's Sim2600), simulated as a second check of the test cartridges.
