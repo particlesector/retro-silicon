@@ -82,6 +82,9 @@ covers = "The missiles and ball: every missile and ball width, the missiles' cop
 check = "frame"
 frames = 30
 stella = "Eight bands over a green playfield: missile 0 (red) and the ball (green) stepping right 3 pixels a line, missile 1 (blue) in that band's copies, red playfield in the score bands, the ball missing in bands 5 and 7"
+stella_crc = "0x9fc8d93d"
+golden_crc = "0xd496459a"
+golden_from = "Gopher2600 0.57.2's frame: band 2's brief RESMP1 leaves missile 1 where it was (the TIA's die, from its netlist, agrees), where Stella moves it onto player 1"
 
 [[rom]]
 id = "tia_hmove"
@@ -115,3 +118,17 @@ covers = "RSYNC written at every cycle of the line, from the blank to the line's
 check = "frame"
 frames = 30
 stella = "Over a green and grey striped playfield, every third line cut short: whole black lines in the first three bands, then a black wedge growing from the right as the cut comes later; the red and blue objects jump right after each cut"
+
+[[rom]]
+id = "tia_resmp"
+source = "a2600-carts"
+path = "tia_resmp.bin"
+sha256 = "d44b49596fc60cff0618e25d32374f2dec0a05e688c8d31ee1de9aa2552625b8"
+needs = "cpu, tia"
+covers = "RESMP held for 15 colour clocks at each cycle across player 1's main copy, at each width and with two copies: a missile moves to its player only if RESMP is set as the main copy passes its sixth pixel (double width: its fourth pixel's second half; quad: the third's last quarter)"
+check = "frame"
+frames = 30
+stella = "Eight bands of a blue player at the left; missile 1 back on the right except after the windows that move it, Stella moving it after every window"
+stella_crc = "0x4153eb84"
+golden_crc = "0x0f5e4ecd"
+golden_from = "Gopher2600 0.57.2's frame, in which the missile moves only after the windows covering the reset point, and Stella's after every window; the TIA's transistor-level netlist moves it after the same windows, give or take the one at each end of the range, where it lands writes a colour clock earlier than both emulators"

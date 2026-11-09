@@ -1,6 +1,6 @@
 # Atari 2600 test cartridges
 
-Our own test cartridges for the Atari 2600, which has no public test suite like the NES's. Each is a 4 KB cartridge written in ca65, that runs its test once from reset, then draws what it found as background colours, forever (`show.inc`): 32 result bytes, each on 6 picture lines, 3 in the byte's colour and 3 in the byte shifted left (the TIA ignores a colour's bit 0). So a frame is the result, and the core's frame must match Stella's.
+Our own test cartridges for the Atari 2600, which has no public test suite like the NES's. Each is a 4 KB cartridge written in ca65, that runs its test once from reset, then draws what it found as background colours, forever (`show.inc`): 32 result bytes, each on 6 picture lines, 3 in the byte's colour and 3 in the byte shifted left (the TIA ignores a colour's bit 0). So a frame is the result, and the core's frame must match the golden one: Stella's, except where Stella is known to part from the chip (`tia_missiles_ball`, `tia_resmp`; see `video/tia`'s README).
 
 `make` builds them (ca65 and ld65 from cc65); `testroms/fetch.py` does it into its folder and checks each against `testroms/manifest-2600.toml`, which also has what each frame shows in Stella. Their golden frames are in `harness/golden/a2600_frames_crc32.txt`.
 
@@ -19,3 +19,4 @@ Our own test cartridges for the Atari 2600, which has no public test suite like 
 `vcs.inc` has `DELAY n`, exactly n cycles (12 at a time by calling an RTS, `wait12`, which a cartridge using it defines).
 
 The cartridges clear RAM and set the timer before reading them, so the console's random state at power-up never shows.
+| `tia_resmp` | RESMP held for 15 colour clocks, a cycle later on each pair of lines, across player 1's main copy, at each width and with two copies; the line after shows whether it moved missile 1 onto the player or left it parked on the right |
