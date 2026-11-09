@@ -11,7 +11,9 @@
 // with A7 high the RIOT, its RAM when A9 is low. Port A's pins are wired-AND: a bit reads low if the
 // joystick pulls it low or the RIOT drives it low as an output.
 
-module atari2600 (
+module atari2600 #(
+    parameter bit TIA_SCORE_GLITCH = 1'b0  // video/tia's SCORE_GLITCH
+) (
     input  logic        clk,
     input  logic        rst,
     input  logic        cc,          // one colour clock
@@ -72,7 +74,7 @@ module atari2600 (
     // ---- TIA ----
     logic [7:0]  tia_dout;
     logic [31:0] tia_st;
-    tia #(.SAVE_STATE(1'b0)) u_tia (
+    tia #(.SAVE_STATE(1'b0), .SCORE_GLITCH(TIA_SCORE_GLITCH)) u_tia (
         .clk, .rst, .cc, .ce,
         .cs(sel_tia), .addr(we ? addr[5:0] : {2'b00, addr[3:0]}), .we, .din(cpu_dout),
         .dout(tia_dout), .rdy, .fire_n,

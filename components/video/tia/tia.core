@@ -19,7 +19,7 @@ targets:
   lint:
     <<: *default
     default_tool: verilator
-    parameters: [SAVE_STATE]
+    parameters: [SAVE_STATE, SCORE_GLITCH]
     tools:
       verilator:
         mode: lint-only
@@ -31,3 +31,8 @@ parameters:
     default: true
     paramtype: vlogparam
     description: 0 leaves out the save-state port's logic
+  SCORE_GLITCH:
+    datatype: bool
+    default: false
+    paramtype: vlogparam
+    description: 1 starts score mode's right colour a pixel early, as some TIA revisions do

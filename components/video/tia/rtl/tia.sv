@@ -33,7 +33,8 @@
 // pixels (`x` its column), registered: they describe the colour clock before.
 
 module tia #(
-    parameter bit SAVE_STATE = 1'b1  // 0 leaves out the save-state port's logic
+    parameter bit SAVE_STATE   = 1'b1, // 0 leaves out the save-state port's logic
+    parameter bit SCORE_GLITCH = 1'b0  // 1: score mode's right colour starts a pixel early (README)
 ) (
     input  logic        clk,
     input  logic        rst,
@@ -265,7 +266,10 @@ module tia #(
     // colours the playfield with COLUP0 on the left half and COLUP1 on the right, and puts it between
     // the players, with the ball after player 1; priority (bit 2) puts the playfield and ball first.
     wire        score_on = score && !pfp;
-    wire  [6:0] pf_col   = score_on ? (xc < 8'd80 ? colup0 : colup1) : colupf;
+    // SCORE_GLITCH: the right half's colour starts at pixel 79, as on the 10444D die (Stella's
+    // dev.tia.pfscoreglitch); the common TIA's starts at 80.
+    localparam logic [7:0] SCORE_SPLIT = SCORE_GLITCH ? 8'd79 : 8'd80;
+    wire  [6:0] pf_col   = score_on ? (xc < SCORE_SPLIT ? colup0 : colup1) : colupf;
     wire        p0m0     = p0_on || m0_on;
     wire        p1m1     = p1_on || m1_on;
     logic [6:0] col;
