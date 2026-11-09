@@ -20,7 +20,15 @@ targets:
   lint:
     <<: *default
     default_tool: verilator
+    parameters: [TIA_SCORE_GLITCH]
     tools:
       verilator:
         mode: lint-only
         verilator_options: [-Wall]
+
+parameters:
+  TIA_SCORE_GLITCH:
+    datatype: bool
+    default: false
+    paramtype: vlogparam
+    description: video/tia's SCORE_GLITCH

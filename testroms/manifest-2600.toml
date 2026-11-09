@@ -10,6 +10,11 @@
 # after VSYNC ends). stella: what that frame shows in Stella, so the
 # expected result is on record.
 # needs: the parts of the console the cartridge exercises.
+# golden_crc: the right frame where Stella's differs (stella_crc, checked),
+# from golden_from. score_glitch_crc: the frame with video/tia's
+# SCORE_GLITCH on, where it differs, from score_glitch_from (Stella's
+# dev.tia.pfscoreglitch setting draws it); frames.py writes those to
+# harness/golden/a2600_score_glitch_crc32.txt.
 
 [sources.a2600-carts]
 dir = "a2600"
@@ -60,6 +65,8 @@ covers = "The playfield (normal, reflected, score, score with priority), the bac
 check = "frame"
 frames = 30
 stella = "Four playfield bands (yellow, reflected on blue, score red and green, pink), then four staircases, one step a cycle: PF2, the background, VBLANK and the reflection switching on a cycle later each line"
+score_glitch_crc = "0x7dd31b8d"
+score_glitch_from = "Stella 7.0 with dev.tia.pfscoreglitch: band 3's column 79 in COLUP1; the 10444D die's netlist agrees"
 
 [[rom]]
 id = "tia_players"
@@ -85,6 +92,8 @@ stella = "Eight bands over a green playfield: missile 0 (red) and the ball (gree
 stella_crc = "0x9fc8d93d"
 golden_crc = "0xd496459a"
 golden_from = "Gopher2600 0.57.2's frame: band 2's brief RESMP1 leaves missile 1 where it was (the TIA's die, from its netlist, agrees), where Stella moves it onto player 1"
+score_glitch_crc = "0xb4ab7d4e"
+score_glitch_from = "golden_crc's frame with column 79 of the score bands as Stella 7.0 draws it with dev.tia.pfscoreglitch (72 pixels, none of them RESMP's); the 10444D die's netlist agrees on them"
 
 [[rom]]
 id = "tia_hmove"
