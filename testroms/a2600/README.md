@@ -11,6 +11,7 @@ Our own test cartridges for the Atari 2600, which has no public test suite like 
 | `riot_timer` | The interval timer at each divider: counting down, underflow, one a clock after it, the divider restored by reading `INTIM`, and `TIMINT`'s flag |
 | `tia_playfield` | The playfield (normal, reflected, score, score with priority), the background and VBLANK; then writes to PF2, COLUBK, VBLANK and CTRLPF's reflection, a cycle later on each line, so each lands at every pixel phase. It draws its result rather than measuring it, so it uses neither `show.inc` nor RAM |
 | `tia_players` | The players: a band per NUSIZ value (copies, double and quad width), with RESP0 landing a cycle later on each line from the blank into the picture, player 0 reflected in odd bands, and player 1 with vertical delay in bands 4-7 |
+| `tia_missiles_ball` | The missiles and the ball: a band per NUSIZ value, each with its own missile and ball widths and CTRLPF priority mode, over the playfield and the players; RESM0 and RESBL land a cycle later on each line from the blank into the picture, missile 1 is placed by RESM1 or locked to player 1 by RESMP1, and the ball's vertical delay hides it in bands 5 and 7 |
 
 `vcs.inc` has `DELAY n`, exactly n cycles (12 at a time by calling an RTS, `wait12`, which a cartridge using it defines).
 

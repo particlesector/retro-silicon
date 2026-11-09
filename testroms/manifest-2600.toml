@@ -70,4 +70,15 @@ needs = "cpu, tia"
 covers = "The players: every NUSIZ (copies, double and quad width), RESP landing a cycle later each line from the blank to the middle of the picture, reflection, and vertical delay"
 check = "frame"
 frames = 30
-stella = "Eight bands, one per NUSIZ: player 1 (blue) in that band's copies and width; player 0 (red, , reflected in odd bands) stepping right a cycle each line"
+stella = "Eight bands, one per NUSIZ: player 1 (blue) in that band's copies and width; player 0 (red, reflected in odd bands) stepping right a cycle each line"
+
+[[rom]]
+id = "tia_missiles_ball"
+source = "a2600-carts"
+path = "tia_missiles_ball.bin"
+sha256 = "958e805d35b3e8daddeb55b70904ac060a39666d8b1dcc120018ddda1be411d0"
+needs = "cpu, tia"
+covers = "The missiles and ball: every missile and ball width, the missiles' copies, RESM and RESBL landing a cycle later each line from the blank to the middle of the picture (during a missile's draw too), RESMP, the ball's vertical delay, and priority against the players and playfield in each CTRLPF mode"
+check = "frame"
+frames = 30
+stella = "Eight bands over a green playfield: missile 0 (red) and the ball (green) stepping right 3 pixels a line, missile 1 (blue) in that band's copies, red playfield in the score bands, the ball missing in bands 5 and 7"

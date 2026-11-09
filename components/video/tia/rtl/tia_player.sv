@@ -29,6 +29,8 @@ module tia_player (
     input  logic       refp,
 
     output logic       on,
+    output logic [7:0] pos,        // the position counter, for the missile's RESMP
+    output logic [2:0] div_o,      // the width: 1, 2 or 4
 
     // Save state: two words, written while `cc` is low.
     input  logic        st_we,
@@ -70,6 +72,8 @@ module tia_player (
                                               graphics[4], graphics[5], graphics[6], graphics[7]};
     wire signed [7:0] trip = div == 3'd1 ? 8'sd0 : 8'sd1;
 
+    assign pos   = counter;
+    assign div_o = div;
     assign on = rendering && render >= trip && sample <= 4'd7 && pattern[sample[2:0]];
 
     always_ff @(posedge clk) begin
