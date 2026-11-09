@@ -70,4 +70,48 @@ needs = "cpu, tia"
 covers = "The players: every NUSIZ (copies, double and quad width), RESP landing a cycle later each line from the blank to the middle of the picture, reflection, and vertical delay"
 check = "frame"
 frames = 30
-stella = "Eight bands, one per NUSIZ: player 1 (blue) in that band's copies and width; player 0 (red, , reflected in odd bands) stepping right a cycle each line"
+stella = "Eight bands, one per NUSIZ: player 1 (blue) in that band's copies and width; player 0 (red, reflected in odd bands) stepping right a cycle each line"
+
+[[rom]]
+id = "tia_missiles_ball"
+source = "a2600-carts"
+path = "tia_missiles_ball.bin"
+sha256 = "958e805d35b3e8daddeb55b70904ac060a39666d8b1dcc120018ddda1be411d0"
+needs = "cpu, tia"
+covers = "The missiles and ball: every missile and ball width, the missiles' copies, RESM and RESBL landing a cycle later each line from the blank to the middle of the picture (during a missile's draw too), RESMP, the ball's vertical delay, and priority against the players and playfield in each CTRLPF mode"
+check = "frame"
+frames = 30
+stella = "Eight bands over a green playfield: missile 0 (red) and the ball (green) stepping right 3 pixels a line, missile 1 (blue) in that band's copies, red playfield in the score bands, the ball missing in bands 5 and 7"
+
+[[rom]]
+id = "tia_hmove"
+source = "a2600-carts"
+path = "tia_hmove.bin"
+sha256 = "55e5fa413fa8c54d61637557abe2a0db09a9362752b918b6df5bfa3e106c268a"
+needs = "cpu, tia"
+covers = "HMOVE: all 16 HM values on every object, HMOVE written at each cycle from the line's start to its end (the comb, movement during the picture, Stella's starfield widths for the missiles and ball, movement running on into the next line), and HMCLR during a movement"
+check = "frame"
+frames = 30
+stella = "Eight bands of the five objects drifting and smearing: an 8-pixel black comb on the left of bands 0-2, 6 and 7; tall columns in bands 3-5 where the late HMOVEs leave objects nearly still"
+
+[[rom]]
+id = "tia_collisions"
+source = "a2600-carts"
+path = "tia_collisions.bin"
+sha256 = "a4f7324da345853d4713d8bc5f3f7dd7ac93c9507b7e3720473decfb1f49ba9c"
+needs = "cpu, tia"
+covers = "The collision latches and CXCLR (every pair; a chosen few; and collisions caught only in the horizontal blank by HMOVE's movement steps), INPT0-INPT5, and the fire buttons' latch"
+check = "frame"
+frames = 30
+stella = "Results (show.inc): 0-7 $C0 but $80 at 6; 8-15 00 80 80 C0 00 00 80 00; 16-23 0 but $80 at 23; 24-31 08 08 08 08 88 88 8C 8D"
+
+[[rom]]
+id = "tia_rsync"
+source = "a2600-carts"
+path = "tia_rsync.bin"
+sha256 = "8116510559b4c0253ab94fb530183467c058a837f21444f616a61222fda1962c"
+needs = "cpu, tia"
+covers = "RSYNC written at every cycle of the line, from the blank to the line's last colour clock: the cut line's last 3 colour clocks, its black end, and the objects' positions after the missed ticks; frames of 351 lines, so Stella's frame manager ends some (frame 30 among them) by its line count, without VSYNC"
+check = "frame"
+frames = 30
+stella = "Over a green and grey striped playfield, every third line cut short: whole black lines in the first three bands, then a black wedge growing from the right as the cut comes later; the red and blue objects jump right after each cut"

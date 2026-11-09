@@ -5,6 +5,7 @@
 #include <catch2/catch_test_macros.hpp>
 #include <zlib.h>
 
+#include <array>
 #include <cstdint>
 #include <cstdio>
 #include <cstdlib>
@@ -21,7 +22,8 @@ constexpr int kWidth = 160, kHeight = 228;
 
 // Stella 7.0's NTSC frame manager, as it decides which lines make a frame: a frame ends when VSYNC
 // goes off; the picture starts 23 line ends later and runs 228 lines; with no VSYNC for 50 lines it
-// runs on regardless.
+// runs on regardless. A line's columns the TIA doesn't draw (after RSYNC cuts it short) are black, as
+// Stella clears them.
 class FrameCutter {
 public:
     std::vector<uint8_t> buffer = std::vector<uint8_t>(kWidth * kHeight, 0);
@@ -29,10 +31,17 @@ public:
 
     // A pixel of the line being drawn.
     void pixel(int x, uint8_t colour) {
-        if (state_ == State::frame && x < kWidth) buffer[y_ * kWidth + x] = colour;
+        if (state_ == State::frame && x < kWidth) {
+            buffer[y_ * kWidth + x] = colour;
+            drawn_[x] = true;
+        }
     }
 
     void line_end() {
+        if (state_ == State::frame)
+            for (int x = 0; x < kWidth; ++x)
+                if (!drawn_[x]) buffer[y_ * kWidth + x] = 0;
+        drawn_.fill(false);
         ++total_lines_;
         const State before = state_;
         ++line_in_state_;
@@ -69,6 +78,7 @@ private:
     State state_ = State::wait_vsync_start;
     int line_in_state_ = 0, vsync_lines_ = 0, y_ = 0, last_y_ = 0, total_lines_ = 0;
     bool vsync_ = false;
+    std::array<bool, kWidth> drawn_{};
 
     void set(State s) {
         if (s == state_) return;
@@ -151,9 +161,10 @@ uint32_t run(const std::vector<uint8_t>& rom, int frames, const std::string& dum
         if (!cc) continue;
         ++colour_clock;
         // The colour clock just drawn, then the line's end, then a VSYNC write (as Stella orders them).
+        // A frame ends at VSYNC, or at a line's end when VSYNC is overdue.
+        const int before = cut.frames;
         if (m.pix_on) cut.pixel(m.pix_x, m.pix);
         if (m.line_end) cut.line_end();
-        const int before = cut.frames;
         cut.vsync(m.vsync);
         if (cut.frames != before && cut.frames == frames) {
             crc = static_cast<uint32_t>(crc32(crc32(0, nullptr, 0), cut.buffer.data(), cut.buffer.size()));

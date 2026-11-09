@@ -6,3 +6,7 @@ riot_ram 30 0x486de86d frame - a2600-carts/riot_ram.bin
 riot_timer 30 0xf076dac2 frame - a2600-carts/riot_timer.bin
 tia_playfield 30 0xee46145c frame - a2600-carts/tia_playfield.bin
 tia_players 30 0x8b37d639 frame - a2600-carts/tia_players.bin
+tia_missiles_ball 30 0x9fc8d93d frame - a2600-carts/tia_missiles_ball.bin
+tia_hmove 30 0x2d4fa7de frame - a2600-carts/tia_hmove.bin
+tia_collisions 30 0xf8fb443f frame - a2600-carts/tia_collisions.bin
+tia_rsync 30 0x40c6ee03 frame - a2600-carts/tia_rsync.bin
