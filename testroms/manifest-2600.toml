@@ -49,3 +49,25 @@ covers = "The RIOT's timer at each divider: count down, underflow, one a clock a
 check = "frame"
 frames = 30
 stella = "Results ff f8 f1 ea e3 dc d5 ce, 01 00 fe fd fd fc fb fa, fc fc fc fc, fc fc fc fc, 80 f6 00 e8 00 da 00 cc"
+
+[[rom]]
+id = "tia_playfield"
+source = "a2600-carts"
+path = "tia_playfield.bin"
+sha256 = "3dfde0c9f1e6e91d0e1225cb0415d7d179e5f39c165bd8d6271f82e9adede4a7"
+needs = "cpu, tia"
+covers = "The playfield (normal, reflected, score, score with priority), the background and VBLANK, and the colour clock each write to PF2, COLUBK, VBLANK and CTRLPF lands on"
+check = "frame"
+frames = 30
+stella = "Four playfield bands (yellow, reflected on blue, score red and green, pink), then four staircases, one step a cycle: PF2, the background, VBLANK and the reflection switching on a cycle later each line"
+
+[[rom]]
+id = "tia_players"
+source = "a2600-carts"
+path = "tia_players.bin"
+sha256 = "719dee61c8584879208489863df078afe39fc7553d844d7de421ab21971e05e2"
+needs = "cpu, tia"
+covers = "The players: every NUSIZ (copies, double and quad width), RESP landing a cycle later each line from the blank to the middle of the picture, reflection, and vertical delay"
+check = "frame"
+frames = 30
+stella = "Eight bands, one per NUSIZ: player 1 (blue) in that band's copies and width; player 0 (red, , reflected in odd bands) stepping right a cycle each line"

@@ -4,3 +4,5 @@
 tia_colours 30 0x11b1db5a frame - a2600-carts/tia_colours.bin
 riot_ram 30 0x486de86d frame - a2600-carts/riot_ram.bin
 riot_timer 30 0xf076dac2 frame - a2600-carts/riot_timer.bin
+tia_playfield 30 0xee46145c frame - a2600-carts/tia_playfield.bin
+tia_players 30 0x8b37d639 frame - a2600-carts/tia_players.bin
