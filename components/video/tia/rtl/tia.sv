@@ -1,14 +1,15 @@
 // SPDX-License-Identifier: Apache-2.0
 // Atari TIA (NTSC): the 2600's video, one colour clock per `cc`.
 //
-// This first part has the line (228 colour clocks: 68 of horizontal blank, then 160 pixels), VSYNC,
-// VBLANK, WSYNC, the background, and the playfield with its colours, reflection, score mode and
-// priority. Players, missiles, the ball, HMOVE, collisions, the input ports and sound come next.
+// So far: the line (228 colour clocks: 68 of horizontal blank, then 160 pixels), VSYNC, VBLANK,
+// WSYNC, the background, the playfield with its colours, reflection, score mode and priority, and the
+// two players (`tia_player`). Missiles, the ball, HMOVE, collisions, the input ports and sound come next.
 //
 // Timing, as Stella 7.0 runs it:
 // - Each CPU cycle is 3 colour clocks; `ce` marks the colour clock that ends one, and the cycle's access
 //   (`cs`, `addr`, `we`, `din`) is taken then. A write lands after that clock, so the next colour clock
-//   sees it, except those the chip delays: VBLANK by 1 clock, PF0-PF2 by 2.
+//   sees it, except those the chip delays: VBLANK, GRP0, GRP1 (with the vertical-delay shuffle) and
+//   REFP0, REFP1 by 1 clock, PF0-PF2 by 2.
 // - WSYNC holds `rdy` low from the write to the line's end, so the CPU's next read cycle completes as
 //   the first cycle of the next line (`cpu/6502` repeats a read cycle that ends with rdy low). A write
 //   in the cycle that ends the line doesn't hold it.
@@ -39,7 +40,7 @@ module tia #(
     output logic        vsync,     // VSYNC's bit 1
     output logic        vblank,    // VBLANK's bit 1, as the picture sees it
 
-    input  logic [4:0]  st_addr,
+    input  logic [3:0]  st_addr,
     output logic [31:0] st_rdata,
     input  logic        st_we,
     input  logic [31:0] st_wdata
@@ -47,7 +48,10 @@ module tia #(
 
     localparam logic [5:0] VSYNC = 6'h00, VBLANK = 6'h01, WSYNC = 6'h02,
                            COLUP0 = 6'h06, COLUP1 = 6'h07, COLUPF = 6'h08, COLUBK = 6'h09,
-                           CTRLPF = 6'h0A, PF0 = 6'h0D, PF1 = 6'h0E, PF2 = 6'h0F;
+                           CTRLPF = 6'h0A, PF0 = 6'h0D, PF1 = 6'h0E, PF2 = 6'h0F,
+                           NUSIZ0 = 6'h04, NUSIZ1 = 6'h05, REFP0 = 6'h0B, REFP1 = 6'h0C,
+                           RESP0 = 6'h10, RESP1 = 6'h11, GRP0 = 6'h1B, GRP1 = 6'h1C,
+                           VDELP0 = 6'h25, VDELP1 = 6'h26;
 
     // ---- State ----
     logic [7:0]  hctr;                   // colour clock in the line, 0-227
@@ -82,10 +86,60 @@ module tia #(
     end
     wire        pf_bit_now = (in_pic && xc[1:0] == 2'd0) ? pf[pf_cell] : pf_bit;
 
-    // The colour, by priority (without objects yet: the playfield over the background). Score mode's
-    // colours (COLUP0's on the left half, COLUP1's on the right) need priority off.
-    wire  [6:0] pf_col = (score && !pfp) ? (xc < 8'd80 ? colup0 : colup1) : colupf;
-    wire  [6:0] col    = pf_bit_now ? pf_col : colubk;
+    wire wr = ce && cs && we;
+
+    // ---- Players ----
+    // Writes taken after this colour clock see the TIA as it will be for the next: in blank before
+    // pixel 0 (and after the line's last clock).
+    wire  [7:0] hctr_next = last ? 8'd0 : hctr + 8'd1;
+    wire        hb_next   = hctr_next < 8'd68;
+    wire  [7:0] resp_count = !hb_next ? 8'd157 : hctr_next >= 8'd73 ? 8'd158 : 8'd159;
+
+    // GRP and REFP land a colour clock after the write.
+    logic       grp0_pend, grp1_pend, refp0_pend, refp1_pend;
+    logic [7:0] grp0_new, grp1_new;
+    logic       refp0_new, refp1_new;
+
+    logic        p0_on, p1_on;
+    logic [31:0] p0_st0, p0_st1, p1_st0, p1_st1;
+    tia_player u_p0 (
+        .clk, .rst, .cc, .tick(in_pic),
+        .w_nusiz(wr && addr == NUSIZ0), .nusiz(din[2:0]), .w_hblank(hb_next),
+        .w_resp(wr && addr == RESP0), .resp_count,
+        .w_vdel(wr && addr == VDELP0), .vdel(din[0]),
+        .w_grp(grp0_pend), .grp(grp0_new), .w_shuffle(grp1_pend),
+        .w_refp(refp0_pend), .refp(refp0_new),
+        .on(p0_on),
+        .st_we(SAVE_STATE && st_we && (st_addr == 4'd5 || st_addr == 4'd6)), .st_addr(st_addr == 4'd6),
+        .st_wdata, .st_word0(p0_st0), .st_word1(p0_st1)
+    );
+    tia_player u_p1 (
+        .clk, .rst, .cc, .tick(in_pic),
+        .w_nusiz(wr && addr == NUSIZ1), .nusiz(din[2:0]), .w_hblank(hb_next),
+        .w_resp(wr && addr == RESP1), .resp_count,
+        .w_vdel(wr && addr == VDELP1), .vdel(din[0]),
+        .w_grp(grp1_pend), .grp(grp1_new), .w_shuffle(grp0_pend),
+        .w_refp(refp1_pend), .refp(refp1_new),
+        .on(p1_on),
+        .st_we(SAVE_STATE && st_we && (st_addr == 4'd7 || st_addr == 4'd8)), .st_addr(st_addr == 4'd8),
+        .st_wdata, .st_word0(p1_st0), .st_word1(p1_st1)
+    );
+
+    // ---- The colour, by priority ----
+    // Normally the players over the playfield over the background. Score mode (CTRLPF bit 1, priority
+    // off) colours the playfield with COLUP0 on the left half and COLUP1 on the right, and puts it
+    // between the players; priority (bit 2) puts the playfield first.
+    wire        score_on = score && !pfp;
+    wire  [6:0] pf_col   = score_on ? (xc < 8'd80 ? colup0 : colup1) : colupf;
+    logic [6:0] col;
+    always_comb begin
+        if (pfp)
+            col = pf_bit_now ? pf_col : p0_on ? colup0 : p1_on ? colup1 : colubk;
+        else if (score_on)
+            col = p0_on ? colup0 : pf_bit_now ? pf_col : p1_on ? colup1 : colubk;
+        else
+            col = p0_on ? colup0 : p1_on ? colup1 : pf_bit_now ? pf_col : colubk;
+    end
     wire  [3:0] unused_st  = st_wdata[31:28];
 
     // The playfield's bits from PF0, PF1, PF2 as written.
@@ -99,8 +153,6 @@ module tia #(
         endcase
         pf_with = r;
     endfunction
-
-    wire wr = ce && cs && we;
 
     always_ff @(posedge clk) begin
         if (rst) begin
@@ -122,6 +174,14 @@ module tia #(
             pf_new      <= 20'd0;
             pf_cnt      <= 2'd0;
             pf_bit      <= 1'b0;
+            grp0_pend   <= 1'b0;
+            grp1_pend   <= 1'b0;
+            refp0_pend  <= 1'b0;
+            refp1_pend  <= 1'b0;
+            grp0_new    <= 8'd0;
+            grp1_new    <= 8'd0;
+            refp0_new   <= 1'b0;
+            refp1_new   <= 1'b0;
             pix         <= 8'd0;
             pix_on      <= 1'b0;
             x           <= 8'd0;
@@ -140,6 +200,10 @@ module tia #(
             if (last) wsync <= 1'b0;
 
             // Writes waiting their clock land after it.
+            grp0_pend  <= 1'b0;
+            grp1_pend  <= 1'b0;
+            refp0_pend <= 1'b0;
+            refp1_pend <= 1'b0;
             if (vblank_pend) begin
                 vblank_r    <= vblank_new;
                 vblank_pend <= 1'b0;
@@ -160,6 +224,10 @@ module tia #(
                     COLUPF: colupf <= din[7:1];
                     COLUBK: colubk <= din[7:1];
                     CTRLPF: {pfp, score, reflect} <= din[2:0];
+                    GRP0:  begin grp0_new <= din; grp0_pend <= 1'b1; end
+                    GRP1:  begin grp1_new <= din; grp1_pend <= 1'b1; end
+                    REFP0: begin refp0_new <= din[3]; refp0_pend <= 1'b1; end
+                    REFP1: begin refp1_new <= din[3]; refp1_pend <= 1'b1; end
                     PF0, PF1, PF2: begin
                         // A second write before the first lands replaces it.
                         pf_new <= pf_with(pf_cnt != 2'd0 ? pf_new : pf, addr, din);
@@ -169,12 +237,14 @@ module tia #(
                 endcase
         end else if (SAVE_STATE && st_we) begin
             case (st_addr)
-                5'd0: {pf_cnt, vblank_pend, vblank_new, vblank_r, vsync_r, wsync, pf_bit, reflect_l,
+                4'd9: {refp1_new, refp0_new, grp1_new, grp0_new, refp1_pend, refp0_pend, grp1_pend,
+                       grp0_pend} <= st_wdata[21:0];
+                4'd0: {pf_cnt, vblank_pend, vblank_new, vblank_r, vsync_r, wsync, pf_bit, reflect_l,
                        pfp, score, reflect, hctr} <= st_wdata[19:0];
-                5'd1: {colubk, colupf, colup1, colup0} <= st_wdata[27:0];
-                5'd2: pf <= st_wdata[19:0];
-                5'd3: pf_new <= st_wdata[19:0];
-                5'd4: {line_end, x, pix_on, pix} <= st_wdata[17:0];
+                4'd1: {colubk, colupf, colup1, colup0} <= st_wdata[27:0];
+                4'd2: pf <= st_wdata[19:0];
+                4'd3: pf_new <= st_wdata[19:0];
+                4'd4: {line_end, x, pix_on, pix} <= st_wdata[17:0];
                 default: ;
             endcase
         end
@@ -190,16 +260,23 @@ module tia #(
     if (SAVE_STATE) begin : g_st
         always_ff @(posedge clk)
             case (st_addr)
-                5'd0: st_rdata <= {12'd0, pf_cnt, vblank_pend, vblank_new, vblank_r, vsync_r, wsync, pf_bit,
+                4'd0: st_rdata <= {12'd0, pf_cnt, vblank_pend, vblank_new, vblank_r, vsync_r, wsync, pf_bit,
                                    reflect_l, pfp, score, reflect, hctr};
-                5'd1: st_rdata <= {4'd0, colubk, colupf, colup1, colup0};
-                5'd2: st_rdata <= {12'd0, pf};
-                5'd3: st_rdata <= {12'd0, pf_new};
-                5'd4: st_rdata <= {14'd0, line_end, x, pix_on, pix};
+                4'd1: st_rdata <= {4'd0, colubk, colupf, colup1, colup0};
+                4'd2: st_rdata <= {12'd0, pf};
+                4'd3: st_rdata <= {12'd0, pf_new};
+                4'd4: st_rdata <= {14'd0, line_end, x, pix_on, pix};
+                4'd5: st_rdata <= p0_st0;
+                4'd6: st_rdata <= p0_st1;
+                4'd7: st_rdata <= p1_st0;
+                4'd8: st_rdata <= p1_st1;
+                4'd9: st_rdata <= {10'd0, refp1_new, refp0_new, grp1_new, grp0_new, refp1_pend, refp0_pend,
+                                   grp1_pend, grp0_pend};
                 default: st_rdata <= '0;
             endcase
     end else begin : g_no_st
         assign st_rdata = '0;
+        wire unused_pst = &{1'b0, p0_st0, p0_st1, p1_st0, p1_st1};
     end
 
 endmodule

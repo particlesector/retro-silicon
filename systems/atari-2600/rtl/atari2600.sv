@@ -34,7 +34,11 @@ module atari2600 (
     output logic        vblank,
 
     output logic        cpu_sync,
-    output logic [15:0] cpu_pc
+    output logic [15:0] cpu_pc,
+    output logic        bus_ce,      // for traces: this clock ends a CPU cycle, whose access is on bus_*
+    output logic [12:0] bus_addr,
+    output logic        bus_we,
+    output logic [7:0]  bus_data
 );
 
     // ---- Cycle ----
@@ -73,7 +77,7 @@ module atari2600 (
         .cs(sel_tia), .addr(we ? addr[5:0] : {2'b00, addr[3:0]}), .we, .din(cpu_dout),
         .dout(tia_dout), .rdy,
         .pix, .pix_on, .x(pix_x), .line_end, .vsync, .vblank,
-        .st_addr(5'd0), .st_rdata(tia_st), .st_we(1'b0), .st_wdata(32'd0)
+        .st_addr(4'd0), .st_rdata(tia_st), .st_we(1'b0), .st_wdata(32'd0)
     );
 
     // ---- RIOT ----
@@ -102,6 +106,11 @@ module atari2600 (
     always_ff @(posedge clk)
         if (rst) bus <= 8'd0;
         else if (ce) bus <= we ? cpu_dout : cpu_din;
+
+    assign bus_ce     = ce;
+    assign bus_addr   = addr[12:0];
+    assign bus_we     = we;
+    assign bus_data   = we ? cpu_dout : cpu_din;
 
     assign cart_addr  = addr[11:0];
     assign cart_sel   = sel_cart;

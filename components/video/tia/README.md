@@ -2,17 +2,18 @@
 
 The Atari 2600's Television Interface Adaptor (NTSC), colour-clock exact: it draws each line from its registers as the beam sweeps, with no frame buffer.
 
-Module `tia`. **In progress:** this first part has the line, VSYNC, VBLANK, WSYNC, the background and the playfield. Players, missiles, the ball, HMOVE, collisions, the input ports, RSYNC and sound come next, each with a test cartridge.
+Modules `tia` and `tia_player` (each of the two players). **In progress:** so far the line, VSYNC, VBLANK, WSYNC, the background, the playfield and the players. Missiles, the ball, HMOVE, collisions, the input ports, RSYNC and sound come next, each with a test cartridge.
 
 ## Timing
 
 As Stella 7.0 runs it:
 
 - **The line:** 228 colour clocks, one per `cc`: 68 of horizontal blank, then 160 pixels. A CPU cycle is 3 colour clocks; `ce` marks the one that ends it.
-- **Writes** are taken with `ce` and land after that colour clock, so the next one sees them, except where the chip delays them: VBLANK by 1 colour clock, PF0-PF2 by 2. A second write to the playfield before the first lands replaces it.
+- **Writes** are taken with `ce` and land after that colour clock, so the next one sees them, except where the chip delays them: VBLANK, GRP0, GRP1 and REFP0, REFP1 by 1 colour clock, PF0-PF2 by 2. A second write to the playfield before the first lands replaces it.
 - **WSYNC** holds `rdy` low from the write to the line's end, so the CPU's next read cycle completes as the next line's first cycle. A write in the cycle that ends a line doesn't hold it.
 - **The playfield** takes a new bit every 4 pixels, and CTRLPF's reflection only at pixels 0 and 79.
-- **Score mode** (CTRLPF bit 1) colours the playfield with COLUP0 on the left half and COLUP1 on the right, unless priority (bit 2) is on.
+- **Players:** each has a position counter, 0-159, that steps once a pixel. RESP sets it to 157 (159 in horizontal blank). A copy starts when it reaches 156, and for NUSIZ's extra copies 12, 28 or 60; the graphics follow 5 steps later, one bit a pixel, or every 2 or 4 pixels when stretched. NUSIZ or RESP during the start of a copy changes it as Andrew Towers' notes describe and Stella models. Writing GRP0 also copies player 1's graphics into its vertically delayed set, and GRP1 player 0's; VDELP picks which set a player draws.
+- **Priority:** player 0, player 1, the playfield, the background. Score mode (CTRLPF bit 1, priority off) colours the playfield with COLUP0 on the left half and COLUP1 on the right and puts it between the players; priority (bit 2) puts the playfield first.
 - **VBLANK** blanks the picture to colour 0.
 
 ## Ports
@@ -43,6 +44,11 @@ The picture outputs are registered: each describes the colour clock before.
 | `$06`-`$09` | COLUP0, COLUP1, COLUPF, COLUBK | Colours, bits 7-1 |
 | `$0A` | CTRLPF | Bit 0 reflection, 1 score, 2 priority |
 | `$0D`-`$0F` | PF0, PF1, PF2 | The playfield: PF0 bits 7-4, PF1 bits 7-0, PF2 bits 0-7, left to right; 2 colour clocks late |
+| `$04`, `$05` | NUSIZ0, NUSIZ1 | Bits 2-0: the players' copies and width (missiles' size comes with them) |
+| `$0B`, `$0C` | REFP0, REFP1 | Bit 3 reflects the player; a colour clock late |
+| `$10`, `$11` | RESP0, RESP1 | Places the player here |
+| `$1B`, `$1C` | GRP0, GRP1 | The players' graphics, bit 7 drawn first; a colour clock late |
+| `$25`, `$26` | VDELP0, VDELP1 | Bit 0: draw the vertically delayed graphics |
 
 ## Parameters
 
@@ -52,11 +58,13 @@ The picture outputs are registered: each describes the colour clock before.
 
 ## Save state
 
-The port follows [docs/conventions.md](../../../docs/conventions.md): 5 words so far, the line counter, registers, writes waiting to land and the registered picture outputs, as packed at the end of the RTL. The words will change as the objects arrive.
+The port follows [docs/conventions.md](../../../docs/conventions.md): 10 words so far, as packed at the end of the RTL: 0-4 the line counter, registers, the playfield's writes waiting to land and the registered picture outputs; 5-6 player 0 and 7-8 player 1 (`tia_player`'s two words); 9 the GRP and REFP writes waiting to land. The words will change as the other objects arrive.
 
 ## Status
 
-In `systems/atari-2600`'s sim, its frames match Stella's for the `tia_colours`, `riot_ram`, `riot_timer` and `tia_playfield` test cartridges. `tia_playfield` moves writes to PF2, COLUBK, VBLANK and CTRLPF's reflection a cycle at a time, so it checks the colour clock each lands on.
+In `systems/atari-2600`'s sim, its frames match Stella's for the `tia_colours`, `riot_ram`, `riot_timer`, `tia_playfield` and `tia_players` test cartridges. `tia_playfield` moves writes to PF2, COLUBK, VBLANK and CTRLPF's reflection a cycle at a time, so it checks the colour clock each lands on; `tia_players` does the same with RESP0 for every NUSIZ.
+
+**Where Stella and the chip part:** Stella skips drawing a line that follows two lines with no TIA writes that change anything (WSYNC doesn't count): it copies the line before and doesn't step the objects. A copy straddling the start of such a line then shows where it was on the line before, while the chip, and this core, step it on. A Python port of Stella's player logic, fed the core's writes, matches the core on such lines and Stella everywhere else. The core follows the chip, and the test cartridges write the TIA on every line they draw.
 
 ## References
 

@@ -130,17 +130,26 @@ uint32_t run(const std::vector<uint8_t>& rom, int frames, const std::string& dum
     m.rst = 0;
     const size_t mask = rom.size() - 1;
     uint32_t crc = 0;
+    // RS_A2600_TRACE=DIR: every TIA write as "<colour clock> <register> <value>", in <dump_name>.trace.
+    std::ofstream trace;
+    if (const char* dir = std::getenv("RS_A2600_TRACE"); dir && !dump_name.empty())
+        trace.open(std::string(dir) + "/" + dump_name + ".trace");
+    uint64_t colour_clock = 0;
     // A colour clock every 2 clocks.
     for (uint64_t clock = 0; cut.frames < frames; clock++) {
         const bool cc = clock & 1;
         m.cc = cc;
         m.clk = 0;
         m.eval();
+        // The access this colour clock ends, as the rising edge will take it.
+        if (cc && trace.is_open() && m.bus_ce && m.bus_we && !(m.bus_addr & 0x1080))
+            trace << colour_clock << ' ' << (m.bus_addr & 0x3F) << ' ' << int(m.bus_data) << '\n';
         m.clk = 1;
         m.eval();
         m.cart_data = rom[m.cart_addr & mask];
         m.eval();
         if (!cc) continue;
+        ++colour_clock;
         // The colour clock just drawn, then the line's end, then a VSYNC write (as Stella orders them).
         if (m.pix_on) cut.pixel(m.pix_x, m.pix);
         if (m.line_end) cut.line_end();
@@ -162,7 +171,8 @@ uint32_t run(const std::vector<uint8_t>& rom, int frames, const std::string& dum
 
 TEST_CASE("atari2600 test cartridges match Stella's frames") {
     for (const Golden& g : golden()) {
-        const std::string path = std::string(RS_TESTROMS) + "/" + g.path;
+        const char* roms = std::getenv("RS_TESTROMS");
+        const std::string path = std::string(roms ? roms : RS_TESTROMS) + "/" + g.path;
         std::ifstream f(path, std::ios::binary);
         if (!f) {
             WARN("skipped " << g.id << ": no " << path);

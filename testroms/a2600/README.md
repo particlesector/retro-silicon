@@ -10,6 +10,7 @@ Our own test cartridges for the Atari 2600, which has no public test suite like 
 | `riot_ram` | The RIOT's 128 bytes of RAM through its mirrors (`$80`, `$180`, `$480`, `$D80`) and the stack at `$1FF` |
 | `riot_timer` | The interval timer at each divider: counting down, underflow, one a clock after it, the divider restored by reading `INTIM`, and `TIMINT`'s flag |
 | `tia_playfield` | The playfield (normal, reflected, score, score with priority), the background and VBLANK; then writes to PF2, COLUBK, VBLANK and CTRLPF's reflection, a cycle later on each line, so each lands at every pixel phase. It draws its result rather than measuring it, so it uses neither `show.inc` nor RAM |
+| `tia_players` | The players: a band per NUSIZ value (copies, double and quad width), with RESP0 landing a cycle later on each line from the blank into the picture, player 0 reflected in odd bands, and player 1 with vertical delay in bands 4-7 |
 
 `vcs.inc` has `DELAY n`, exactly n cycles (12 at a time by calling an RTS, `wait12`, which a cartridge using it defines).
 
