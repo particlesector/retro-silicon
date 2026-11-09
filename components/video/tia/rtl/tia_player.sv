@@ -38,6 +38,8 @@ module tia_player (
     output logic       on,
     output logic [7:0] pos,        // the position counter, for the missile's RESMP
     output logic [2:0] div_o,      // the width: 1, 2 or 4
+    output logic       main_o,     // drawing its main copy (the one decoded at 156)
+    output logic signed [7:0] render_o,  // the copy's render count: -5 at its decode, graphics from 0
     output logic       cv,         // drawn, for collisions
     output logic       sched,      // the graphics changed while drawing: check collisions next
 
@@ -61,6 +63,7 @@ module tia_player (
     logic [7:0]        gnew, gold;
     logic              refl, vdl;
     logic              cv_r, sched_r;
+    logic              main;       // the copy drawing is the main one
 
     function automatic logic decode(input logic [2:0] sel, input logic [7:0] c);
         case (sel)
@@ -89,6 +92,8 @@ module tia_player (
 
     assign pos   = counter;
     assign div_o = div;
+    assign main_o   = rendering && main;
+    assign render_o = render;
     assign on    = drawn(rendering, render, sample, div, gnew, gold, refl, vdl);
     assign cv    = cv_r;
     assign sched = sched_r;
@@ -109,6 +114,7 @@ module tia_player (
             vdl       <= 1'b0;
             cv_r      <= 1'b0;
             sched_r   <= 1'b0;
+            main      <= 1'b0;
         end else if (cc) begin
             logic [7:0]        c;
             logic              r;
@@ -120,6 +126,8 @@ module tia_player (
             logic              cvn, ev;
             logic [7:0]        gn2, go2;
             logic              rf2, vd2;
+            logic              mn;
+            mn = main;
             c = counter; r = rendering; rc = render; s = sample; d = div; dp = div_pend; dc = dcc;
             ds = dec_sel;
 
@@ -129,6 +137,7 @@ module tia_player (
                     r  = 1'b1;
                     s  = 4'd0;
                     rc = -8'sd5;
+                    mn = c == 8'd156;
                 end else if (r) begin
                     rc = rc + 8'sd1;
                     if (d == 3'd1) begin
@@ -166,6 +175,7 @@ module tia_player (
                     r  = 1'b1;
                     s  = 4'd0;
                     rc = -8'sd5;
+                    mn = wrap160({1'b0, c} + 9'd159) == 8'd156;
                 end
                 // Changing the copies early in a copy's start can cancel it.
                 if (nds != ds && r && (rc + 8'sd5) < 8'sd2 &&
@@ -227,6 +237,7 @@ module tia_player (
             counter   <= c;
             rendering <= r;
             render    <= rc;
+            main      <= mn;
             sample    <= s;
             div       <= d;
             div_pend  <= dp;
@@ -241,12 +252,12 @@ module tia_player (
             if (!st_addr)
                 {dec_sel, dcc, div_pend, div, sample, render} <= st_wdata[28:0];
             else
-                {sched_r, cv_r, vdl, refl, rendering, gold, gnew, counter} <= st_wdata[28:0];
+                {main, sched_r, cv_r, vdl, refl, rendering, gold, gnew, counter} <= st_wdata[29:0];
         end
     end
 
     assign st_word0 = {3'd0, dec_sel, dcc, div_pend, div, sample, render};
-    assign st_word1 = {3'd0, sched_r, cv_r, vdl, refl, rendering, gold, gnew, counter};
-    wire [2:0] unused_st = st_wdata[31:29];
+    assign st_word1 = {2'd0, main, sched_r, cv_r, vdl, refl, rendering, gold, gnew, counter};
+    wire [1:0] unused_st = st_wdata[31:30];
 
 endmodule

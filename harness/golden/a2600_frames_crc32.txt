@@ -6,7 +6,10 @@ riot_ram 30 0x486de86d frame - a2600-carts/riot_ram.bin
 riot_timer 30 0xf076dac2 frame - a2600-carts/riot_timer.bin
 tia_playfield 30 0xee46145c frame - a2600-carts/tia_playfield.bin
 tia_players 30 0x8b37d639 frame - a2600-carts/tia_players.bin
-tia_missiles_ball 30 0x9fc8d93d frame - a2600-carts/tia_missiles_ball.bin
+# tia_missiles_ball: not Stella's frame (0x9fc8d93d): Gopher2600 0.57.2's frame: band 2's brief RESMP1 leaves missile 1 where it was (the TIA's die, from its netlist, agrees), where Stella moves it onto player 1
+tia_missiles_ball 30 0xd496459a frame - a2600-carts/tia_missiles_ball.bin
 tia_hmove 30 0x2d4fa7de frame - a2600-carts/tia_hmove.bin
 tia_collisions 30 0xf8fb443f frame - a2600-carts/tia_collisions.bin
 tia_rsync 30 0x40c6ee03 frame - a2600-carts/tia_rsync.bin
+# tia_resmp: not Stella's frame (0x4153eb84): Gopher2600 0.57.2's frame, in which the missile moves only after the windows covering the reset point, and Stella's after every window; the TIA's transistor-level netlist moves it after the same windows, give or take the one at each end of the range, where it lands writes a colour clock earlier than both emulators
+tia_resmp 30 0x0f5e4ecd frame - a2600-carts/tia_resmp.bin

@@ -152,6 +152,8 @@ module tia #(
     logic        p0_on, p1_on, p0_cv, p1_cv, p0_sched, p1_sched;
     logic [7:0]  p0_pos, p1_pos;
     logic [2:0]  p0_div, p1_div;
+    logic        p0_main, p1_main;
+    logic signed [7:0] p0_rc, p1_rc;
     logic [31:0] p0_st0, p0_st1, p1_st0, p1_st1;
     tia_player u_p0 (
         .clk, .rst, .cc, .tick(obj_tick[0]),
@@ -160,7 +162,8 @@ module tia #(
         .w_vdel(wr && addr == VDELP0), .vdel(din[0]),
         .w_grp(grp0_pend), .grp(grp0_new), .w_shuffle(grp1_pend),
         .w_refp(refp0_pend), .refp(refp0_new),
-        .last, .on(p0_on), .pos(p0_pos), .div_o(p0_div), .cv(p0_cv), .sched(p0_sched),
+        .last, .on(p0_on), .pos(p0_pos), .div_o(p0_div), .main_o(p0_main), .render_o(p0_rc),
+        .cv(p0_cv), .sched(p0_sched),
         .st_we(SAVE_STATE && st_we && (st_addr == 4'd5 || st_addr == 4'd6)), .st_addr(st_addr == 4'd6),
         .st_wdata, .st_word0(p0_st0), .st_word1(p0_st1)
     );
@@ -171,15 +174,17 @@ module tia #(
         .w_vdel(wr && addr == VDELP1), .vdel(din[0]),
         .w_grp(grp1_pend), .grp(grp1_new), .w_shuffle(grp0_pend),
         .w_refp(refp1_pend), .refp(refp1_new),
-        .last, .on(p1_on), .pos(p1_pos), .div_o(p1_div), .cv(p1_cv), .sched(p1_sched),
+        .last, .on(p1_on), .pos(p1_pos), .div_o(p1_div), .main_o(p1_main), .render_o(p1_rc),
+        .cv(p1_cv), .sched(p1_sched),
         .st_we(SAVE_STATE && st_we && (st_addr == 4'd7 || st_addr == 4'd8)), .st_addr(st_addr == 4'd8),
         .st_wdata, .st_word0(p1_st0), .st_word1(p1_st1)
     );
 
     // ---- Missiles and the ball ----
-    // ENAM and ENABL land a colour clock after the write. RESMP's release puts a missile where its
-    // player's RESP would have: the player's counter after this clock's tick, less 5, 8 or 12 by its
-    // width.
+    // ENAM and ENABL land a colour clock after the write. While RESMP is set, a missile is put where its
+    // player's RESP would have (the player's counter after this clock's tick, less 5, 8 or 12 by its
+    // width) on the tick its player's main copy reaches render count 5, 8 or 12: the chip's lock
+    // decode, the sixth pixel's bit (or its last half or quarter when stretched).
     logic       enam0_pend, enam1_pend, enabl_pend;
     logic       enam0_new, enam1_new, enabl_new;
 
@@ -190,6 +195,11 @@ module tia #(
         resmp_pos = p >= back ? p - back : p + 8'd160 - back;
     endfunction
 
+    function automatic logic resmp_trig(input logic t, input logic m, input logic signed [7:0] rc,
+                                        input logic [2:0] div);
+        resmp_trig = t && m && rc + 8'sd1 == (div == 3'd4 ? 8'sd12 : div == 3'd2 ? 8'sd8 : 8'sd5);
+    endfunction
+
     logic        m0_on, m1_on, bl_on, m0_cv, m1_cv, bl_cv, m0_sched, m1_sched, bl_sched;
     logic [31:0] m0_st, m1_st, bl_st;
     tia_missile u_m0 (
@@ -197,6 +207,7 @@ module tia #(
         .w_nusiz(wr && addr == NUSIZ0), .nusiz(din[5:0]), .w_hblank(hb_next),
         .w_resm(wr && addr == RESM0), .resp_count,
         .w_resmp(wr && addr == RESMP0), .resmp(din[1]), .pl_pos(resmp_pos(obj_tick[0], p0_pos, p0_div)),
+        .pl_trig(resmp_trig(obj_tick[0], p0_main, p0_rc, p0_div)),
         .w_enam(enam0_pend), .enam(enam0_new),
         .last, .on(m0_on), .cv(m0_cv), .sched(m0_sched),
         .st_we(SAVE_STATE && st_we && st_addr == 4'd10), .st_wdata, .st_word(m0_st)
@@ -206,6 +217,7 @@ module tia #(
         .w_nusiz(wr && addr == NUSIZ1), .nusiz(din[5:0]), .w_hblank(hb_next),
         .w_resm(wr && addr == RESM1), .resp_count,
         .w_resmp(wr && addr == RESMP1), .resmp(din[1]), .pl_pos(resmp_pos(obj_tick[1], p1_pos, p1_div)),
+        .pl_trig(resmp_trig(obj_tick[1], p1_main, p1_rc, p1_div)),
         .w_enam(enam1_pend), .enam(enam1_new),
         .last, .on(m1_on), .cv(m1_cv), .sched(m1_sched),
         .st_we(SAVE_STATE && st_we && st_addr == 4'd11), .st_wdata, .st_word(m1_st)

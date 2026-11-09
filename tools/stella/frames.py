@@ -10,6 +10,11 @@ it in Stella (tools/stella/stella-frames, default the one on PATH) for its
 harness/golden/a2600_frames_crc32.txt), in the format of
 nes_frames_crc32.txt: id, frames ended, the last frame's CRC-32, check,
 result, path. --dump also writes each frame's .tia and .ppm into DIR/<id>/.
+
+A cartridge whose behaviour Stella gets wrong (where the TIA's die, from its transistor-level netlist,
+and another emulator agree against it) carries `golden_crc`, the right frame's CRC, and `stella_crc`,
+what Stella gives: its line takes `golden_crc`, once Stella is checked to still give `stella_crc`
+(so a change in Stella can't hide behind the override). `golden_from` says where the frame came from.
 """
 
 import argparse
@@ -51,6 +56,11 @@ def main():
         frame, crc = out[-2], out[-1]
         if int(frame) != rom["frames"]:
             sys.exit(f"frames: {rom['id']}: stella-frames gave frame {frame}")
+        if "golden_crc" in rom:
+            if int(crc, 16) != int(rom["stella_crc"], 16):
+                sys.exit(f"frames: {rom['id']}: Stella gives 0x{crc}, not its stella_crc {rom['stella_crc']}")
+            crc = f"{int(rom['golden_crc'], 16):08x}"
+            lines.append(f"# {rom['id']}: not Stella's frame ({rom['stella_crc']}): {rom['golden_from']}")
         lines.append(f"{rom['id']} {rom['frames']} 0x{crc} frame - {path}")
         print(lines[-1])
     out_path.write_text("\n".join(lines) + "\n")
