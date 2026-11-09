@@ -1,0 +1,26 @@
+CAPI=2:
+# SPDX-License-Identifier: Apache-2.0
+name: retro-silicon:system:atari-2600:0.1.0
+description: The Atari 2600 so far - the 6507, the TIA (line, sync, background, playfield) and the RIOT - with the cartridge outside
+
+filesets:
+  rtl:
+    files:
+      - rtl/atari2600.sv
+    file_type: systemVerilogSource
+    depend:
+      - retro-silicon:cpu:6502
+      - retro-silicon:video:tia
+      - retro-silicon:io:riot-6532
+
+targets:
+  default: &default
+    filesets: [rtl]
+    toplevel: atari2600
+  lint:
+    <<: *default
+    default_tool: verilator
+    tools:
+      verilator:
+        mode: lint-only
+        verilator_options: [-Wall]

@@ -49,3 +49,14 @@ covers = "The RIOT's timer at each divider: count down, underflow, one a clock a
 check = "frame"
 frames = 30
 stella = "Results ff f8 f1 ea e3 dc d5 ce, 01 00 fe fd fd fc fb fa, fc fc fc fc, fc fc fc fc, 80 f6 00 e8 00 da 00 cc"
+
+[[rom]]
+id = "tia_playfield"
+source = "a2600-carts"
+path = "tia_playfield.bin"
+sha256 = "006f470c2eabb1400d7c3fefa7aef01a6bad3dd59614e3a245729babd33f308c"
+needs = "cpu, tia"
+covers = "The playfield (normal, reflected, score, score with priority), the background and VBLANK, and the colour clock each write to PF2, COLUBK, VBLANK and CTRLPF lands on"
+check = "frame"
+frames = 30
+stella = "Four playfield bands (yellow, reflected on blue, score red and green, pink), then four staircases: PF2, the background, VBLANK and the reflection switching on a cycle later each line"
