@@ -13,6 +13,7 @@ Our own test cartridges for the Atari 2600, which has no public test suite like 
 | `tia_players` | The players: a band per NUSIZ value (copies, double and quad width), with RESP0 landing a cycle later on each line from the blank into the picture, player 0 reflected in odd bands, and player 1 with vertical delay in bands 4-7 |
 | `tia_missiles_ball` | The missiles and the ball: a band per NUSIZ value, each with its own missile and ball widths and CTRLPF priority mode, over the playfield and the players; RESM0 and RESBL land a cycle later on each line from the blank into the picture, missile 1 is placed by RESM1 or locked to player 1 by RESMP1, and the ball's vertical delay hides it in bands 5 and 7 |
 | `tia_hmove` | HMOVE: the five objects in eight bands; early HMOVEs stepping each object through all 16 HM values, HMOVE written a cycle later each line from the line's start to its end, HMOVE near the line's end running on into the next, and HMCLR during the movement |
+| `tia_collisions` | The collision latches and CXCLR: every pair at once, a chosen few, and the players colliding only in the horizontal blank by HMOVE; then INPT0-INPT5 and the fire buttons' latch. Results drawn by `show.inc` |
 
 `vcs.inc` has `DELAY n`, exactly n cycles (12 at a time by calling an RTS, `wait12`, which a cartridge using it defines).
 

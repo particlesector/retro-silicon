@@ -48,6 +48,22 @@ HMOVE   = $2A
 HMCLR   = $2B
 CXCLR   = $2C
 
+; TIA reads (A3-A0; bits 7-6, the rest the bus's last value)
+CXM0P   = $00
+CXM1P   = $01
+CXP0FB  = $02
+CXP1FB  = $03
+CXM0FB  = $04
+CXM1FB  = $05
+CXBLPF  = $06
+CXPPMM  = $07
+INPT0   = $08
+INPT1   = $09
+INPT2   = $0A
+INPT3   = $0B
+INPT4   = $0C
+INPT5   = $0D
+
 ; RIOT
 SWCHA   = $280
 SWACNT  = $281

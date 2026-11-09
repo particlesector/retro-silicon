@@ -75,7 +75,7 @@ module atari2600 (
     tia #(.SAVE_STATE(1'b0)) u_tia (
         .clk, .rst, .cc, .ce,
         .cs(sel_tia), .addr(we ? addr[5:0] : {2'b00, addr[3:0]}), .we, .din(cpu_dout),
-        .dout(tia_dout), .rdy,
+        .dout(tia_dout), .rdy, .fire_n,
         .pix, .pix_on, .x(pix_x), .line_end, .vsync, .vblank,
         .st_addr(4'd0), .st_rdata(tia_st), .st_we(1'b0), .st_wdata(32'd0)
     );
@@ -117,8 +117,8 @@ module atari2600 (
     assign cart_we    = we;
     assign cart_wdata = cpu_dout;
 
-    // The 2600 leaves the CPU's interrupts unconnected; the inputs come with the TIA's input ports.
+    // The 2600 leaves the CPU's interrupts unconnected.
     wire unused = &{1'b0, tia_dout[5:0], bus[7:6], addr[15:13], dbg_a, dbg_x, dbg_y, dbg_s, dbg_p, halted, cpu_st, tia_st, riot_st,
-                    riot_irq_n, pb_out, pb_ddr, fire_n};
+                    riot_irq_n, pb_out, pb_ddr};
 
 endmodule

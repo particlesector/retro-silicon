@@ -93,3 +93,14 @@ covers = "HMOVE: all 16 HM values on every object, HMOVE written at each cycle f
 check = "frame"
 frames = 30
 stella = "Eight bands of the five objects drifting and smearing: an 8-pixel black comb on the left of bands 0-2, 6 and 7; tall columns in bands 3-5 where the late HMOVEs leave objects nearly still"
+
+[[rom]]
+id = "tia_collisions"
+source = "a2600-carts"
+path = "tia_collisions.bin"
+sha256 = "a4f7324da345853d4713d8bc5f3f7dd7ac93c9507b7e3720473decfb1f49ba9c"
+needs = "cpu, tia"
+covers = "The collision latches and CXCLR (every pair; a chosen few; and collisions caught only in the horizontal blank by HMOVE's movement steps), INPT0-INPT5, and the fire buttons' latch"
+check = "frame"
+frames = 30
+stella = "Results (show.inc): 0-7 $C0 but $80 at 6; 8-15 00 80 80 C0 00 00 80 00; 16-23 0 but $80 at 23; 24-31 08 08 08 08 88 88 8C 8D"

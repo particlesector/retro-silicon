@@ -2,7 +2,7 @@
 
 The Atari 2600 (NTSC), being built: the 6507 (`cpu/6502` with decimal mode on and 13 address lines), the TIA (`video/tia`) and the RIOT (`io/riot-6532`) on one bus, with the cartridge outside the core.
 
-Module `atari2600`. **In progress** (the rig's milestone A4): the TIA has its line, sync, background, playfield, players, missiles, ball and HMOVE so far, and the core runs only in the sim. The test shell, the boards, HDMI and sound come later.
+Module `atari2600`. **In progress** (the rig's milestone A4): the TIA has its line, sync, background, playfield, players, missiles, ball, HMOVE, collisions and the fire buttons so far, and the core runs only in the sim. The test shell, the boards, HDMI and sound come later.
 
 ## The bus
 
@@ -33,4 +33,4 @@ A CPU cycle is 3 colour clocks (`cc`), so `cc` must come at least 2 clocks apart
 
 ## Status
 
-In the sim, all seven test cartridges match Stella's frames: `tia_colours`, `riot_ram`, `riot_timer`, `tia_playfield`, `tia_players`, `tia_missiles_ball` and `tia_hmove`.
+In the sim, all eight test cartridges match Stella's frames: `tia_colours`, `riot_ram`, `riot_timer`, `tia_playfield`, `tia_players`, `tia_missiles_ball`, `tia_hmove` and `tia_collisions`.

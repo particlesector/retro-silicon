@@ -12,6 +12,10 @@
 // still moving (`moving`) its regular ticks draw it as the chip's merged clocks do (Stella's
 // "starfield"): a copy's start can show a clock early, and its width changes by the colour clock's
 // phase (`hc`, the colour clock's count in the line, mod 4).
+//
+// Collisions: `cv` is whether the missile counts as drawn for them, kept as Stella keeps it: set from
+// `on` at each tick, worked out again at the line's end (`last`), and when ENAM or RESMP changes
+// whether it's enabled, which also asks the TIA to check collisions on the next colour clock (`sched`).
 
 module tia_missile (
     input  logic       clk,
@@ -21,6 +25,7 @@ module tia_missile (
     input  logic       regular,    // the tick is a pixel's, not HMOVE's
     input  logic       moving,     // HMOVE is still moving the missile
     input  logic [1:0] hc,
+    input  logic       last,       // this colour clock is the line's last
 
     input  logic       w_nusiz,
     input  logic [5:0] nusiz,      // NUSIZ bits 5-0 (bit 3 is the players')
@@ -34,6 +39,8 @@ module tia_missile (
     input  logic       enam,
 
     output logic       on,
+    output logic       cv,         // drawn, for collisions
+    output logic       sched,      // ENAM or RESMP changed: check collisions next
 
     // Save state: one word, written while `cc` is low.
     input  logic        st_we,
@@ -49,6 +56,8 @@ module tia_missile (
     logic [2:0]        dec_sel;    // NUSIZ's copies: its value, 5 and 7 as 0
     logic              en, locked;
     logic [3:0]        ew;         // the width while moving: 0, 1, 2, 4 or 8
+    logic              vis;        // shown at the last tick or line end, enabled or not
+    logic              cv_r, sched_r;
 
     function automatic logic decode(input logic [2:0] sel, input logic [7:0] c);
         case (sel)
@@ -65,9 +74,11 @@ module tia_missile (
         width = 5'sd1 <<< s;
     endfunction
 
-    assign on = rendering && en && !locked &&
-                (render >= 5'sd0 ||
-                 (moving && regular && render == -5'sd1 && !size[1] && hc == 2'd2));
+    wire vis_now = rendering &&
+                   (render >= 5'sd0 || (moving && regular && render == -5'sd1 && !size[1] && hc == 2'd2));
+    assign on    = vis_now && en && !locked;
+    assign cv    = cv_r;
+    assign sched = sched_r;
 
     always_ff @(posedge clk) begin
         if (rst) begin
@@ -79,6 +90,9 @@ module tia_missile (
             en        <= 1'b0;
             locked    <= 1'b0;
             ew        <= 4'd1;
+            vis       <= 1'b0;
+            cv_r      <= 1'b0;
+            sched_r   <= 1'b0;
         end else if (cc) begin
             logic [7:0]        c;
             logic              r;
@@ -86,6 +100,7 @@ module tia_missile (
             logic [1:0]        sz;
             logic [2:0]        ds;
             logic [3:0]        e;
+            logic              v, cvn, lk, enn;
             c = counter; r = rendering; rc = render; sz = size; ds = dec_sel; e = ew;
 
             // The tick.
@@ -113,6 +128,14 @@ module tia_missile (
                 c = c == 8'd159 ? 8'd0 : c + 8'd1;
             end
 
+            // Collisions: the tick's, then the line's end, before this edge's writes.
+            v   = tick ? vis_now : vis;
+            cvn = tick ? on : cv_r;
+            if (last) begin
+                v   = r && rc >= 5'sd0;
+                cvn = v && en && !locked;
+            end
+
             // NUSIZ: a narrower missile ends now if it's already drawn that much.
             if (w_nusiz) begin
                 ds = (nusiz[2:0] == 3'd5 || nusiz[2:0] == 3'd7) ? 3'd0 : nusiz[2:0];
@@ -137,11 +160,26 @@ module tia_missile (
                 end
             end
 
-            // RESMP: releasing it puts the missile on its player.
+            // RESMP: releasing it puts the missile on its player. RESMP, then ENAM landing, changing
+            // whether the missile is enabled, recheck `cv`.
+            lk  = locked;
+            enn = en;
+            sched_r <= 1'b0;
             if (w_resmp && resmp != locked) begin
-                locked <= resmp;
+                lk = resmp;
                 if (!resmp) c = pl_pos;
+                cvn = v && en && !lk;
+                sched_r <= 1'b1;
             end
+            if (w_enam && enam != en) begin
+                enn = enam;
+                cvn = v && enn && !lk;
+                sched_r <= 1'b1;
+            end
+            locked <= lk;
+            en     <= enn;
+            vis    <= v;
+            cv_r   <= cvn;
 
             counter   <= c;
             rendering <= r;
@@ -149,14 +187,13 @@ module tia_missile (
             size      <= sz;
             dec_sel   <= ds;
             ew        <= e;
-            if (w_enam) en <= enam;
         end else if (st_we) begin
-            {ew, locked, en, dec_sel, size, render, rendering, counter} <= st_wdata[24:0];
+            {sched_r, cv_r, vis, ew, locked, en, dec_sel, size, render, rendering, counter} <= st_wdata[27:0];
         end
     end
 
-    assign st_word = {7'd0, ew, locked, en, dec_sel, size, render, rendering, counter};
-    wire [6:0]  unused_st = st_wdata[31:25];
+    assign st_word = {4'd0, sched_r, cv_r, vis, ew, locked, en, dec_sel, size, render, rendering, counter};
+    wire [3:0]  unused_st = st_wdata[31:28];
     wire        unused_nusiz = nusiz[3];
 
 endmodule

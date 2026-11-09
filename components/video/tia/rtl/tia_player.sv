@@ -8,12 +8,19 @@
 // from the state before its tick. Writes land on the edge after their colour clock: `tick` first, then
 // the immediate ones (NUSIZ, RESP, VDELP), then the delayed ones the TIA hands over as they land (GRP,
 // the vertical-delay shuffle, REFP).
+//
+// Collisions: `cv` is whether the player counts as drawn for them, kept as Stella keeps it: set from
+// `on` at each tick, worked out again at the line's end (`last`), and when the graphics change (GRP,
+// the shuffle, REFP, VDELP) while it draws, which also asks the TIA to check collisions on the next
+// colour clock (`sched`). In horizontal blank, where nothing ticks, the TIA checks them only then and
+// during HMOVE.
 
 module tia_player (
     input  logic       clk,
     input  logic       rst,
     input  logic       cc,
     input  logic       tick,       // this colour clock moves the counter
+    input  logic       last,       // this colour clock is the line's last
 
     input  logic       w_nusiz,
     input  logic [2:0] nusiz,
@@ -31,6 +38,8 @@ module tia_player (
     output logic       on,
     output logic [7:0] pos,        // the position counter, for the missile's RESMP
     output logic [2:0] div_o,      // the width: 1, 2 or 4
+    output logic       cv,         // drawn, for collisions
+    output logic       sched,      // the graphics changed while drawing: check collisions next
 
     // Save state: two words, written while `cc` is low.
     input  logic        st_we,
@@ -51,6 +60,7 @@ module tia_player (
     logic [2:0]        dec_sel;    // NUSIZ's copies: its value, 5 and 7 as 0
     logic [7:0]        gnew, gold;
     logic              refl, vdl;
+    logic              cv_r, sched_r;
 
     function automatic logic decode(input logic [2:0] sel, input logic [7:0] c);
         case (sel)
@@ -67,14 +77,21 @@ module tia_player (
         wrap160 = v >= 9'd160 ? 8'(v - 9'd160) : v[7:0];
     endfunction
 
-    wire  [7:0] graphics = vdl ? gold : gnew;
-    wire  [7:0] pattern  = refl ? graphics : {graphics[0], graphics[1], graphics[2], graphics[3],
-                                              graphics[4], graphics[5], graphics[6], graphics[7]};
-    wire signed [7:0] trip = div == 3'd1 ? 8'sd0 : 8'sd1;
+    // Whether the player draws, with its graphics, reflection and delay as given.
+    function automatic logic drawn(input logic r, input logic signed [7:0] rc, input logic [3:0] s,
+                                   input logic [2:0] d, input logic [7:0] gn, input logic [7:0] go,
+                                   input logic rf, input logic vd);
+        logic [7:0] g, p;
+        g = vd ? go : gn;
+        p = rf ? g : {g[0], g[1], g[2], g[3], g[4], g[5], g[6], g[7]};
+        drawn = r && rc >= (d == 3'd1 ? 8'sd0 : 8'sd1) && s <= 4'd7 && p[s[2:0]];
+    endfunction
 
     assign pos   = counter;
     assign div_o = div;
-    assign on = rendering && render >= trip && sample <= 4'd7 && pattern[sample[2:0]];
+    assign on    = drawn(rendering, render, sample, div, gnew, gold, refl, vdl);
+    assign cv    = cv_r;
+    assign sched = sched_r;
 
     always_ff @(posedge clk) begin
         if (rst) begin
@@ -90,6 +107,8 @@ module tia_player (
             gold      <= 8'd0;
             refl      <= 1'b0;
             vdl       <= 1'b0;
+            cv_r      <= 1'b0;
+            sched_r   <= 1'b0;
         end else if (cc) begin
             logic [7:0]        c;
             logic              r;
@@ -98,6 +117,9 @@ module tia_player (
             logic [2:0]        d, dp, ds, nds;
             logic signed [7:0] dc;
             logic signed [7:0] delta;
+            logic              cvn, ev;
+            logic [7:0]        gn2, go2;
+            logic              rf2, vd2;
             c = counter; r = rendering; rc = render; s = sample; d = div; dp = div_pend; dc = dcc;
             ds = dec_sel;
 
@@ -130,6 +152,10 @@ module tia_player (
                 end
                 c = c == 8'd159 ? 8'd0 : c + 8'd1;
             end
+
+            // Collisions: the tick's, then the line's end, before this edge's writes.
+            cvn = tick ? on : cv_r;
+            if (last) cvn = drawn(r, rc, s, d, gnew, gold, refl, vdl);
 
             // NUSIZ.
             if (w_nusiz) begin
@@ -184,6 +210,20 @@ module tia_player (
                     rc = -8'sd5 + 8'(resp_count - 8'd157);
             end
 
+            // Graphics that change while the player draws change `cv` (after this edge's writes).
+            gn2 = w_grp ? grp : gnew;
+            go2 = w_shuffle ? gnew : gold;
+            rf2 = w_refp ? refp : refl;
+            vd2 = w_vdel ? vdel : vdl;
+            ev  = (w_grp && !vdl && grp != gnew) || (w_shuffle && vdl && gnew != gold) ||
+                  (w_refp && refp != refl) || (w_vdel && vdel != vdl);
+            sched_r <= 1'b0;
+            if (ev && r && rc >= (d == 3'd1 ? 8'sd0 : 8'sd1)) begin
+                cvn     = drawn(r, rc, s, d, gn2, go2, rf2, vd2);
+                sched_r <= 1'b1;
+            end
+            cv_r <= cvn;
+
             counter   <= c;
             rendering <= r;
             render    <= rc;
@@ -201,12 +241,12 @@ module tia_player (
             if (!st_addr)
                 {dec_sel, dcc, div_pend, div, sample, render} <= st_wdata[28:0];
             else
-                {vdl, refl, rendering, gold, gnew, counter} <= st_wdata[26:0];
+                {sched_r, cv_r, vdl, refl, rendering, gold, gnew, counter} <= st_wdata[28:0];
         end
     end
 
     assign st_word0 = {3'd0, dec_sel, dcc, div_pend, div, sample, render};
-    assign st_word1 = {5'd0, vdl, refl, rendering, gold, gnew, counter};
+    assign st_word1 = {3'd0, sched_r, cv_r, vdl, refl, rendering, gold, gnew, counter};
     wire [2:0] unused_st = st_wdata[31:29];
 
 endmodule

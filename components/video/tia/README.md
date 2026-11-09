@@ -2,7 +2,7 @@
 
 The Atari 2600's Television Interface Adaptor (NTSC), colour-clock exact: it draws each line from its registers as the beam sweeps, with no frame buffer.
 
-Modules `tia`, `tia_player` (each of the two players), `tia_missile` (each of the two missiles) and `tia_ball`. **In progress:** so far the line, VSYNC, VBLANK, WSYNC, the background, the playfield, the players, the missiles, the ball and HMOVE. Collisions, the input ports, RSYNC and sound come next, each with a test cartridge.
+Modules `tia`, `tia_player` (each of the two players), `tia_missile` (each of the two missiles) and `tia_ball`. **In progress:** so far the line, VSYNC, VBLANK, WSYNC, the background, the playfield, the players, the missiles, the ball, HMOVE, collisions and the fire buttons' input ports. RSYNC, the paddles' ports and sound come next, each with a test cartridge.
 
 ## Timing
 
@@ -15,6 +15,8 @@ As Stella 7.0 runs it:
 - **Players:** each has a position counter, 0-159, that steps once a pixel. RESP sets it to 157 (159 in horizontal blank). A copy starts when it reaches 156, and for NUSIZ's extra copies 12, 28 or 60; the graphics follow 5 steps later, one bit a pixel, or every 2 or 4 pixels when stretched. NUSIZ or RESP during the start of a copy changes it as Andrew Towers' notes describe and Stella models. Writing GRP0 also copies player 1's graphics into its vertically delayed set, and GRP1 player 0's; VDELP picks which set a player draws.
 - **Missiles and the ball:** each has its own position counter, set by RESM or RESBL as RESP sets a player's, and starts at 156 (a missile also at its player's extra copies' decodes), showing 4 steps later for 1, 2, 4 or 8 pixels (NUSIZ bits 5-4 for a missile, CTRLPF bits 5-4 for the ball). RESM during a missile's draw shifts or ends it by its width; RESBL starts the ball wherever it is; a narrower NUSIZ ends a missile already drawn that wide. RESMP hides a missile and holds it unstarted; clearing it puts the missile where its player's RESP would have. Writing GRP1 also copies ENABL into the ball's vertically delayed enable, which VDELBL picks.
 - **HMOVE** starts a movement clock that steps every 4 colour clocks (on those 0 mod 4 in the line). Each object keeps moving until the step count equals its HM value's count ((HM >> 4) XOR 8, so 0-15, which is why HM 0 means no move), with an extra tick on each step while the TIA is in horizontal blank; a count it has already passed (an HM write during the movement) keeps it moving, a tick in every blank, until the next HMOVE. An HMOVE landing in the blank before colour clock 68 extends the blank to 76: those 8 pixels (the "comb") are colour 0 and the objects don't tick on them. While a missile or the ball is still moving, its pixel ticks change its start and width by the colour clock's phase, as Stella's "starfield" model has it.
+- **Collisions:** checked on every picture colour clock, and in horizontal blank only on HMOVE's movement steps (while something still moves) or on the colour clock after an object's graphics or enable changed, never under VBLANK. Each check uses the objects' collision states as Stella keeps them: from their last tick, worked out again at each line's end, and when their graphics or enable change; the playfield's ends with each line. So two objects drawn across a line's end collide in the next line's blank if an HMOVE runs there. A read sees its own colour clock's check; CXCLR clears the latches after it.
+- **Input ports:** INPT4 and INPT5 read the fire buttons' pins (`fire_n`, 0 pressed). With VBLANK bit 6 set they latch: a press reads 0 until bit 6 is cleared. The latch catches every press, as the chip's does (Stella's catches a press only when the port is read; with a button held still the two agree). INPT0-INPT3 read 0, the paddles' ports with nothing connected, as Stella's joystick leaves them; VBLANK bit 7's dump comes with the paddles.
 - **Priority:** each missile takes its player's colour and place, the ball the playfield's colour (COLUPF, even in score mode) and place just after it: player 0, player 1, the playfield, the ball, the background. Score mode (CTRLPF bit 1, priority off) colours the playfield with COLUP0 on the left half and COLUP1 on the right and puts it between the players, with the ball after player 1; priority (bit 2) puts the playfield and ball first.
 - **VBLANK** blanks the picture to colour 0.
 
@@ -26,8 +28,9 @@ As Stella 7.0 runs it:
 | `cc` | in | 1 | One colour clock |
 | `ce` | in | 1 | This colour clock ends a CPU cycle (with `cc`) |
 | `cs`, `addr`, `we`, `din` | in | 1, 6, 1, 8 | The cycle's access: writes by A5-A0 |
-| `dout` | out | 8 | Read data in bits 7-6 (0 so far); a system keeps its bus's last value in bits 5-0 |
+| `dout` | out | 8 | Read data by A3-A0 (below), in bits 7-6; a system keeps its bus's last value in bits 5-0 |
 | `rdy` | out | 1 | Low while WSYNC holds the CPU |
+| `fire_n` | in | 2 | INPT4's and INPT5's pins: player 0's and player 1's fire buttons, 0 pressed |
 | `pix` | out | 8 | The colour clock's colour value (bit 0 clear); 0 in horizontal blank and VBLANK |
 | `pix_on`, `x` | out | 1, 8 | It's one of the 160 pixels, and its column |
 | `line_end` | out | 1 | It was the line's last colour clock |
@@ -41,7 +44,7 @@ The picture outputs are registered: each describes the colour clock before.
 | Address | Name | |
 | --- | --- | --- |
 | `$00` | VSYNC | Bit 1 |
-| `$01` | VBLANK | Bit 1, a colour clock late |
+| `$01` | VBLANK | Bit 1, a colour clock late; bit 6 latches INPT4 and INPT5 |
 | `$02` | WSYNC | Holds the CPU to the line's end |
 | `$06`-`$09` | COLUP0, COLUP1, COLUPF, COLUBK | Colours, bits 7-1 |
 | `$0A` | CTRLPF | Bit 0 reflection, 1 score, 2 priority; bits 5-4 the ball's width |
@@ -58,6 +61,22 @@ The picture outputs are registered: each describes the colour clock before.
 | `$20`-`$24` | HMP0, HMP1, HMM0, HMM1, HMBL | Bits 7-4: the object's next move, -8 to 7 pixels right; 2 colour clocks late |
 | `$2A` | HMOVE | Moves the objects; 6 colour clocks late |
 | `$2B` | HMCLR | Sets every HM to 0; 2 colour clocks late |
+| `$2C` | CXCLR | Clears the collision latches |
+
+Reads, by A3-A0, in bits 7 and 6:
+
+| Address | Name | Bit 7, bit 6 |
+| --- | --- | --- |
+| `$0` | CXM0P | M0-P1, M0-P0 |
+| `$1` | CXM1P | M1-P0, M1-P1 |
+| `$2` | CXP0FB | P0-PF, P0-BL |
+| `$3` | CXP1FB | P1-PF, P1-BL |
+| `$4` | CXM0FB | M0-PF, M0-BL |
+| `$5` | CXM1FB | M1-PF, M1-BL |
+| `$6` | CXBLPF | BL-PF, 0 |
+| `$7` | CXPPMM | P0-P1, M0-M1 |
+| `$8`-`$B` | INPT0-INPT3 | 0 (no paddles yet), 0 |
+| `$C`, `$D` | INPT4, INPT5 | The fire button (1 up), 0 |
 
 ## Parameters
 
@@ -67,11 +86,11 @@ The picture outputs are registered: each describes the colour clock before.
 
 ## Save state
 
-The port follows [docs/conventions.md](../../../docs/conventions.md): 13 words so far, as packed at the end of the RTL: 0-4 the line counter, registers, the playfield's writes waiting to land and the registered picture outputs; 5-6 player 0 and 7-8 player 1 (`tia_player`'s two words); 9 the GRP, REFP, ENAM and ENABL writes waiting to land; 10 missile 0, 11 missile 1 and 12 the ball (a word each); 13 the blank, HMOVE and HM writes on their way and the movement clock; 14 the HM values and which objects are moving. The words will change as the other objects arrive.
+The port follows [docs/conventions.md](../../../docs/conventions.md): 13 words so far, as packed at the end of the RTL: 0-4 the line counter, registers, the playfield's writes waiting to land and the registered picture outputs; 5-6 player 0 and 7-8 player 1 (`tia_player`'s two words); 9 the GRP, REFP, ENAM and ENABL writes waiting to land; 10 missile 0, 11 missile 1 and 12 the ball (a word each); 13 the blank, HMOVE and HM writes on their way and the movement clock; 14 the HM values and which objects are moving; 15 the collision latches, the playfield's collision state and the fire buttons' latch. The words will change as the other objects arrive.
 
 ## Status
 
-In `systems/atari-2600`'s sim, its frames match Stella's for the `tia_colours`, `riot_ram`, `riot_timer`, `tia_playfield`, `tia_players`, `tia_missiles_ball` and `tia_hmove` test cartridges. `tia_playfield` moves writes to PF2, COLUBK, VBLANK and CTRLPF's reflection a cycle at a time, so it checks the colour clock each lands on; `tia_players` does the same with RESP0 for every NUSIZ, `tia_missiles_ball` with RESM0 and RESBL for every missile and ball width, in each priority mode, and `tia_hmove` with HMOVE itself, at every cycle of the line.
+In `systems/atari-2600`'s sim, its frames match Stella's for the `tia_colours`, `riot_ram`, `riot_timer`, `tia_playfield`, `tia_players`, `tia_missiles_ball`, `tia_hmove` and `tia_collisions` test cartridges. `tia_playfield` moves writes to PF2, COLUBK, VBLANK and CTRLPF's reflection a cycle at a time, so it checks the colour clock each lands on; `tia_players` does the same with RESP0 for every NUSIZ, `tia_missiles_ball` with RESM0 and RESBL for every missile and ball width, in each priority mode, `tia_hmove` with HMOVE itself, at every cycle of the line, and `tia_collisions` reads the latches and input ports after drawing chosen overlaps.
 
 **Where Stella and the chip part:** Stella skips drawing a line that follows two lines with no TIA writes that change anything (WSYNC doesn't count): it copies the line before and doesn't step the objects. A copy straddling the start of such a line then shows where it was on the line before, while the chip, and this core, step it on. A Python port of Stella's player logic, fed the core's writes, matches the core on such lines and Stella everywhere else. The core follows the chip, and the test cartridges write the TIA on every line they draw.
 

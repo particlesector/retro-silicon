@@ -12,6 +12,11 @@
 // of its movement steps, when the ball notes its counter. While the ball is still moving (`moving`), a
 // start on a regular tick takes its width from how far the counter has come since that step, mod 4
 // (Stella's "starfield").
+//
+// Collisions: `cv` is whether the ball counts as drawn for them, kept as Stella keeps it: set from `on`
+// at each tick, worked out again at the line's end (`last`), and when ENABL, VDELBL or the shuffle
+// changes whether it's enabled, which also asks the TIA to check collisions on the next colour clock
+// (`sched`).
 
 module tia_ball (
     input  logic       clk,
@@ -21,6 +26,7 @@ module tia_ball (
     input  logic       regular,    // the tick is a pixel's, not HMOVE's
     input  logic       moving,     // HMOVE is still moving the ball
     input  logic       mstep,      // an HMOVE movement step this colour clock
+    input  logic       last,       // this colour clock is the line's last
 
     input  logic       w_ctrlpf,
     input  logic [1:0] size,       // CTRLPF bits 5-4: width 1 << size
@@ -33,6 +39,8 @@ module tia_ball (
     input  logic       w_shuffle,  // GRP1 landed: the old enable takes the new
 
     output logic       on,
+    output logic       cv,         // drawn, for collisions
+    output logic       sched,      // whether it's enabled changed: check collisions next
 
     // Save state: one word, written while `cc` is low.
     input  logic        st_we,
@@ -47,11 +55,15 @@ module tia_ball (
     logic [1:0]        sz;
     logic              en_new, en_old, vdl;
     logic [3:0]        ew;         // the width while moving: 0, 1, 2, 4 or 8
-    logic [1:0]        last;       // the counter at the last movement step, mod 4
+    logic [1:0]        mlast;      // the counter at the last movement step, mod 4
+    logic              sig;        // shown at the last tick or line end, enabled or not
+    logic              cv_r, sched_r;
 
     wire signed [4:0] width = 5'sd1 <<< sz;
 
-    assign on = rendering && render >= 5'sd0 && (vdl ? en_old : en_new);
+    assign on    = rendering && render >= 5'sd0 && (vdl ? en_old : en_new);
+    assign cv    = cv_r;
+    assign sched = sched_r;
 
     always_ff @(posedge clk) begin
         if (rst) begin
@@ -63,7 +75,10 @@ module tia_ball (
             en_old    <= 1'b0;
             vdl       <= 1'b0;
             ew        <= 4'd1;
-            last      <= 2'd0;
+            mlast     <= 2'd0;
+            sig       <= 1'b0;
+            cv_r      <= 1'b0;
+            sched_r   <= 1'b0;
         end else if (cc) begin
             logic [7:0]        c;
             logic              r;
@@ -71,8 +86,9 @@ module tia_ball (
             logic [3:0]        e;
             logic [1:0]        l, delta;
             logic              star;
+            logic              sg, cvn, vd2, eo2;
             delta = 2'd0;
-            c = counter; r = rendering; rc = render; e = ew; l = last;
+            c = counter; r = rendering; rc = render; e = ew; l = mlast;
             star = moving && regular;
             if (mstep) l = c[1:0];
 
@@ -95,6 +111,14 @@ module tia_ball (
                 c = c == 8'd159 ? 8'd0 : c + 8'd1;
             end
 
+            // Collisions: the tick's, then the line's end, before this edge's writes.
+            sg  = tick ? rendering && render >= 5'sd0 : sig;
+            cvn = tick ? on : cv_r;
+            if (last) begin
+                sg  = r && rc >= 5'sd0;
+                cvn = sg && (vdl ? en_old : en_new);
+            end
+
             if (w_resbl) begin
                 c  = resp_count;
                 r  = 1'b1;
@@ -105,17 +129,37 @@ module tia_ball (
             rendering <= r;
             render    <= rc;
             ew        <= e;
-            last      <= l;
+            mlast     <= l;
             if (w_ctrlpf) sz <= size;
-            if (w_vdel) vdl <= vdel;
+
+            // VDELBL, then ENABL or the shuffle landing, changing whether the ball is enabled, recheck
+            // `cv`. ENABL and the shuffle never land on the same colour clock.
+            vd2 = w_vdel ? vdel : vdl;
+            eo2 = w_shuffle ? en_new : en_old;
+            sched_r <= 1'b0;
+            if (w_vdel && vdel != vdl) begin
+                cvn = sg && (vdel ? en_old : en_new);
+                sched_r <= 1'b1;
+            end
+            if (w_enabl && enabl != en_new && !vd2) begin
+                cvn = sg && enabl;
+                sched_r <= 1'b1;
+            end
+            if (w_shuffle && vd2 && eo2 != en_old) begin
+                cvn = sg && eo2;
+                sched_r <= 1'b1;
+            end
+            vdl    <= vd2;
+            en_old <= eo2;
             if (w_enabl) en_new <= enabl;
-            if (w_shuffle) en_old <= en_new;  // never on the clock ENABL lands
+            sig    <= sg;
+            cv_r   <= cvn;
         end else if (st_we) begin
-            {last, ew, vdl, en_old, en_new, sz, render, rendering, counter} <= st_wdata[24:0];
+            {sched_r, cv_r, sig, mlast, ew, vdl, en_old, en_new, sz, render, rendering, counter} <= st_wdata[27:0];
         end
     end
 
-    assign st_word = {7'd0, last, ew, vdl, en_old, en_new, sz, render, rendering, counter};
-    wire [6:0]  unused_st = st_wdata[31:25];
+    assign st_word = {4'd0, sched_r, cv_r, sig, mlast, ew, vdl, en_old, en_new, sz, render, rendering, counter};
+    wire [3:0]  unused_st = st_wdata[31:28];
 
 endmodule

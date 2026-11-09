@@ -3,8 +3,8 @@
 //
 // So far: the line (228 colour clocks: 68 of horizontal blank, then 160 pixels), VSYNC, VBLANK,
 // WSYNC, the background, the playfield with its colours, reflection, score mode and priority, the two
-// players (`tia_player`), the two missiles (`tia_missile`), the ball (`tia_ball`) and HMOVE. Collisions,
-// the input ports, RSYNC and sound come next.
+// players (`tia_player`), the two missiles (`tia_missile`), the ball (`tia_ball`), HMOVE, collisions and
+// the fire buttons' input ports. RSYNC, the paddles' ports and sound come next.
 //
 // Timing, as Stella 7.0 runs it:
 // - Each CPU cycle is 3 colour clocks; `ce` marks the colour clock that ends one, and the cycle's access
@@ -16,6 +16,12 @@
 //   so 0-15), and gets an extra tick on each step while the TIA is in horizontal blank. An HMOVE that
 //   lands in horizontal blank before colour clock 68 extends the blank by 8 colour clocks (the
 //   "comb"): those pixels are colour 0, and the objects don't tick on them.
+// - Collisions are checked on each picture colour clock, and in horizontal blank only on HMOVE's
+//   movement steps or the colour clock after an object's graphics or enable changed, all while
+//   VBLANK is off, from each object's collision state as Stella keeps it (`cv`; the playfield's ends
+//   with each line). A read sees this colour clock's check; CXCLR clears them after it.
+// - INPT4 and INPT5 read the fire buttons' pins (0 pressed); with VBLANK bit 6 set they latch a press
+//   until it's cleared. INPT0-3 read 0: no paddles yet (Stella's joystick leaves them unconnected).
 // - WSYNC holds `rdy` low from the write to the line's end, so the CPU's next read cycle completes as
 //   the first cycle of the next line (`cpu/6502` repeats a read cycle that ends with rdy low). A write
 //   in the cycle that ends the line doesn't hold it.
@@ -38,6 +44,7 @@ module tia #(
     input  logic [7:0]  din,
     output logic [7:0]  dout,    // bits 7-6; the bus keeps its last value in bits 5-0
     output logic        rdy,
+    input  logic [1:0]  fire_n,  // INPT4's and INPT5's pins: player 0's and player 1's fire, 0 pressed
 
     output logic [7:0]  pix,
     output logic        pix_on,
@@ -60,7 +67,7 @@ module tia #(
                            GRP0 = 6'h1B, GRP1 = 6'h1C, ENAM0 = 6'h1D, ENAM1 = 6'h1E, ENABL = 6'h1F,
                            HMP0 = 6'h20, HMP1 = 6'h21, HMM0 = 6'h22, HMM1 = 6'h23, HMBL = 6'h24,
                            VDELP0 = 6'h25, VDELP1 = 6'h26, VDELBL = 6'h27, RESMP0 = 6'h28, RESMP1 = 6'h29,
-                           HMOVE = 6'h2A, HMCLR = 6'h2B;
+                           HMOVE = 6'h2A, HMCLR = 6'h2B, CXCLR = 6'h2C;
 
     // ---- State ----
     logic [7:0]  hctr;                   // colour clock in the line, 0-227
@@ -135,7 +142,7 @@ module tia #(
     logic [7:0] grp0_new, grp1_new;
     logic       refp0_new, refp1_new;
 
-    logic        p0_on, p1_on;
+    logic        p0_on, p1_on, p0_cv, p1_cv, p0_sched, p1_sched;
     logic [7:0]  p0_pos, p1_pos;
     logic [2:0]  p0_div, p1_div;
     logic [31:0] p0_st0, p0_st1, p1_st0, p1_st1;
@@ -146,7 +153,7 @@ module tia #(
         .w_vdel(wr && addr == VDELP0), .vdel(din[0]),
         .w_grp(grp0_pend), .grp(grp0_new), .w_shuffle(grp1_pend),
         .w_refp(refp0_pend), .refp(refp0_new),
-        .on(p0_on), .pos(p0_pos), .div_o(p0_div),
+        .last, .on(p0_on), .pos(p0_pos), .div_o(p0_div), .cv(p0_cv), .sched(p0_sched),
         .st_we(SAVE_STATE && st_we && (st_addr == 4'd5 || st_addr == 4'd6)), .st_addr(st_addr == 4'd6),
         .st_wdata, .st_word0(p0_st0), .st_word1(p0_st1)
     );
@@ -157,7 +164,7 @@ module tia #(
         .w_vdel(wr && addr == VDELP1), .vdel(din[0]),
         .w_grp(grp1_pend), .grp(grp1_new), .w_shuffle(grp0_pend),
         .w_refp(refp1_pend), .refp(refp1_new),
-        .on(p1_on), .pos(p1_pos), .div_o(p1_div),
+        .last, .on(p1_on), .pos(p1_pos), .div_o(p1_div), .cv(p1_cv), .sched(p1_sched),
         .st_we(SAVE_STATE && st_we && (st_addr == 4'd7 || st_addr == 4'd8)), .st_addr(st_addr == 4'd8),
         .st_wdata, .st_word0(p1_st0), .st_word1(p1_st1)
     );
@@ -176,7 +183,7 @@ module tia #(
         resmp_pos = p >= back ? p - back : p + 8'd160 - back;
     endfunction
 
-    logic        m0_on, m1_on, bl_on;
+    logic        m0_on, m1_on, bl_on, m0_cv, m1_cv, bl_cv, m0_sched, m1_sched, bl_sched;
     logic [31:0] m0_st, m1_st, bl_st;
     tia_missile u_m0 (
         .clk, .rst, .cc, .tick(obj_tick[2]), .regular, .moving(moving_now[2]), .hc(hctr[1:0]),
@@ -184,7 +191,7 @@ module tia #(
         .w_resm(wr && addr == RESM0), .resp_count,
         .w_resmp(wr && addr == RESMP0), .resmp(din[1]), .pl_pos(resmp_pos(obj_tick[0], p0_pos, p0_div)),
         .w_enam(enam0_pend), .enam(enam0_new),
-        .on(m0_on),
+        .last, .on(m0_on), .cv(m0_cv), .sched(m0_sched),
         .st_we(SAVE_STATE && st_we && st_addr == 4'd10), .st_wdata, .st_word(m0_st)
     );
     tia_missile u_m1 (
@@ -193,7 +200,7 @@ module tia #(
         .w_resm(wr && addr == RESM1), .resp_count,
         .w_resmp(wr && addr == RESMP1), .resmp(din[1]), .pl_pos(resmp_pos(obj_tick[1], p1_pos, p1_div)),
         .w_enam(enam1_pend), .enam(enam1_new),
-        .on(m1_on),
+        .last, .on(m1_on), .cv(m1_cv), .sched(m1_sched),
         .st_we(SAVE_STATE && st_we && st_addr == 4'd11), .st_wdata, .st_word(m1_st)
     );
     tia_ball u_bl (
@@ -202,9 +209,36 @@ module tia #(
         .w_resbl(wr && addr == RESBL), .resp_count,
         .w_vdel(wr && addr == VDELBL), .vdel(din[0]),
         .w_enabl(enabl_pend), .enabl(enabl_new), .w_shuffle(grp1_pend),
-        .on(bl_on),
+        .last, .on(bl_on), .cv(bl_cv), .sched(bl_sched),
         .st_we(SAVE_STATE && st_we && st_addr == 4'd12), .st_wdata, .st_word(bl_st)
     );
+
+    // ---- Collisions ----
+    // Each object's collision state after this colour clock's tick, and the 15 pairs. A check happens
+    // on picture colour clocks, HMOVE's steps while something still moves, and the colour clock after
+    // an object asked for one, never under VBLANK.
+    logic        pf_cv;                  // the playfield's collision state
+    logic [14:0] cx;                     // the latches, by pair (below)
+    wire         pf_cvn = in_pic ? pf_bit_now : pf_cv;
+    wire         p0c = obj_tick[0] ? p0_on : p0_cv;
+    wire         p1c = obj_tick[1] ? p1_on : p1_cv;
+    wire         m0c = obj_tick[2] ? m0_on : m0_cv;
+    wire         m1c = obj_tick[3] ? m1_on : m1_cv;
+    wire         blc = obj_tick[4] ? bl_on : bl_cv;
+    wire         cx_check = !vblank_r && (regular || (mstep && |moving_now) ||
+                                          p0_sched || p1_sched || m0_sched || m1_sched || bl_sched);
+    // Bits: 14 M0-P1, 13 M0-P0, 12 M1-P0, 11 M1-P1, 10 P0-PF, 9 P0-BL, 8 P1-PF, 7 P1-BL, 6 M0-PF,
+    // 5 M0-BL, 4 M1-PF, 3 M1-BL, 2 BL-PF, 1 P0-P1, 0 M0-M1: CXM0P to CXPPMM's bits 7 and 6 in order.
+    wire  [14:0] cx_now = {15{cx_check}} & {m0c && p1c, m0c && p0c, m1c && p0c, m1c && p1c,
+                                            p0c && pf_cvn, p0c && blc, p1c && pf_cvn, p1c && blc,
+                                            m0c && pf_cvn, m0c && blc, m1c && pf_cvn, m1c && blc,
+                                            blc && pf_cvn, p0c && p1c, m0c && m1c};
+    wire  [14:0] cx_seen = cx | cx_now;
+
+    // ---- Input ports ----
+    logic       latch_mode;              // VBLANK bit 6
+    logic [1:0] latched;                 // 0: a press seen since latching began
+    wire  [1:0] inpt45 = latch_mode ? latched & fire_n : fire_n;
 
     // ---- The colour, by priority ----
     // Each missile takes its player's colour and place, the ball the playfield's. Normally player 0,
@@ -282,6 +316,10 @@ module tia #(
             moving      <= 5'd0;
             mactive     <= 1'b0;
             mclk        <= 5'd0;
+            pf_cv       <= 1'b0;
+            cx          <= 15'd0;
+            latch_mode  <= 1'b0;
+            latched     <= 2'b00;
             pix         <= 8'd0;
             pix_on      <= 1'b0;
             x           <= 8'd0;
@@ -324,6 +362,11 @@ module tia #(
                     hm[hmw_sel] <= hmw_val;
             end
 
+            // Collisions: this colour clock's check; the playfield's state ends with the line.
+            cx    <= cx_seen;
+            pf_cv <= last ? 1'b0 : pf_cvn;
+            if (latch_mode) latched <= latched & fire_n;
+
             // Writes waiting their clock land after it.
             grp0_pend  <= 1'b0;
             grp1_pend  <= 1'b0;
@@ -345,7 +388,13 @@ module tia #(
             if (wr)
                 case (addr)
                     VSYNC:  vsync_r <= din[1];
-                    VBLANK: begin vblank_new <= din[1]; vblank_pend <= 1'b1; end
+                    VBLANK: begin
+                        vblank_new  <= din[1];
+                        vblank_pend <= 1'b1;
+                        latch_mode  <= din[6];
+                        if (!din[6]) latched <= 2'b11;
+                    end
+                    CXCLR:  cx <= 15'd0;
                     WSYNC:  if (!last) wsync <= 1'b1;
                     COLUP0: colup0 <= din[7:1];
                     COLUP1: colup1 <= din[7:1];
@@ -384,6 +433,7 @@ module tia #(
                 4'd4: {line_end, x, pix_on, pix} <= st_wdata[17:0];
                 4'd13: {hmove_sr, hmw_sr, hmw_sel, hmw_val, mclk, mactive, ext, hblank} <= st_wdata[22:0];
                 4'd14: {moving, hm[4], hm[3], hm[2], hm[1], hm[0]} <= st_wdata[24:0];
+                4'd15: {latched, latch_mode, pf_cv, cx} <= st_wdata[18:0];
                 default: ;
             endcase
         end
@@ -392,7 +442,21 @@ module tia #(
     // The CPU repeats a read cycle that ends with rdy low, so the one that starts the next line is the
     // first to complete.
     assign rdy    = !wsync;
-    assign dout   = 8'd0;  // collisions and inputs come with the objects
+    // Reads by A3-A0: the collision latches (with this colour clock's check), then INPT0-5.
+    always_comb
+        case (addr[3:0])
+            4'h0: dout = {cx_seen[14:13], 6'd0};
+            4'h1: dout = {cx_seen[12:11], 6'd0};
+            4'h2: dout = {cx_seen[10:9], 6'd0};
+            4'h3: dout = {cx_seen[8:7], 6'd0};
+            4'h4: dout = {cx_seen[6:5], 6'd0};
+            4'h5: dout = {cx_seen[4:3], 6'd0};
+            4'h6: dout = {cx_seen[2], 7'd0};
+            4'h7: dout = {cx_seen[1:0], 6'd0};
+            4'hC: dout = {inpt45[0], 7'd0};
+            4'hD: dout = {inpt45[1], 7'd0};
+            default: dout = 8'd0;  // INPT0-3: no paddles yet
+        endcase
     assign vsync  = vsync_r;
     assign vblank = vblank_r;
 
@@ -417,6 +481,7 @@ module tia #(
                 4'd12: st_rdata <= bl_st;
                 4'd13: st_rdata <= {9'd0, hmove_sr, hmw_sr, hmw_sel, hmw_val, mclk, mactive, ext, hblank};
                 4'd14: st_rdata <= {7'd0, moving, hm[4], hm[3], hm[2], hm[1], hm[0]};
+                4'd15: st_rdata <= {13'd0, latched, latch_mode, pf_cv, cx};
                 default: st_rdata <= '0;
             endcase
     end else begin : g_no_st
