@@ -2,7 +2,7 @@
 
 The Atari 2600 (NTSC), being built: the 6507 (`cpu/6502` with decimal mode on and 13 address lines), the TIA (`video/tia`) and the RIOT (`io/riot-6532`) on one bus, with the cartridge outside the core.
 
-Module `atari2600`. **In progress** (the rig's milestone A4): the TIA has its line, sync, background, playfield, players, missiles, ball, HMOVE, collisions and the fire buttons so far, and the core runs only in the sim. The test shell, the boards, HDMI and sound come later.
+Module `atari2600`. **In progress** (the rig's milestone A4): the TIA has its line, sync, background, playfield, players, missiles, ball, HMOVE, collisions, the fire buttons and RSYNC so far, and the core runs only in the sim. The test shell, the boards, HDMI and sound come later.
 
 ## The bus
 
@@ -29,8 +29,8 @@ A CPU cycle is 3 colour clocks (`cc`), so `cc` must come at least 2 clocks apart
 
 ## Tests
 
-`a2600_frames_test` runs each cartridge in `harness/golden/a2600_frames_crc32.txt` from power-up, cuts its frames from the TIA's picture as Stella's frame manager does (a frame ends when VSYNC goes off; the picture starts 23 lines later and runs 228 lines; with no VSYNC for 50 lines it runs on), and checks frame N's CRC against Stella's. `RS_A2600_DUMP=DIR` writes each frame as `<id>.tia`, as `stella-frames --dump` does, to compare them; `RS_A2600_TRACE=DIR` writes every TIA write as `<colour clock> <register> <value>` in `<id>.trace`.
+`a2600_frames_test` runs each cartridge in `harness/golden/a2600_frames_crc32.txt` from power-up, cuts its frames from the TIA's picture as Stella's frame manager does (a frame ends when VSYNC goes off, or after 50 lines more than a frame's without it; the picture starts 23 lines later and runs 228 lines; a line's columns the TIA doesn't draw are black), and checks frame N's CRC against Stella's. `RS_A2600_DUMP=DIR` writes each frame as `<id>.tia`, as `stella-frames --dump` does, to compare them; `RS_A2600_TRACE=DIR` writes every TIA write as `<colour clock> <register> <value>` in `<id>.trace`.
 
 ## Status
 
-In the sim, all eight test cartridges match Stella's frames: `tia_colours`, `riot_ram`, `riot_timer`, `tia_playfield`, `tia_players`, `tia_missiles_ball`, `tia_hmove` and `tia_collisions`.
+In the sim, all nine test cartridges match Stella's frames: `tia_colours`, `riot_ram`, `riot_timer`, `tia_playfield`, `tia_players`, `tia_missiles_ball`, `tia_hmove`, `tia_collisions` and `tia_rsync`.

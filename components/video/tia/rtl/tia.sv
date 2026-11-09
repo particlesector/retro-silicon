@@ -4,7 +4,7 @@
 // So far: the line (228 colour clocks: 68 of horizontal blank, then 160 pixels), VSYNC, VBLANK,
 // WSYNC, the background, the playfield with its colours, reflection, score mode and priority, the two
 // players (`tia_player`), the two missiles (`tia_missile`), the ball (`tia_ball`), HMOVE, collisions and
-// the fire buttons' input ports. RSYNC, the paddles' ports and sound come next.
+// the fire buttons' input ports, and RSYNC. The paddles' ports and sound come next.
 //
 // Timing, as Stella 7.0 runs it:
 // - Each CPU cycle is 3 colour clocks; `ce` marks the colour clock that ends one, and the cycle's access
@@ -20,6 +20,8 @@
 //   movement steps or the colour clock after an object's graphics or enable changed, all while
 //   VBLANK is off, from each object's collision state as Stella keeps it (`cv`; the playfield's ends
 //   with each line). A read sees this colour clock's check; CXCLR clears them after it.
+// - RSYNC sets the line's counter to 225, so the line ends 3 colour clocks later; any of those in the
+//   picture draw on from the column the line had reached. A line's columns it doesn't draw are black.
 // - INPT4 and INPT5 read the fire buttons' pins (0 pressed); with VBLANK bit 6 set they latch a press
 //   until it's cleared. INPT0-3 read 0: no paddles yet (Stella's joystick leaves them unconnected).
 // - WSYNC holds `rdy` low from the write to the line's end, so the CPU's next read cycle completes as
@@ -27,8 +29,8 @@
 //   in the cycle that ends the line doesn't hold it.
 // - The playfield takes a new bit every 4 pixels, and its reflection only at pixels 0 and 79.
 // - VBLANK blanks the picture to colour 0.
-// `pix` is each colour clock's colour value (bit 0 clear), `pix_on` whether it's one of the 160 pixels
-// (`x` its column), registered: they describe the colour clock before.
+// `pix` is each colour clock's colour value (bit 0 clear), `pix_on` whether it draws one of the 160
+// pixels (`x` its column), registered: they describe the colour clock before.
 
 module tia #(
     parameter bit SAVE_STATE = 1'b1  // 0 leaves out the save-state port's logic
@@ -59,7 +61,7 @@ module tia #(
     input  logic [31:0] st_wdata
 );
 
-    localparam logic [5:0] VSYNC = 6'h00, VBLANK = 6'h01, WSYNC = 6'h02,
+    localparam logic [5:0] VSYNC = 6'h00, VBLANK = 6'h01, WSYNC = 6'h02, RSYNC = 6'h03,
                            COLUP0 = 6'h06, COLUP1 = 6'h07, COLUPF = 6'h08, COLUBK = 6'h09,
                            CTRLPF = 6'h0A, PF0 = 6'h0D, PF1 = 6'h0E, PF2 = 6'h0F,
                            NUSIZ0 = 6'h04, NUSIZ1 = 6'h05, REFP0 = 6'h0B, REFP1 = 6'h0C,
@@ -85,8 +87,12 @@ module tia #(
     logic        pf_bit;                 // the playfield bit being drawn
 
     // ---- This colour clock ----
+    logic [7:0] rs_delta;                // after RSYNC: how far the counter jumped ahead
+    logic       pf_tick;
     wire        in_pic = hctr >= 8'd68;
-    wire  [7:0] xc     = hctr - 8'd68;
+    wire  [7:0] xc     = hctr - 8'd68 - rs_delta;
+    // The playfield steps, and a pixel is drawn, on picture colour clocks and HMOVE's comb (black);
+    // not on the last 3 of a line RSYNC cut short in the blank.
     wire        last   = hctr == 8'd227;
 
     // The playfield's 20 bits, by column: bit n of `pf` is the playfield's nth 4-pixel pf_cell.
@@ -100,7 +106,7 @@ module tia #(
         else
             pf_cell = 5'({2'd0, xc[7:2]} - 8'd20);
     end
-    wire        pf_bit_now = (in_pic && xc[1:0] == 2'd0) ? pf[pf_cell] : pf_bit;
+    wire        pf_bit_now = (pf_tick && xc[1:0] == 2'd0) ? pf[pf_cell] : pf_bit;
 
     wire wr = ce && cs && we;
 
@@ -130,6 +136,7 @@ module tia #(
         end
     wire  [4:0] obj_tick = {5{regular}} | extra;
     wire        hblank_next = last ? 1'b1 : ((hctr == 8'd67 && !ext) || hctr == 8'd75) ? 1'b0 : hblank;
+    assign      pf_tick     = in_pic && (!hblank || hctr < 8'd76);
 
     // ---- Players ----
     // Writes taken after this colour clock see the TIA as it will be for the next.
@@ -219,7 +226,7 @@ module tia #(
     // an object asked for one, never under VBLANK.
     logic        pf_cv;                  // the playfield's collision state
     logic [14:0] cx;                     // the latches, by pair (below)
-    wire         pf_cvn = in_pic ? pf_bit_now : pf_cv;
+    wire         pf_cvn = pf_tick ? pf_bit_now : pf_cv;
     wire         p0c = obj_tick[0] ? p0_on : p0_cv;
     wire         p1c = obj_tick[1] ? p1_on : p1_cv;
     wire         m0c = obj_tick[2] ? m0_on : m0_cv;
@@ -317,6 +324,7 @@ module tia #(
             mactive     <= 1'b0;
             mclk        <= 5'd0;
             pf_cv       <= 1'b0;
+            rs_delta    <= 8'd0;
             cx          <= 15'd0;
             latch_mode  <= 1'b0;
             latched     <= 2'b00;
@@ -327,15 +335,16 @@ module tia #(
         end else if (cc) begin
             // Draw this colour clock.
             pix      <= {(in_pic && !hblank && !vblank_r) ? col : 7'd0, 1'b0};
-            pix_on   <= in_pic;
+            pix_on   <= pf_tick;
             x        <= xc;
             line_end <= last;
-            if (in_pic) begin
+            if (pf_tick) begin
                 pf_bit    <= pf_bit_now;
                 reflect_l <= refl_now;
             end
             hctr <= last ? 8'd0 : hctr + 8'd1;
             if (last) wsync <= 1'b0;
+            if (last) rs_delta <= 8'd0;
 
             // HMOVE: this colour clock's movement step, unless an HMOVE lands for the next, which
             // restarts the movement and, before colour clock 68, extends the blank.
@@ -396,6 +405,7 @@ module tia #(
                     end
                     CXCLR:  cx <= 15'd0;
                     WSYNC:  if (!last) wsync <= 1'b1;
+                    RSYNC:  begin hctr <= 8'd225; rs_delta <= 8'd225 - hctr_next; end
                     COLUP0: colup0 <= din[7:1];
                     COLUP1: colup1 <= din[7:1];
                     COLUPF: colupf <= din[7:1];
@@ -430,7 +440,7 @@ module tia #(
                 4'd1: {colubk, colupf, colup1, colup0} <= st_wdata[27:0];
                 4'd2: pf <= st_wdata[19:0];
                 4'd3: pf_new <= st_wdata[19:0];
-                4'd4: {line_end, x, pix_on, pix} <= st_wdata[17:0];
+                4'd4: {rs_delta, line_end, x, pix_on, pix} <= st_wdata[25:0];
                 4'd13: {hmove_sr, hmw_sr, hmw_sel, hmw_val, mclk, mactive, ext, hblank} <= st_wdata[22:0];
                 4'd14: {moving, hm[4], hm[3], hm[2], hm[1], hm[0]} <= st_wdata[24:0];
                 4'd15: {latched, latch_mode, pf_cv, cx} <= st_wdata[18:0];
@@ -468,7 +478,7 @@ module tia #(
                 4'd1: st_rdata <= {4'd0, colubk, colupf, colup1, colup0};
                 4'd2: st_rdata <= {12'd0, pf};
                 4'd3: st_rdata <= {12'd0, pf_new};
-                4'd4: st_rdata <= {14'd0, line_end, x, pix_on, pix};
+                4'd4: st_rdata <= {6'd0, rs_delta, line_end, x, pix_on, pix};
                 4'd5: st_rdata <= p0_st0;
                 4'd6: st_rdata <= p0_st1;
                 4'd7: st_rdata <= p1_st0;

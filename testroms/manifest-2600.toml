@@ -104,3 +104,14 @@ covers = "The collision latches and CXCLR (every pair; a chosen few; and collisi
 check = "frame"
 frames = 30
 stella = "Results (show.inc): 0-7 $C0 but $80 at 6; 8-15 00 80 80 C0 00 00 80 00; 16-23 0 but $80 at 23; 24-31 08 08 08 08 88 88 8C 8D"
+
+[[rom]]
+id = "tia_rsync"
+source = "a2600-carts"
+path = "tia_rsync.bin"
+sha256 = "8116510559b4c0253ab94fb530183467c058a837f21444f616a61222fda1962c"
+needs = "cpu, tia"
+covers = "RSYNC written at every cycle of the line, from the blank to the line's last colour clock: the cut line's last 3 colour clocks, its black end, and the objects' positions after the missed ticks; frames of 351 lines, so Stella's frame manager ends some (frame 30 among them) by its line count, without VSYNC"
+check = "frame"
+frames = 30
+stella = "Over a green and grey striped playfield, every third line cut short: whole black lines in the first three bands, then a black wedge growing from the right as the cut comes later; the red and blue objects jump right after each cut"
