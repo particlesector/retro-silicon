@@ -1,7 +1,11 @@
 // SPDX-License-Identifier: Apache-2.0
 // The Atari 2600 core against Stella's golden frames (harness/golden/a2600_frames_crc32.txt): each test
 // cartridge runs from power-up, its frames are cut from the TIA's picture as Stella's frame manager cuts
-// them, and frame N's CRC must match. Skipped when the cartridges aren't fetched (testroms/fetch.py).
+// them, and frame N's CRC must match. A cartridge in harness/golden/a2600_audio_crc32.txt must also
+// match Stella's sound: each sample's two channel sums (each channel's level summed over the colour
+// clocks since the last sample, a sample at each of the TIA's phase 1 clocks, as Stella takes them),
+// as two little-endian 16-bit words, and the CRC of the first N samples from power-up. Skipped when
+// the cartridges aren't fetched (testroms/fetch.py).
 #include <catch2/catch_test_macros.hpp>
 #include <zlib.h>
 
@@ -104,6 +108,29 @@ struct Golden {
     uint32_t crc;
 };
 
+struct AudioGolden {
+    std::string id;
+    size_t samples;
+    uint32_t crc;
+};
+
+// harness/golden/a2600_audio_crc32.txt: id, samples, CRC-32 of their sums, path.
+std::vector<AudioGolden> audio_golden() {
+    std::ifstream f(RS_A2600_AUDIO_GOLDEN);
+    std::vector<AudioGolden> out;
+    std::string line;
+    while (std::getline(f, line)) {
+        if (line.empty() || line[0] == '#') continue;
+        std::istringstream s(line);
+        AudioGolden g;
+        std::string crc, path;
+        s >> g.id >> g.samples >> crc >> path;
+        g.crc = static_cast<uint32_t>(std::stoul(crc, nullptr, 16));
+        out.push_back(g);
+    }
+    return out;
+}
+
 std::vector<Golden> golden() {
     std::ifstream f(RS_A2600_GOLDEN);
     std::vector<Golden> out;
@@ -120,10 +147,13 @@ std::vector<Golden> golden() {
     return out;
 }
 
-// Runs the cartridge to frame `frames` and returns that frame's CRC. With RS_A2600_DUMP set to a
-// folder, also writes the frame there as <dump_name>.tia (160 x 228 colour values, as stella-frames
-// --dump writes them).
-uint32_t run(const std::vector<uint8_t>& rom, int frames, const std::string& dump_name = "") {
+// Runs the cartridge to frame `frames` and returns that frame's CRC, and in `sound` the samples'
+// sums. With RS_A2600_DUMP set to a folder, also writes the frame there as <dump_name>.tia (160 x 228
+// colour values, as stella-frames --dump writes them) and the sound as <dump_name>.aud, and every
+// colour clock's levels as <dump_name>.lvl (a byte each: aud0 | aud1 << 4) and VSYNC as <dump_name>.vs
+// (a byte each), to compare with a transistor-level TIA's pins.
+uint32_t run(const std::vector<uint8_t>& rom, int frames, std::vector<uint8_t>& sound,
+             const std::string& dump_name = "") {
     Va2600 m;
     FrameCutter cut;
     m.joy = 0xFF;
@@ -145,6 +175,9 @@ uint32_t run(const std::vector<uint8_t>& rom, int frames, const std::string& dum
     if (const char* dir = std::getenv("RS_A2600_TRACE"); dir && !dump_name.empty())
         trace.open(std::string(dir) + "/" + dump_name + ".trace");
     uint64_t colour_clock = 0;
+    uint32_t sum0 = 0, sum1 = 0;
+    std::vector<uint8_t> levels, vsyncs;
+    const char* dump_dir = std::getenv("RS_A2600_DUMP");
     // A colour clock every 2 clocks.
     for (uint64_t clock = 0; cut.frames < frames; clock++) {
         const bool cc = clock & 1;
@@ -163,6 +196,16 @@ uint32_t run(const std::vector<uint8_t>& rom, int frames, const std::string& dum
         // The colour clock just drawn, then the line's end, then a VSYNC write (as Stella orders them).
         // A frame ends at VSYNC, or at a line's end when VSYNC is overdue.
         const int before = cut.frames;
+        if (dump_dir) levels.push_back(static_cast<uint8_t>(m.aud0 | m.aud1 << 4)), vsyncs.push_back(m.vsync);
+        sum0 += m.aud0;
+        sum1 += m.aud1;
+        if (m.aud_tick) {
+            for (uint32_t v : {sum0, sum1}) {
+                sound.push_back(static_cast<uint8_t>(v));
+                sound.push_back(static_cast<uint8_t>(v >> 8));
+            }
+            sum0 = sum1 = 0;
+        }
         if (m.pix_on) cut.pixel(m.pix_x, m.pix);
         if (m.line_end) cut.line_end();
         cut.vsync(m.vsync);
@@ -171,6 +214,12 @@ uint32_t run(const std::vector<uint8_t>& rom, int frames, const std::string& dum
             if (const char* dir = std::getenv("RS_A2600_DUMP"); dir && !dump_name.empty()) {
                 std::ofstream out(std::string(dir) + "/" + dump_name + ".tia", std::ios::binary);
                 out.write(reinterpret_cast<const char*>(cut.buffer.data()), static_cast<std::streamsize>(cut.buffer.size()));
+                std::ofstream aud(std::string(dir) + "/" + dump_name + ".aud", std::ios::binary);
+                aud.write(reinterpret_cast<const char*>(sound.data()), static_cast<std::streamsize>(sound.size()));
+                std::ofstream lvl(std::string(dir) + "/" + dump_name + ".lvl", std::ios::binary);
+                lvl.write(reinterpret_cast<const char*>(levels.data()), static_cast<std::streamsize>(levels.size()));
+                std::ofstream vs(std::string(dir) + "/" + dump_name + ".vs", std::ios::binary);
+                vs.write(reinterpret_cast<const char*>(vsyncs.data()), static_cast<std::streamsize>(vsyncs.size()));
             }
         }
         REQUIRE(clock < 4000000000ULL);
@@ -180,7 +229,8 @@ uint32_t run(const std::vector<uint8_t>& rom, int frames, const std::string& dum
 
 }  // namespace
 
-TEST_CASE("atari2600 test cartridges match Stella's frames") {
+TEST_CASE("atari2600 test cartridges match Stella's frames and sound") {
+    const std::vector<AudioGolden> sounds = audio_golden();
     for (const Golden& g : golden()) {
         const char* roms = std::getenv("RS_TESTROMS");
         const std::string path = std::string(roms ? roms : RS_TESTROMS) + "/" + g.path;
@@ -192,6 +242,14 @@ TEST_CASE("atari2600 test cartridges match Stella's frames") {
         std::vector<uint8_t> rom((std::istreambuf_iterator<char>(f)), {});
         INFO(g.id);
         REQUIRE((rom.size() == 2048 || rom.size() == 4096));
-        CHECK(run(rom, g.frames, g.id) == g.crc);
+        std::vector<uint8_t> sound;
+        CHECK(run(rom, g.frames, sound, g.id) == g.crc);
+        for (const AudioGolden& a : sounds) {
+            if (a.id != g.id) continue;
+            INFO("sound, " << sound.size() / 4 << " samples");
+            REQUIRE(sound.size() >= 4 * a.samples);
+            const auto n = static_cast<uInt>(4 * a.samples);
+            CHECK(static_cast<uint32_t>(crc32(crc32(0, nullptr, 0), sound.data(), n)) == a.crc);
+        }
     }
 }

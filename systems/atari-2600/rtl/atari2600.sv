@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 // The Atari 2600 (NTSC): the 6507 (`cpu/6502` with decimal mode, 13 address lines), the TIA
-// (`video/tia`) and the RIOT (`io/riot-6532`) on one bus, with the cartridge outside.
+// (`video/tia`, picture and sound) and the RIOT (`io/riot-6532`) on one bus, with the cartridge outside.
 //
 // One colour clock per `cc`; a CPU cycle is 3 of them, so `cc` must come at least 2 clocks apart for
 // the RIOT's registered read. The cartridge sees the CPU's address on `cart_addr` while `cart_sel` is
@@ -34,6 +34,9 @@ module atari2600 #(
     output logic        line_end,
     output logic        vsync,
     output logic        vblank,
+    output logic [3:0]  aud0,        // the TIA's sound: each channel's level, and Stella's sample points
+    output logic [3:0]  aud1,
+    output logic        aud_tick,
 
     output logic        cpu_sync,
     output logic [15:0] cpu_pc,
@@ -78,8 +81,8 @@ module atari2600 #(
         .clk, .rst, .cc, .ce,
         .cs(sel_tia), .addr(we ? addr[5:0] : {2'b00, addr[3:0]}), .we, .din(cpu_dout),
         .dout(tia_dout), .rdy, .fire_n,
-        .pix, .pix_on, .x(pix_x), .line_end, .vsync, .vblank,
-        .st_addr(4'd0), .st_rdata(tia_st), .st_we(1'b0), .st_wdata(32'd0)
+        .pix, .pix_on, .x(pix_x), .line_end, .vsync, .vblank, .aud0, .aud1, .aud_tick,
+        .st_addr(5'd0), .st_rdata(tia_st), .st_we(1'b0), .st_wdata(32'd0)
     );
 
     // ---- RIOT ----

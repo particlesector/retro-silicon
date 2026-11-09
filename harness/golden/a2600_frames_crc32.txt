@@ -13,3 +13,4 @@ tia_collisions 30 0xf8fb443f frame - a2600-carts/tia_collisions.bin
 tia_rsync 30 0x40c6ee03 frame - a2600-carts/tia_rsync.bin
 # tia_resmp: not Stella's frame (0x4153eb84): Gopher2600 0.57.2's frame, in which the missile moves only after the windows covering the reset point, and Stella's after every window; the TIA's transistor-level netlist moves it after the same windows, give or take the one at each end of the range, where it lands writes a colour clock earlier than both emulators
 tia_resmp 30 0x0f5e4ecd frame - a2600-carts/tia_resmp.bin
+tia_audio 108 0x0091e4e4 frame - a2600-carts/tia_audio.bin
