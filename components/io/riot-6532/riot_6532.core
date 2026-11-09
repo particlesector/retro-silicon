@@ -1,0 +1,30 @@
+CAPI=2:
+# SPDX-License-Identifier: Apache-2.0
+name: retro-silicon:io:riot-6532:0.1.0
+description: MOS 6532 RIOT, 128 bytes of RAM, two I/O ports and the interval timer, cycle-exact
+
+filesets:
+  rtl:
+    files:
+      - rtl/riot_6532.sv
+    file_type: systemVerilogSource
+
+targets:
+  default: &default
+    filesets: [rtl]
+    toplevel: riot_6532
+  lint:
+    <<: *default
+    default_tool: verilator
+    parameters: [SAVE_STATE]
+    tools:
+      verilator:
+        mode: lint-only
+        verilator_options: [-Wall]
+
+parameters:
+  SAVE_STATE:
+    datatype: bool
+    default: true
+    paramtype: vlogparam
+    description: 0 leaves out the save-state port's logic
