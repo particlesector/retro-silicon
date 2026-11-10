@@ -16,16 +16,19 @@
 #include "rig/shell.hpp"
 #include "rig/sim_systems.hpp"
 
-TEST_CASE("a2600_sys: the test cartridges' golden frames and sound through the shell") {
+namespace {
+
+// One cartridge of a2600_frames_crc32.txt through the shell, as rig-run --test a2600 runs it.
+void matches_stella(const std::string& id) {
     const auto paddles = rig::a2600::load_paddles(RS_A2600_PADDLES);
     const auto sounds = rig::a2600::load_audio(RS_A2600_AUDIO_GOLDEN);
     const char* roms = std::getenv("RS_TESTROMS");
     for (const auto& g : rig::a2600::load_golden(RS_A2600_GOLDEN)) {
+        if (g.id != id) continue;
         const std::string path = std::string(roms ? roms : RS_TESTROMS) + "/" + g.path;
         std::ifstream f(path, std::ios::binary);
         if (!f) {
-            WARN("skipped " << g.id << ": no " << path);
-            continue;
+            SKIP("no " << path);
         }
         std::vector<uint8_t> rom((std::istreambuf_iterator<char>(f)), {});
         auto link = rig::make_a2600_sim();
@@ -35,9 +38,40 @@ TEST_CASE("a2600_sys: the test cartridges' golden frames and sound through the s
                                        p == paddles.end() ? rig::a2600::kNoPaddles : p->second,
                                        s == sounds.end() ? std::nullopt : std::make_optional(s->second),
                                        RS_A2600_BUILD_ID);
-        INFO(g.id << ": " << r.detail << " (" << r.notes << ")");
+        INFO(r.detail << " (" << r.notes << ")");
         CHECK(r.passed);
+        return;
     }
+    FAIL(id << " isn't in a2600_frames_crc32.txt");
+}
+
+const std::vector<std::string> kCarts = {
+    "tia_colours", "riot_ram", "riot_timer", "tia_playfield", "tia_players", "tia_missiles_ball",
+    "tia_hmove", "tia_collisions", "tia_rsync", "tia_resmp", "tia_audio", "tia_paddles",
+};
+
+} // namespace
+
+#define MATCHES_STELLA(id) \
+    TEST_CASE(id " passes in the sim and its frame matches Stella's") { matches_stella(id); }
+
+MATCHES_STELLA("tia_colours")
+MATCHES_STELLA("riot_ram")
+MATCHES_STELLA("riot_timer")
+MATCHES_STELLA("tia_playfield")
+MATCHES_STELLA("tia_players")
+MATCHES_STELLA("tia_missiles_ball")
+MATCHES_STELLA("tia_hmove")
+MATCHES_STELLA("tia_collisions")
+MATCHES_STELLA("tia_rsync")
+MATCHES_STELLA("tia_resmp")
+MATCHES_STELLA("tia_audio")
+MATCHES_STELLA("tia_paddles")
+
+TEST_CASE("a2600_sys: every cartridge of a2600_frames_crc32.txt has its test case") {
+    std::vector<std::string> ids;
+    for (const auto& g : rig::a2600::load_golden(RS_A2600_GOLDEN)) ids.push_back(g.id);
+    CHECK(ids == kCarts);
 }
 
 TEST_CASE("a2600_sys: the frame buffer holds the golden frame, and a reset clears it") {

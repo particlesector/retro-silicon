@@ -1,18 +1,24 @@
 CAPI=2:
 # SPDX-License-Identifier: Apache-2.0
 name: retro-silicon:system:atari-2600:0.1.0
-description: The Atari 2600 - the 6507, the TIA (picture and sound), the RIOT and the paddles' inputs - with the cartridge outside
+description: The Atari 2600 - the 6507, the TIA (picture and sound), the RIOT and the paddles' inputs - with the cartridge outside, and a2600_sys, the system under the test shell
 
 filesets:
   rtl:
     files:
       - rtl/atari2600.sv
+      - rtl/a2600_frame.sv
+      - rtl/a2600_sys.sv
     file_type: systemVerilogSource
     depend:
       - retro-silicon:cpu:6502
       - retro-silicon:video:tia
       - retro-silicon:io:riot-6532
       - retro-silicon:io:paddles
+      - retro-silicon:common:crc32
+      - retro-silicon:common:clock-enable
+      - retro-silicon:common:por
+      - retro-silicon:debug:test-shell
 
 targets:
   default: &default
