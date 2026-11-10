@@ -52,7 +52,7 @@ Colour clocks come at `CC_NUM`/`CC_DEN` of the clock (`common/clock-enable`), NT
 | `0x01000000` + `00` | 1 | Control: bit 0 run, bit 1 hold the system in reset (power-up: reset held) |
 | `04` | 4 | Stop once this many CPU cycles have run since reset; 0 never |
 | `08` | 4 | CPU cycles since reset (read-only) |
-| `0C` | 1 | Status (read-only): bit 0 stopped at a limit, bit 1 running, bit 2 a frame's CRC is valid, bit 3 the reset's clear is running |
+| `0C` | 1 | Status (read-only): bit 0 stopped at a limit, bit 1 running, bit 2 a frame's CRC is valid, bit 3 the reset's clear is running, bit 4 the video CRC asked for has come |
 | `10` | 4 | Stop once this many frames have ended since reset; 0 never |
 | `14` | 4 | Frames ended since reset (read-only) |
 | `18` | 4 | CRC-32 of frame `1C` (read-only): its 160 x 228 colour values, line by line |
@@ -64,6 +64,13 @@ Colour clocks come at `CC_NUM`/`CC_DEN` of the clock (`common/clock-enable`), NT
 | `2E` | 1 | Bits 1-0: the fire buttons, INPT5 and INPT4 (0 pressed; power-up `3`) |
 | `2F` | 1 | Bits 3-0: a paddle in INPT3-0 |
 | `30` | 4 | Paddle i's knob in bits 8i+7:8i |
+| `34` | 1 | Video: bit 0 keep pace with the display; write bit 1 to take the video CRC (read: bit 1 still armed) |
+| `36` | 1 | Bit 0: the video CRC's display frame showed its frame whole (read-only) |
+| `38` | 4 | The video CRC is of the display frame showing frame `38` + 1 |
+| `3C` | 4 | The video CRC (read-only); status bit 4 says it has come |
+| `40`, `42`, `44` | 2 each | Display frames whose frame started on request, lines late, lines overwritten before they were shown (read-only) |
+| `48` | 4 | CRC-32 of every 48 kHz sample made since reset, 16 bits little-endian (read-only) |
+| `4C` | 4 | How many (read-only) |
 | `0x05000000` | 36,480 | The frame buffer (read-only): y x 160 + x |
 
 LEDs (active low): `led[0]` a corrupt command frame, `led[1]` a stalled one, `led[3]` running, `led[4]` stopped at a limit, `led[5]` the heartbeat.
@@ -73,15 +80,28 @@ LEDs (active low): `led[0]` a corrupt command frame, `led[1]` a stalled one, `le
 | `CLKS_PER_BIT`, `IDLE_CLKS`, `BUILD_ID` | 18, 270,000, 0 | The test shell's |
 | `CC_NUM`, `CC_DEN` | 35, 264 | Colour clocks per `CC_DEN` clocks: at most 1 in 6 |
 | `TIA_SCORE_GLITCH` | 0 | `atari2600`'s |
+| `VIDEO` | 0 | 1: the picture and sound on HDMI (`a2600_video`), on `pclk` |
 
-The Tang Nano 20K's `a2600` bitstream (`boards/tang-nano-20k`) is `a2600_sys` on its 27 MHz oscillator and the UART pins of `uart_echo.cst`.
+The Tang Nano 20K's `a2600` bitstream (`boards/tang-nano-20k`) is `a2600_sys` with `VIDEO` (`rtl/a2600_top.sv`), on the NES's clocks: 46.40625 MHz, 31 clocks a bit, colour clocks at 7/89 of it (3.64986 MHz, 2% fast of NTSC's), and 74.25 MHz pixels.
+
+## HDMI: `a2600_video`
+
+With `VIDEO`, `a2600_sys` shows the frames on HDMI at 720p with their sound, as `systems/nes`'s `nes_video` does the NES's:
+
+- **The picture** is the frame as Stella cuts it, each of its 160 x 228 pixels 6 display pixels wide and 3 lines high (960 x 684, the shape a pixel has on a TV), from (160, 18), black around it. The colours are `video/tia`'s `tia_rgb`, from a model of the TIA's NTSC signal (its README).
+- **The lines** come through a ring of 32 in block RAM, written as `a2600_frame` writes its frame buffer (the pixels drawn and the line's clearing), so a line is in the ring as it is in the buffer when `a2600_frame` finishes it. A frame that ends before its 228 lines shows the rest black, where the frame buffer could keep a line's old pixels (above): the golden cartridges' frames don't.
+- **Pacing:** with pacing on (register `34`) the system waits at each frame's end until the display asks for the next, at the start of its line 690, so each display frame shows one frame whole. The wait is a stop between colour clocks, so it changes nothing the system does. At 2% fast, a frame of 262 lines takes 98.2% of a display frame and draws its lines a little faster than the display shows them, at most 19 ahead, which the ring holds; a frame over 266 lines misses its request, and the display shows black for one frame. The display checks each line as it starts showing it: a line that hasn't come is late, one 28 or more behind the system's is overwritten; both are drawn black and counted (registers `42` and `44`), and neither moves in a working system. A frame whose system wasn't waiting for the request is drawn black.
+- **The sound:** each CPU cycle the two channels' levels, summed, go into `audio/resampler` at 800 samples per 19,912 cycles (a frame of 262 lines to a display frame), to 48 kHz 16-bit PCM, the same on both HDMI channels.
+- **The video CRC** is `nes_video`'s: the TMDS symbols of a whole display frame, the data islands' packet symbols as 0 (which line carries a sample depends on its crossing between clocks).
 
 ## Tests
 
 `a2600_frames_test` runs each cartridge in `harness/golden/a2600_frames_crc32.txt` from power-up, cuts its frames from the TIA's picture as Stella's frame manager does (a frame ends when VSYNC goes off, or after 50 lines more than a frame's without it; the picture starts 23 lines later and runs 228 lines; a line's columns the TIA doesn't draw are black), and checks frame N's CRC against Stella's. A cartridge in `harness/golden/a2600_audio_crc32.txt` must also match Stella's sound: each sample is the two channels' levels summed over the colour clocks since the last `aud_tick`, as two little-endian 16-bit words, and the CRC-32 of the first N from power-up must match (with `RS_A2600_DUMP`, written as `<id>.aud`, with every colour clock's levels as `<id>.lvl`, a byte each, `aud0 | aud1 << 4`, and VSYNC as `<id>.vs`, to compare with a transistor-level TIA). A cartridge in `harness/golden/a2600_paddles.txt` gets the paddles Stella plugs in for it, each knob where Stella has it; the others have none, as Stella gives a joystick game. `a2600_score_glitch_test` is the same test with `TIA_SCORE_GLITCH` on, against `harness/golden/a2600_score_glitch_crc32.txt`. `RS_A2600_DUMP=DIR` writes each frame as `<id>.tia`, as `stella-frames --dump` does, to compare them; `RS_A2600_TRACE=DIR` writes every TIA write as `<colour clock> <register> <value>` in `<id>.trace`.
 
-`a2600_frame_test` checks `a2600_frame` against the frame manager's model with random pictures, lines cut short as RSYNC does, and VSYNC on time, early, mid-line and overdue, a colour clock every 6 clocks: every frame's CRC and, at the end, the frame buffer. The harness's `a2600_sys` tests (`harness/tests/a2600_test.cpp`, on `make_a2600_sim`) run each golden cartridge through the test shell, as `rig-run --test a2600` does on a board, and check that a reset clears the frame buffer.
+`a2600_frame_test` checks `a2600_frame` against the frame manager's model with random pictures, lines cut short as RSYNC does, and VSYNC on time, early, mid-line and overdue, a colour clock every 6 clocks: every frame's CRC and, at the end, the frame buffer. The harness's `a2600_sys` tests (`harness/tests/a2600_test.cpp`, on `make_a2600_sim`) run each golden cartridge through the test shell, as `rig-run --test a2600` does on a board, and check that a reset clears the frame buffer. `harness/tests/a2600_hdmi_test.cpp` runs `tia_colours`, `tia_playfield` and `tia_audio` on `make_a2600_hdmi_sim` (the 20K's build) as `rig-run --test a2600-hdmi` does, with an HDMI receiver on the symbols: every display frame has 720p's timing, the one with the reported video CRC shows the golden frame pixel for pixel through `tia_rgb`, the sound is every sample the system made, and the video CRC is `harness/golden/a2600_hdmi_crc32.txt`'s; and with pacing off, a frame of 262 lines takes at most 98.5% of a display frame.
 
 ## Status
+
+On the Tang Nano 20K, every cartridge matches its golden frame and sound, and on HDMI `tia_colours`, `tia_playfield` and `tia_audio` give the sim's video CRCs, with no line late, and the capture dongle sees each golden frame at 720p.
 
 In the sim, all twelve test cartridges match their golden frames, and `tia_audio` its golden sound (Stella's, but for `tia_missiles_ball` and `tia_resmp`: see `video/tia`'s README), with `TIA_SCORE_GLITCH` off and on: `tia_colours`, `riot_ram`, `riot_timer`, `tia_playfield`, `tia_players`, `tia_missiles_ball`, `tia_hmove`, `tia_collisions`, `tia_rsync`, `tia_resmp`, `tia_audio` and `tia_paddles`.

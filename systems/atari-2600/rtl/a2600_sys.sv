@@ -9,9 +9,15 @@
 // if it had run on: the same on any board and in the sim. A reset clears the frame buffer first
 // (about 9,000 clocks) and starts no colour clock until that's done.
 //
+// With VIDEO set, the picture and sound go out as HDMI at 720p (a2600_video, on `pclk`), and with
+// pacing on (register 34) the system keeps pace with the display: it waits at each frame's end
+// until the display asks for the next, a stop between colour clocks like the others. The video CRC
+// is of the display frame that starts frame `vcap_frame` + 1 (frames, at that request, equal to
+// it), the frame whose CRC frame_crc gives as frame vcap_frame + 1.
+//
 // Shell address map (README.md has the registers):
 //   0x00000000-0x00000FFF  the cartridge, 4 KB (a 2 KB one written twice)
-//   0x01000000-0x0100003F  control and status registers
+//   0x01000000-0x0100007F  control and status registers
 //   0x05000000-0x05008E7F  the frame buffer: y x 160 + x, the last frame as Stella would show it
 // LEDs (active low): led[0] a corrupt command frame, led[1] a stalled one, led[3] running, led[4]
 // stopped at a limit, led[5] heartbeat.
@@ -22,12 +28,19 @@ module a2600_sys #(
     parameter int          CC_NUM           = 35,       // colour clocks per CC_DEN clocks: NTSC's
     parameter int          CC_DEN           = 264,      //   3.579545 MHz from 27 MHz
     parameter bit          TIA_SCORE_GLITCH = 1'b0,
+    parameter bit          VIDEO            = 1'b0,     // HDMI out (a2600_video), on pclk
     parameter logic [31:0] BUILD_ID         = '0
 ) (
     input  logic       clk,
     input  logic       uart_rx,
     output logic       uart_tx,
-    output logic [5:0] led
+    output logic [5:0] led,
+
+    // With VIDEO: the pixel clock, 74.25 MHz, and the TMDS symbols
+    input  logic       pclk,
+    output logic [9:0] tmds0,
+    output logic [9:0] tmds1,
+    output logic [9:0] tmds2
 );
     logic por_rst;
     por u_por (.clk, .rst(por_rst));
@@ -56,9 +69,9 @@ module a2600_sys #(
     wire rst = por_rst || ctrl[1];
 
     logic [31:0] cycles, samples, audio_crc, frames, frame_crc, crc_frame;
-    logic        busy;
+    logic        busy, pace_wait;
     wire at_limit = (stop_cycle != 0 && cycles >= stop_cycle) || (stop_frame != 0 && frames >= stop_frame);
-    wire running  = ctrl[0] && !rst && !busy && !at_limit;
+    wire running  = ctrl[0] && !rst && !busy && !at_limit && !pace_wait;
 
     // ---- Colour clocks ----
     logic cc, step;
@@ -125,16 +138,101 @@ module a2600_sys #(
     // ---- Frames ----
     logic       fb_req, fb_ack;
     logic [7:0] fb_data;
+    logic [3:0] vw_we;
+    logic [7:0] vw_y, vw_d;
+    logic [5:0] vw_w;
+    logic       row_done, line_busy, frame_done;
     wire        sh_fb = s_req && !s_we && s_addr[31:24] == 8'h05 && s_addr[23:16] == '0;
     assign fb_req = sh_fb && !s_ack;
     a2600_frame u_frame (
         .clk, .rst, .step, .pix_on, .pix_x, .pix, .line_end, .vsync,
         .frames, .crc(frame_crc), .crc_frame, .busy,
-        .rd_req(fb_req), .rd_addr(s_addr[15:0]), .rd_ack(fb_ack), .rd_data(fb_data));
+        .rd_req(fb_req), .rd_addr(s_addr[15:0]), .rd_ack(fb_ack), .rd_data(fb_data),
+        .vw_we, .vw_y, .vw_w, .vw_d, .row_done, .line_busy, .frame_done);
+
+    // ---- Display pacing and the video CRC ----
+    // It waits on the display only when nothing else holds it and no line is still being cleared,
+    // so a request that comes while it's stopped is left for the one after it's let go.
+    logic        vid_pace, vcap_armed, vcap_wait, vcap_valid, vcap_ok, v_crc_seen, v_cap_t;
+    logic [31:0] vcap_frame, vcrc;
+    logic        vcap_arm;  // a write of register 34 with bit 1 set, below
+    logic        v_req, v_crc_ok, v_crc_t;
+    logic [31:0] v_crc;
+    logic [15:0] v_shown, v_late, v_overrun;
+    logic        pcm_valid;
+    logic [15:0] pcm;
+    logic [31:0] pcm_crc, pcm_n;
+
+    wire v_waiting = pace_wait && ctrl[0] && !rst && !busy && !at_limit && !line_busy;
+
+    always_ff @(posedge clk) begin
+        v_crc_seen <= v_crc_t;
+        if (frame_done && vid_pace)
+            pace_wait <= 1'b1;
+        if (v_req && v_waiting) begin
+            pace_wait <= 1'b0;
+            if (vcap_armed && frames == vcap_frame) begin
+                v_cap_t    <= !v_cap_t;
+                vcap_armed <= 1'b0;
+                vcap_wait  <= 1'b1;
+            end
+        end
+        if (v_crc_t != v_crc_seen && vcap_wait) begin
+            vcrc       <= v_crc;
+            vcap_ok    <= v_crc_ok;
+            vcap_valid <= 1'b1;
+            vcap_wait  <= 1'b0;
+        end
+        if (vcap_arm) begin
+            vcap_armed <= 1'b1;
+            vcap_wait  <= 1'b0;
+            vcap_valid <= 1'b0;
+        end
+        if (rst || !vid_pace)
+            pace_wait <= 1'b0;
+        if (por_rst) begin
+            v_cap_t    <= 1'b0;
+            vcap_armed <= 1'b0;
+            vcap_wait  <= 1'b0;
+            vcap_valid <= 1'b0;
+            vcap_ok    <= 1'b0;
+            vcrc       <= '0;
+        end
+    end
+
+    // The CRC of every 48 kHz sample made since reset (16 bits, little-endian), and their count.
+    crc32 #(.W(16)) u_pcrc (.clk, .rst, .en(pcm_valid), .data(pcm), .crc(pcm_crc), .st_we(1'b0), .st_wdata(32'd0));
+    always_ff @(posedge clk)
+        if (rst) pcm_n <= '0;
+        else if (pcm_valid) pcm_n <= pcm_n + 32'd1;
+
+    if (VIDEO) begin : g_video
+        a2600_video u_video (
+            .clk, .rst, .vw_we, .vw_y, .vw_w, .vw_d, .row_done, .frame_done,
+            .waiting(v_waiting), .req(v_req),
+            .a_ce(cc && bus_ce), .a_level(5'(aud0) + 5'(aud1)),
+            .cap_t(v_cap_t), .crc(v_crc), .crc_ok(v_crc_ok), .crc_t(v_crc_t),
+            .shown(v_shown), .late(v_late), .overrun(v_overrun), .pcm_valid, .pcm,
+            .pclk, .tmds0, .tmds1, .tmds2);
+    end else begin : g_no_video
+        assign v_req     = 1'b0;
+        assign v_crc     = '0;
+        assign v_crc_ok  = 1'b0;
+        assign v_crc_t   = 1'b0;
+        assign v_shown   = '0;
+        assign v_late    = '0;
+        assign v_overrun = '0;
+        assign pcm_valid = 1'b0;
+        assign pcm       = '0;
+        assign tmds0     = '0;
+        assign tmds1     = '0;
+        assign tmds2     = '0;
+        wire unused_video = &{1'b0, pclk, vw_we, vw_y, vw_w, vw_d, row_done, v_waiting, v_cap_t};
+    end
 
     // ---- The shell's bus ----
-    wire       sh_reg = s_req && s_addr[31:24] == 8'h01 && s_addr[23:6] == '0;
-    wire [5:0] r = s_addr[5:0];
+    wire       sh_reg = s_req && s_addr[31:24] == 8'h01 && s_addr[23:7] == '0;
+    wire [6:0] r = s_addr[6:0];
 
     function automatic logic [7:0] byte_of(input logic [31:0] v, input logic [1:0] b);
         byte_of = v[8 * b +: 8];
@@ -143,20 +241,27 @@ module a2600_sys #(
     logic [7:0] reg_q;
     always_comb begin
         reg_q = 8'd0;
-        case (r[5:2])
-            4'h0: reg_q = r[1:0] == 2'd0 ? {6'd0, ctrl} : 8'd0;
-            4'h1: reg_q = byte_of(stop_cycle, r[1:0]);
-            4'h2: reg_q = byte_of(cycles, r[1:0]);
-            4'h3: reg_q = r[1:0] == 2'd0 ? {4'd0, busy, crc_frame != 0, running, at_limit} : 8'd0;
-            4'h4: reg_q = byte_of(stop_frame, r[1:0]);
-            4'h5: reg_q = byte_of(frames, r[1:0]);
-            4'h6: reg_q = byte_of(frame_crc, r[1:0]);
-            4'h7: reg_q = byte_of(crc_frame, r[1:0]);
-            4'h8: reg_q = byte_of(audio_crc, r[1:0]);
-            4'h9: reg_q = byte_of(samples, r[1:0]);
-            4'hA: reg_q = byte_of(audio_limit, r[1:0]);
-            4'hB: reg_q = byte_of({4'd0, paddle_on, 6'd0, fire_n, switches, joy}, r[1:0]);
-            4'hC: reg_q = byte_of(paddle_pos, r[1:0]);
+        case (r[6:2])
+            5'h00: reg_q = r[1:0] == 2'd0 ? {6'd0, ctrl} : 8'd0;
+            5'h01: reg_q = byte_of(stop_cycle, r[1:0]);
+            5'h02: reg_q = byte_of(cycles, r[1:0]);
+            5'h03: reg_q = r[1:0] == 2'd0 ? {3'd0, vcap_valid, busy, crc_frame != 0, running, at_limit} : 8'd0;
+            5'h04: reg_q = byte_of(stop_frame, r[1:0]);
+            5'h05: reg_q = byte_of(frames, r[1:0]);
+            5'h06: reg_q = byte_of(frame_crc, r[1:0]);
+            5'h07: reg_q = byte_of(crc_frame, r[1:0]);
+            5'h08: reg_q = byte_of(audio_crc, r[1:0]);
+            5'h09: reg_q = byte_of(samples, r[1:0]);
+            5'h0A: reg_q = byte_of(audio_limit, r[1:0]);
+            5'h0B: reg_q = byte_of({4'd0, paddle_on, 6'd0, fire_n, switches, joy}, r[1:0]);
+            5'h0C: reg_q = byte_of(paddle_pos, r[1:0]);
+            5'h0D: reg_q = byte_of({15'd0, vcap_ok, 14'd0, vcap_armed, vid_pace}, r[1:0]);
+            5'h0E: reg_q = byte_of(vcap_frame, r[1:0]);
+            5'h0F: reg_q = byte_of(vcrc, r[1:0]);
+            5'h10: reg_q = byte_of({v_late, v_shown}, r[1:0]);
+            5'h11: reg_q = byte_of({16'd0, v_overrun}, r[1:0]);
+            5'h12: reg_q = byte_of(pcm_crc, r[1:0]);
+            5'h13: reg_q = byte_of(pcm_n, r[1:0]);
             default: ;
         endcase
     end
@@ -180,6 +285,8 @@ module a2600_sys #(
             fire_n      <= 2'b11;
             paddle_on   <= '0;
             paddle_pos  <= '0;
+            vid_pace    <= 1'b0;
+            vcap_frame  <= '0;
         end else if (s_req && !s_ack) begin
             if (sh_fb) begin
                 if (fb_ack) begin
@@ -197,23 +304,27 @@ module a2600_sys #(
                 s_ack   <= 1'b1;
                 s_rdata <= sh_reg ? reg_q : 8'd0;
                 if (sh_reg && s_we)
-                    case (r[5:2])
-                        4'h0: if (r[1:0] == 2'd0) ctrl <= s_wdata[1:0];
-                        4'h1: stop_cycle  <= set_byte(stop_cycle, r[1:0], s_wdata);
-                        4'h4: stop_frame  <= set_byte(stop_frame, r[1:0], s_wdata);
-                        4'hA: audio_limit <= set_byte(audio_limit, r[1:0], s_wdata);
-                        4'hB: case (r[1:0])
+                    case (r[6:2])
+                        5'h00: if (r[1:0] == 2'd0) ctrl <= s_wdata[1:0];
+                        5'h01: stop_cycle  <= set_byte(stop_cycle, r[1:0], s_wdata);
+                        5'h04: stop_frame  <= set_byte(stop_frame, r[1:0], s_wdata);
+                        5'h0A: audio_limit <= set_byte(audio_limit, r[1:0], s_wdata);
+                        5'h0D: if (r[1:0] == 2'd0) vid_pace <= s_wdata[0];
+                        5'h0E: vcap_frame  <= set_byte(vcap_frame, r[1:0], s_wdata);
+                        5'h0B: case (r[1:0])
                                   2'd0: joy       <= s_wdata;
                                   2'd1: switches  <= s_wdata;
                                   2'd2: fire_n    <= s_wdata[1:0];
                                   2'd3: paddle_on <= s_wdata[3:0];
                               endcase
-                        4'hC: paddle_pos <= set_byte(paddle_pos, r[1:0], s_wdata);
+                        5'h0C: paddle_pos <= set_byte(paddle_pos, r[1:0], s_wdata);
                         default: ;
                     endcase
             end
         end
     end
+
+    assign vcap_arm = s_req && !s_ack && sh_reg && s_we && r == 7'h34 && s_wdata[1];
 
     // ---- LEDs ----
     logic       bad_frame, stalled;

@@ -1,0 +1,8 @@
+# Video CRCs from the sim's HDMI output (make_a2600_hdmi_sim): id, frames, and the CRC-32 of the
+# TMDS symbols of the display frame showing frame `frames` (as a2600_video takes it, with the data
+# islands' packet symbols as 0). The sim's receiver checks that frame's picture against the golden
+# frame (Stella's, by its CRC), and the sound against the system's samples, before these are
+# trusted; the board must match them.
+tia_colours 30 0xb6b2dc03
+tia_playfield 30 0x8ccb2fcb
+tia_audio 108 0xa36bc25b

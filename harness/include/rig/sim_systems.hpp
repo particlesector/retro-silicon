@@ -58,5 +58,10 @@ std::unique_ptr<SimLink> make_nes_axi_sim();
 // The Atari 2600 (systems/atari-2600's a2600_sys) as the Tang Nano 20K runs it: 27 MHz, 18 clocks a
 // bit, colour clocks at 35/264 of the clock (NTSC's 3.579545 MHz). Reports RS_A2600_BUILD_ID.
 std::unique_ptr<SimLink> make_a2600_sim();
+// The 2600 as the Tang Nano 20K runs it with HDMI (boards/tang-nano-20k/rtl/a2600_top.sv): the
+// NES's clocks, 46.40625 MHz for the system (31 clocks a bit, colour clocks at 7/89, 2% fast) and
+// 74.25 MHz pixels, and its display (a2600_video), keeping pace with it when asked. Each pixel
+// clock's TMDS symbols go to on_symbol, as make_nes_hdmi_sim()'s do. Reports RS_A2600_BUILD_ID.
+std::unique_ptr<SimLink> make_a2600_hdmi_sim(std::function<void(uint32_t)> on_symbol = {});
 
 } // namespace rig

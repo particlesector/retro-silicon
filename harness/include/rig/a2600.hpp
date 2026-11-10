@@ -38,9 +38,27 @@ enum Reg : uint32_t {
     kFire = 0x2E,        // bits 1-0: INPT5, INPT4 (0 pressed)
     kPaddleOn = 0x2F,    // bits 3-0: a paddle in INPT3-0
     kPaddlePos = 0x30,   // 4 bytes: paddle i's knob in bits 8i+7:8i
+    // With a display (a2600_sys's VIDEO):
+    kVideo = 0x34,       // bit 0 keep pace with the display; write bit 1 to take the video CRC
+    kVideoWhole = 0x36,  // bit 0: the video CRC's display frame showed its frame whole
+    kVcapFrame = 0x38,   // 4 bytes: the video CRC is of the display frame showing frame kVcapFrame + 1
+    kVideoCrc = 0x3C,    // 4 bytes, read-only
+    kVideoShown = 0x40,  // 2 bytes, read-only: display frames whose frame started on request
+    kVideoLate = 0x42,   // 2 bytes, read-only: lines late
+    kVideoOverrun = 0x44,  // 2 bytes, read-only: lines overwritten before they were shown
+    kPcmCrc = 0x48,      // 4 bytes, read-only: CRC-32 of every 48 kHz sample (16 bits, little-endian)
+    kPcmCount = 0x4C,    // 4 bytes, read-only: how many
 };
 
-enum Status : uint8_t { kStopped = 1, kRunning = 2, kCrcValid = 4, kBusy = 8 };
+enum Status : uint8_t { kStopped = 1, kRunning = 2, kCrcValid = 4, kBusy = 8, kVideoCrcValid = 16 };
+
+// The display's counts and the video CRC asked for.
+struct Video {
+    bool valid = false;  // the CRC asked for has come
+    bool whole = false;  // ...and its display frame showed its frame whole
+    uint32_t crc = 0;
+    uint16_t shown = 0, late = 0, overrun = 0;
+};
 
 // Paddles in INPT0-3, each a knob position (a pot of n / 256 Mohm), or -1 for none.
 using Paddles = std::array<int, 4>;
@@ -69,6 +87,13 @@ public:
     uint32_t audio_crc();
     uint32_t samples();
     std::vector<uint8_t> frame();  // the frame buffer: 160 x 228 colour values
+
+    // With a display:
+    void pace(bool on);
+    // Keeps pace and takes the video CRC of the display frame showing frame `index` + 1.
+    void arm_video_crc(uint32_t index);
+    Video video();
+    std::pair<uint32_t, uint32_t> pcm();  // {CRC, count} of the 48 kHz samples
 
 private:
     shell::Client& c_;
@@ -100,6 +125,14 @@ std::map<std::string, AudioGolden> load_audio(const std::string& file);
 TestResult cart_test(Link& link, const std::string& name, const std::vector<uint8_t>& rom, uint32_t frames,
                      uint32_t crc, const Paddles& paddles = kNoPaddles,
                      std::optional<AudioGolden> audio = std::nullopt,
+                     std::optional<uint32_t> build_id = std::nullopt);
+
+// The cartridge on HDMI: runs it, keeping pace with the display, to frame `frames` and returns the
+// video CRC of the display frame that shows it (the frame a2600_frames_crc32.txt's CRC is of).
+// Passes when that frame's CRC is `crc`, its display frame showed it whole, and no line came late
+// or was overwritten. Needs a system with a display: the board, or make_a2600_hdmi_sim().
+TestResult hdmi_test(Link& link, const std::string& name, const std::vector<uint8_t>& rom, uint32_t frames,
+                     uint32_t crc, const Paddles& paddles = kNoPaddles,
                      std::optional<uint32_t> build_id = std::nullopt);
 
 } // namespace rig::a2600

@@ -1,7 +1,7 @@
 CAPI=2:
 # SPDX-License-Identifier: Apache-2.0
 name: retro-silicon:video:tia:0.1.0
-description: Atari TIA (NTSC) video, colour-clock exact; the line, sync, background, playfield, players, missiles, ball, HMOVE, collisions, the fire buttons and RSYNC so far
+description: Atari TIA (NTSC) video, colour-clock exact; the line, sync, background, playfield, players, missiles, ball, HMOVE, collisions, the fire buttons and RSYNC so far; and its colours as RGB (tia_rgb)
 
 filesets:
   rtl:
@@ -11,6 +11,7 @@ filesets:
       - rtl/tia_ball.sv
       - rtl/tia_audio.sv
       - rtl/tia.sv
+      - rtl/tia_rgb.sv
     file_type: systemVerilogSource
 
 targets:

@@ -17,6 +17,10 @@
 //
 // `rd_*` reads a byte of the buffer, y x 160 + x, once no pass is running (its data the clock after
 // `rd_ack`).
+//
+// For a display (a2600_video), `vw_*` repeats the buffer's writes of the picture: each pixel drawn
+// and each line's clearing, by line and word (not the frame pass's). `row_done` pulses as a line's
+// clearing ends, when the line is whole; `line_busy` is high from the line's end until then.
 
 module a2600_frame (
     input  logic        clk,
@@ -36,7 +40,15 @@ module a2600_frame (
     input  logic        rd_req,
     input  logic [15:0] rd_addr,
     output logic        rd_ack,
-    output logic [7:0]  rd_data
+    output logic [7:0]  rd_data,
+
+    output logic [3:0]  vw_we,       // the lanes written
+    output logic [7:0]  vw_y,        // line
+    output logic [5:0]  vw_w,        // word within the line
+    output logic [7:0]  vw_d,        // every lane's byte
+    output logic        row_done,
+    output logic        line_busy,
+    output logic        frame_done   // a pulse as a frame ends
 );
     localparam int W = 160, H = 228, Y_START = 23, FRAME_LINES = 262, MAX_VSYNC_LINES = 50;
     localparam int WORDS = W * H / 4;  // 9,120
@@ -189,6 +201,23 @@ module a2600_frame (
         if (!frame_on) ra = rd_addr[15:2];
     end
 
+    always_comb begin
+        vw_we = '0;
+        vw_y  = y;
+        vw_w  = pix_x[7:2];
+        vw_d  = pix;
+        if (px_we) begin
+            vw_we[pix_x[1:0]] = 1'b1;
+        end else if (line_on) begin
+            vw_y  = line_y;
+            vw_w  = line_w;
+            vw_d  = '0;
+            vw_we = line_lanes;
+        end
+    end
+    assign line_busy  = line_go || line_on;
+    assign frame_done = frame_go;
+
     logic       crc_rst, crc_en;
     logic [31:0] crc_now;
     crc32 #(.W(32)) u_crc (.clk, .rst(crc_rst), .en(crc_en), .data(rd_zero ? 32'd0 : q), .crc(crc_now),
@@ -197,7 +226,8 @@ module a2600_frame (
     logic [1:0] rd_lane;
     logic       rd_pend;
     always_ff @(posedge clk) begin
-        crc_rst <= 1'b0;
+        crc_rst  <= 1'b0;
+        row_done <= 1'b0;
         rd_v    <= 1'b0;
         rd_last <= 1'b0;
         rd_ack  <= 1'b0;
@@ -214,7 +244,10 @@ module a2600_frame (
                 line_w  <= '0;
             end else if (line_on && !px_we) begin
                 line_w <= line_w + 6'd1;
-                if (line_w == 6'd39) line_on <= 1'b0;
+                if (line_w == 6'd39) begin
+                    line_on  <= 1'b0;
+                    row_done <= 1'b1;
+                end
             end
             // A frame's CRC, or the reset's clear: every word, in order.
             if (frame_go) frame_pend <= 1'b1;
