@@ -111,6 +111,10 @@ Reads, by A3-A0, in bits 7 and 6:
 | `SAVE_STATE` | 1 | 0 leaves out the save-state port's logic: writes do nothing and reads give 0 |
 | `SCORE_GLITCH` | 0 | 1: in score mode, the playfield's pixel 79 (the left half's last) takes COLUP1, as on some revisions of the chip (below) |
 
+## Colours: `tia_rgb`
+
+`tia_rgb` turns the TIA's colour value into 24-bit RGB for a display (a block RAM of 128 colours, registered), as `video/ppu-2c02`'s `ppu_2c02_rgb` does the 2C02's. `tools/gen_rgb.py` writes it from a model of the NTSC TIA's signal, decoded as a TV would (`--png` also draws the palette): the luma is one of 8 evenly spaced levels; hue 0 has no chroma, hue 1's is in phase with the colour burst, and each hue after lags the one before by the same angle, 360/14 degrees, so hue 15 comes back round near hue 1. The step, the chroma's amplitude and the luma's range are the model's settings, chosen so the hues land where a TV shows them (gold, orange, red, purple, blue, cyan, green), not measurements: a console's colour pot moves the step. A test checks the RTL is what the script writes.
+
 ## Save state
 
 The port follows [docs/conventions.md](../../../docs/conventions.md): 19 words so far, as packed at the end of the RTL: 0-4 the line counter, registers, the playfield's writes waiting to land, the registered picture outputs and RSYNC's jump; 5-6 player 0 and 7-8 player 1 (`tia_player`'s two words); 9 the GRP, REFP, ENAM and ENABL writes waiting to land; 10 missile 0, 11 missile 1 and 12 the ball (a word each); 13 the blank, HMOVE and HM writes on their way and the movement clock; 14 the HM values and which objects are moving; 15 the collision latches, the playfield's collision state, the fire buttons' latch and the dump; 16 the audio counter and the registered sound outputs; 17 channel 0 and 18 channel 1 (`tia_audio`'s word: its registers, divider and counters).

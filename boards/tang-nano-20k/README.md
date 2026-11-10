@@ -28,7 +28,7 @@ openFPGALoader -b tangnano20k build/fpga/uart_echo/uart_echo.fs
 | `shell_ram_bitstream` | `systems/shell-ram` | `uart_echo.cst` | 1.5 Mbaud; `BUILD_ID` from the RTL's SHA-256 |
 | `shell_sdram_bitstream` | `systems/shell-sdram`, through `rtl/shell_sdram_top.sv` | `uart_echo.cst` | As shell-ram, with the SDRAM |
 | `nes_bitstream` | `systems/nes` on the SDRAM (`nes_sdram`), through `rtl/nes_top.sv` | `nes.cst` | 46.40625 MHz from the PLL; HDMI at 720p (below) |
-| `a2600_bitstream` | `systems/atari-2600`'s `a2600_sys` | `uart_echo.cst` | The 27 MHz oscillator, 1.5 Mbaud; colour clocks at 35/264 of it (NTSC's rate); no display yet |
+| `a2600_bitstream` | `systems/atari-2600`'s `a2600_sys` with HDMI, through `rtl/a2600_top.sv` | `nes.cst` | The NES's clocks (below): 46.40625 MHz, colour clocks at 7/89 (2% fast of NTSC's, to keep pace); HDMI at 720p |
 
 ## SDRAM
 
@@ -37,6 +37,8 @@ The GW2AR-18's 2M × 32 SDRAM is wired inside the package to ports the toolchain
 ## Clocks and HDMI
 
 The NES makes its clocks with the one rPLL from the 27 MHz oscillator: 371.25 MHz (x55/4), the HDMI serializers' clock. `CLKDIV` divides that by 5 for the 74.25 MHz pixel clock, and the PLL's divided output, 371.25 / 8 = 46.40625 MHz, is the system clock. `DQCE` holds the system clock off until the PLL locks, so the SDRAM's power-up wait counts real time. The SDRAM's clock is the inverse of the PLL's output before `DQCE`, not after: with the open flow, an inverted `DQCE` output on `O_sdram_clk` leaves the SDRAM dead (every read is 0xFF, at 27 MHz as at 46), while either half alone works. At 46.40625 MHz a UART bit is 31 clocks (1.497 Mbaud, 0.2% slow of 1.5) and the PPU's dot rate is 13/110 of the clock, 2.1% faster than NTSC's: keeping pace with the display, the NES waits at each frame's end, and the 2% leaves room for memory waits, as on the PYNQ-Z2 (its README says why). The system clock leaves room for the SDRAM to serve the PPU's CHR reads too, when mappers need them.
+
+The 2600 (`rtl/a2600_top.sv`) uses the same clocks without the SDRAM: its colour clock is 7/89 of the system clock, 3.64986 MHz, 1.96% faster than NTSC's, so a frame of 262 lines takes 98.2% of a display frame and it keeps pace as the NES does.
 
 `../gowin/rtl/tmds_phy.sv` serializes each 10-bit TMDS symbol (`OSER10`) onto the connector's pairs as true LVDS (`TLVDS_OBUF`, `LVDS25`). Every HDMI pair here is a true-LVDS pair, where the open flow doesn't allow emulated LVDS, and true LVDS outputs set their bank's I/O standard for the whole bank. So nothing else can share banks 4 and 5 with HDMI: the UART pins moved from 41/42, in bank 4, to 71/72.
 
