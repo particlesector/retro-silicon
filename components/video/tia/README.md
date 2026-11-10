@@ -1,8 +1,8 @@
 # TIA
 
-The Atari 2600's Television Interface Adaptor (NTSC), colour-clock exact: it draws each line from its registers as the beam sweeps, with no frame buffer.
+The Atari 2600's Television Interface Adaptor (NTSC), colour-clock exact: it draws each line from its registers as the beam sweeps, with no frame buffer, and makes the console's sound.
 
-Modules `tia`, `tia_player` (each of the two players), `tia_missile` (each of the two missiles) and `tia_ball`. **In progress:** so far the line, VSYNC, VBLANK, WSYNC, the background, the playfield, the players, the missiles, the ball, HMOVE, collisions, the fire buttons' input ports and RSYNC. The paddles' ports and sound come next, each with a test cartridge.
+Modules `tia`, `tia_player` (each of the two players), `tia_missile` (each of the two missiles), `tia_ball` and `tia_audio` (each of the two sound channels). **In progress:** so far the line, VSYNC, VBLANK, WSYNC, the background, the playfield, the players, the missiles, the ball, HMOVE, collisions, the fire buttons' input ports, RSYNC and sound. The paddles' ports come next, with a test cartridge.
 
 ## What it draws, and why the names sound like one game
 
@@ -36,6 +36,7 @@ As Stella 7.0 runs it:
 - **Input ports:** INPT4 and INPT5 read the fire buttons' pins (`fire_n`, 0 pressed). With VBLANK bit 6 set they latch: a press reads 0 until bit 6 is cleared. The latch catches every press, as the chip's does (Stella's catches a press only when the port is read; with a button held still the two agree). INPT0-INPT3 read 0, the paddles' ports with nothing connected, as Stella's joystick leaves them; VBLANK bit 7's dump comes with the paddles.
 - **Priority:** each missile takes its player's colour and place, the ball the playfield's colour (COLUPF, even in score mode) and place just after it: player 0, player 1, the playfield, the ball, the background. Score mode (CTRLPF bit 1, priority off) colours the playfield with COLUP0 on the left half and COLUP1 on the right (from pixel 80, or 79 with `SCORE_GLITCH`) and puts it between the players, with the ball after player 1; priority (bit 2) puts the playfield and ball first.
 - **VBLANK** blanks the picture to colour 0.
+- **Sound:** two channels, each a 5-bit divider, a 4-bit pulse counter and a 5-bit noise counter. An audio counter runs 0-227 from reset, one step a colour clock, apart from the line's counter (RSYNC doesn't move it), and clocks both channels twice a line in two phases. Phase 0 (its colour clocks 9 and 81) steps the divider; when the divider has reached AUDF (it counts 0 to AUDF, so the channel steps every AUDF + 1 audio clocks), it also works out the noise counter's next bit and whether the pulse counter holds. Phase 1 (37 and 149) shifts both counters on the steps the divider allowed. AUDC picks the feedbacks and holds: its low two bits the noise counter's and the pulse counter's hold, its high two the pulse counter's feedback, so the 16 values give square waves, the noise patterns and, at 0 and 11, a constant 1. Each channel's output is AUDV while the pulse counter's bit 0 is set, else 0. AUDC, AUDF and AUDV writes land after their colour clock, as Stella's do.
 
 ## Ports
 
@@ -52,9 +53,11 @@ As Stella 7.0 runs it:
 | `pix_on`, `x` | out | 1, 8 | It draws one of the 160 pixels, and its column. Every line draws all 160 (the HMOVE comb's as colour 0), except one RSYNC cuts short, whose undrawn columns are black |
 | `line_end` | out | 1 | It was the line's last colour clock |
 | `vsync`, `vblank` | out | 1 | VSYNC's bit 1; VBLANK's bit 1 as the picture sees it |
-| `st_addr`, `st_rdata`, `st_we`, `st_wdata` | | 4, 32, 1, 32 | Save-state port (below) |
+| `aud0`, `aud1` | out | 4 | Each sound channel's level, 0-15: the TIA's AUD0 and AUD1 pins, whose resistors a system mixes |
+| `aud_tick` | out | 1 | It was a phase 1 clock, where Stella takes a sample (twice a line): the levels summed between two of these are what the golden sound checks |
+| `st_addr`, `st_rdata`, `st_we`, `st_wdata` | | 5, 32, 1, 32 | Save-state port (below) |
 
-The picture outputs are registered: each describes the colour clock before.
+The picture and sound outputs are registered: each describes the colour clock before.
 
 ## Registers so far
 
@@ -80,6 +83,9 @@ The picture outputs are registered: each describes the colour clock before.
 | `$2A` | HMOVE | Moves the objects; 6 colour clocks late |
 | `$2B` | HMCLR | Sets every HM to 0; 2 colour clocks late |
 | `$2C` | CXCLR | Clears the collision latches |
+| `$15`, `$16` | AUDC0, AUDC1 | Bits 3-0: the channel's waveform (its counters' feedbacks and holds) |
+| `$17`, `$18` | AUDF0, AUDF1 | Bits 4-0: the channel steps every AUDF + 1 audio clocks (two a line) |
+| `$19`, `$1A` | AUDV0, AUDV1 | Bits 3-0: the channel's volume |
 
 Reads, by A3-A0, in bits 7 and 6:
 
@@ -105,16 +111,17 @@ Reads, by A3-A0, in bits 7 and 6:
 
 ## Save state
 
-The port follows [docs/conventions.md](../../../docs/conventions.md): 13 words so far, as packed at the end of the RTL: 0-4 the line counter, registers, the playfield's writes waiting to land, the registered picture outputs and RSYNC's jump; 5-6 player 0 and 7-8 player 1 (`tia_player`'s two words); 9 the GRP, REFP, ENAM and ENABL writes waiting to land; 10 missile 0, 11 missile 1 and 12 the ball (a word each); 13 the blank, HMOVE and HM writes on their way and the movement clock; 14 the HM values and which objects are moving; 15 the collision latches, the playfield's collision state and the fire buttons' latch. The words will change as the other objects arrive.
+The port follows [docs/conventions.md](../../../docs/conventions.md): 19 words so far, as packed at the end of the RTL: 0-4 the line counter, registers, the playfield's writes waiting to land, the registered picture outputs and RSYNC's jump; 5-6 player 0 and 7-8 player 1 (`tia_player`'s two words); 9 the GRP, REFP, ENAM and ENABL writes waiting to land; 10 missile 0, 11 missile 1 and 12 the ball (a word each); 13 the blank, HMOVE and HM writes on their way and the movement clock; 14 the HM values and which objects are moving; 15 the collision latches, the playfield's collision state and the fire buttons' latch; 16 the audio counter and the registered sound outputs; 17 channel 0 and 18 channel 1 (`tia_audio`'s word: its registers, divider and counters). The words will change as the paddles' ports arrive.
 
 ## Status
 
-In `systems/atari-2600`'s sim, its frames match the golden frames of the `tia_colours`, `riot_ram`, `riot_timer`, `tia_playfield`, `tia_players`, `tia_missiles_ball`, `tia_hmove`, `tia_collisions`, `tia_rsync` and `tia_resmp` test cartridges: Stella's, but for `tia_missiles_ball` and `tia_resmp` (below); with `SCORE_GLITCH` on, those of `a2600_score_glitch_crc32.txt`. `tia_playfield` moves writes to PF2, COLUBK, VBLANK and CTRLPF's reflection a cycle at a time, so it checks the colour clock each lands on; `tia_players` does the same with RESP0 for every NUSIZ, `tia_missiles_ball` with RESM0 and RESBL for every missile and ball width, in each priority mode, `tia_hmove` with HMOVE itself, at every cycle of the line, `tia_collisions` reads the latches and input ports after drawing chosen overlaps, and `tia_rsync` cuts lines short at every cycle; `tia_resmp` holds RESMP for 15 colour clocks at every cycle across a player's main copy, at each width.
+In `systems/atari-2600`'s sim, its frames match the golden frames of the `tia_colours`, `riot_ram`, `riot_timer`, `tia_playfield`, `tia_players`, `tia_missiles_ball`, `tia_hmove`, `tia_collisions`, `tia_rsync`, `tia_resmp` and `tia_audio` test cartridges: Stella's, but for `tia_missiles_ball` and `tia_resmp` (below); with `SCORE_GLITCH` on, those of `a2600_score_glitch_crc32.txt`. `tia_playfield` moves writes to PF2, COLUBK, VBLANK and CTRLPF's reflection a cycle at a time, so it checks the colour clock each lands on; `tia_players` does the same with RESP0 for every NUSIZ, `tia_missiles_ball` with RESM0 and RESBL for every missile and ball width, in each priority mode, `tia_hmove` with HMOVE itself, at every cycle of the line, `tia_collisions` reads the latches and input ports after drawing chosen overlaps, and `tia_rsync` cuts lines short at every cycle; `tia_resmp` holds RESMP for 15 colour clocks at every cycle across a player's main copy, at each width. Its sound matches Stella's, sample for sample, on `tia_audio` (`a2600_audio_crc32.txt`): every AUDC mode at several AUDF and AUDV on channel 0, and channel 1's AUDV, AUDF and AUDC writes and an RSYNC landing at every cycle from 19 to 72 of the line, each sample's channel sums showing the colour clock each write lands on.
 
 **Where Stella and the chip part:**
 
 - **RESMP:** Stella moves the missile onto its player when RESMP is cleared, and doesn't start its copies while it's set. The chip resets the missile's position from the player's main copy, at the point above, for as long as RESMP is set, and only hides its pixels. They agree when RESMP is held through that point, as games hold it, and part when it's held briefly. The TIA's transistor-level netlist (Visual6502.org's, of the 10444D die) and Gopher2600 both do what the chip does, and so does this core: the golden frames of `tia_missiles_ball` (band 2's brief RESMP1) and `tia_resmp` are Gopher2600's, which match Stella's everywhere else (`testroms/manifest-2600.toml` keeps Stella's CRC beside each, and `tools/stella/frames.py` checks it still holds).
 - **Lines without writes:** Stella skips drawing a line that follows two lines with no TIA writes that change anything (WSYNC doesn't count): it copies the line before and doesn't step the objects. A copy straddling the start of such a line then shows where it was on the line before, while the chip, and this core, step it on. A Python port of Stella's player logic, fed the core's writes, matches the core on such lines and Stella everywhere else. The core follows the chip, and the test cartridges write the TIA on every line they draw.
+- **Sound (open):** the TIA's transistor-level netlist (the 10444D die), run on `tia_audio` with its AUD pins recorded (my-fpga-rig's `a2600-board --audio`), agrees with Stella on every AUDC mode's waveform while AUDF is 0, sample for sample, but parts from it in two ways. Its audio clocks are tied to the line: they fall at the same place in every line, and RSYNC moves them with the line, where Stella's audio counter runs on through RSYNC. And with AUDF above 0, its divider sometimes steps one audio clock later than Stella's (the cause isn't settled: an AUDF write restarting the divider isn't it). Gopher2600's sound is Stella's model (its source says so), so no second emulator sides with the chip, and the core follows Stella, as for the picture's open differences. Writes also reach the netlist's sound a colour clock early, as its picture's writes do.
 
 **Revision quirks:** TIAs weren't all made the same, and a few behaviours differ between revisions of the chip. The core draws the common TIA, the one Stella models by default, and offers a revision's behaviour as a parameter, off by default:
 

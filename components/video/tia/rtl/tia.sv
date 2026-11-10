@@ -4,7 +4,8 @@
 // So far: the line (228 colour clocks: 68 of horizontal blank, then 160 pixels), VSYNC, VBLANK,
 // WSYNC, the background, the playfield with its colours, reflection, score mode and priority, the two
 // players (`tia_player`), the two missiles (`tia_missile`), the ball (`tia_ball`), HMOVE, collisions and
-// the fire buttons' input ports, and RSYNC. The paddles' ports and sound come next.
+// the fire buttons' input ports, RSYNC, and sound (`tia_audio`, each of the two channels). The paddles'
+// ports come next.
 //
 // Timing, as Stella 7.0 runs it:
 // - Each CPU cycle is 3 colour clocks; `ce` marks the colour clock that ends one, and the cycle's access
@@ -29,8 +30,12 @@
 //   in the cycle that ends the line doesn't hold it.
 // - The playfield takes a new bit every 4 pixels, and its reflection only at pixels 0 and 79.
 // - VBLANK blanks the picture to colour 0.
+// - Sound: an audio counter runs 0-227 from reset, one step a colour clock, apart from the line's (so
+//   RSYNC doesn't move it), and clocks both channels twice a line: phase 0 on its colour clocks 9 and
+//   81, phase 1 on 37 and 149. AUDC, AUDF and AUDV writes land after their colour clock.
 // `pix` is each colour clock's colour value (bit 0 clear), `pix_on` whether it draws one of the 160
-// pixels (`x` its column), registered: they describe the colour clock before.
+// pixels (`x` its column), `aud0` and `aud1` each channel's level, and `aud_tick` whether it was a
+// phase 1 clock (where Stella takes a sample), registered: they describe the colour clock before.
 
 module tia #(
     parameter bit SAVE_STATE   = 1'b1, // 0 leaves out the save-state port's logic
@@ -56,7 +61,11 @@ module tia #(
     output logic        vsync,     // VSYNC's bit 1
     output logic        vblank,    // VBLANK's bit 1, as the picture sees it
 
-    input  logic [3:0]  st_addr,
+    output logic [3:0]  aud0,      // channel 0's level, 0-15
+    output logic [3:0]  aud1,
+    output logic        aud_tick,  // the colour clock before was a phase 1 clock
+
+    input  logic [4:0]  st_addr,
     output logic [31:0] st_rdata,
     input  logic        st_we,
     input  logic [31:0] st_wdata
@@ -70,7 +79,9 @@ module tia #(
                            GRP0 = 6'h1B, GRP1 = 6'h1C, ENAM0 = 6'h1D, ENAM1 = 6'h1E, ENABL = 6'h1F,
                            HMP0 = 6'h20, HMP1 = 6'h21, HMM0 = 6'h22, HMM1 = 6'h23, HMBL = 6'h24,
                            VDELP0 = 6'h25, VDELP1 = 6'h26, VDELBL = 6'h27, RESMP0 = 6'h28, RESMP1 = 6'h29,
-                           HMOVE = 6'h2A, HMCLR = 6'h2B, CXCLR = 6'h2C;
+                           HMOVE = 6'h2A, HMCLR = 6'h2B, CXCLR = 6'h2C,
+                           AUDC0 = 6'h15, AUDC1 = 6'h16, AUDF0 = 6'h17, AUDF1 = 6'h18, AUDV0 = 6'h19,
+                           AUDV1 = 6'h1A;
 
     // ---- State ----
     logic [7:0]  hctr;                   // colour clock in the line, 0-227
@@ -110,6 +121,25 @@ module tia #(
     wire        pf_bit_now = (pf_tick && xc[1:0] == 2'd0) ? pf[pf_cell] : pf_bit;
 
     wire wr = ce && cs && we;
+
+    // ---- Sound ----
+    logic [7:0]  actr;                   // the audio counter, 0-227
+    wire         aph0 = actr == 8'd9 || actr == 8'd81;
+    wire         aph1 = actr == 8'd37 || actr == 8'd149;
+    logic [3:0]  lvl0, lvl1;
+    logic [31:0] a0_st, a1_st;
+    tia_audio u_a0 (
+        .clk, .rst, .cc, .phase0(aph0), .phase1(aph1),
+        .w_audc(wr && addr == AUDC0), .w_audf(wr && addr == AUDF0), .w_audv(wr && addr == AUDV0),
+        .din(din[4:0]), .level(lvl0),
+        .st_we(SAVE_STATE && st_we && st_addr == 5'd17), .st_wdata, .st_word(a0_st)
+    );
+    tia_audio u_a1 (
+        .clk, .rst, .cc, .phase0(aph0), .phase1(aph1),
+        .w_audc(wr && addr == AUDC1), .w_audf(wr && addr == AUDF1), .w_audv(wr && addr == AUDV1),
+        .din(din[4:0]), .level(lvl1),
+        .st_we(SAVE_STATE && st_we && st_addr == 5'd18), .st_wdata, .st_word(a1_st)
+    );
 
     // ---- Horizontal blank and HMOVE ----
     // `hblank` is the TIA's state as this colour clock starts: blank from colour clock 0 to 67, or to
@@ -165,7 +195,7 @@ module tia #(
         .w_refp(refp0_pend), .refp(refp0_new),
         .last, .on(p0_on), .pos(p0_pos), .div_o(p0_div), .main_o(p0_main), .render_o(p0_rc),
         .cv(p0_cv), .sched(p0_sched),
-        .st_we(SAVE_STATE && st_we && (st_addr == 4'd5 || st_addr == 4'd6)), .st_addr(st_addr == 4'd6),
+        .st_we(SAVE_STATE && st_we && (st_addr == 5'd5 || st_addr == 5'd6)), .st_addr(st_addr == 5'd6),
         .st_wdata, .st_word0(p0_st0), .st_word1(p0_st1)
     );
     tia_player u_p1 (
@@ -177,7 +207,7 @@ module tia #(
         .w_refp(refp1_pend), .refp(refp1_new),
         .last, .on(p1_on), .pos(p1_pos), .div_o(p1_div), .main_o(p1_main), .render_o(p1_rc),
         .cv(p1_cv), .sched(p1_sched),
-        .st_we(SAVE_STATE && st_we && (st_addr == 4'd7 || st_addr == 4'd8)), .st_addr(st_addr == 4'd8),
+        .st_we(SAVE_STATE && st_we && (st_addr == 5'd7 || st_addr == 5'd8)), .st_addr(st_addr == 5'd8),
         .st_wdata, .st_word0(p1_st0), .st_word1(p1_st1)
     );
 
@@ -211,7 +241,7 @@ module tia #(
         .pl_trig(resmp_trig(obj_tick[0], p0_main, p0_rc, p0_div)),
         .w_enam(enam0_pend), .enam(enam0_new),
         .last, .on(m0_on), .cv(m0_cv), .sched(m0_sched),
-        .st_we(SAVE_STATE && st_we && st_addr == 4'd10), .st_wdata, .st_word(m0_st)
+        .st_we(SAVE_STATE && st_we && st_addr == 5'd10), .st_wdata, .st_word(m0_st)
     );
     tia_missile u_m1 (
         .clk, .rst, .cc, .tick(obj_tick[3]), .regular, .moving(moving_now[3]), .hc(hctr[1:0]),
@@ -221,7 +251,7 @@ module tia #(
         .pl_trig(resmp_trig(obj_tick[1], p1_main, p1_rc, p1_div)),
         .w_enam(enam1_pend), .enam(enam1_new),
         .last, .on(m1_on), .cv(m1_cv), .sched(m1_sched),
-        .st_we(SAVE_STATE && st_we && st_addr == 4'd11), .st_wdata, .st_word(m1_st)
+        .st_we(SAVE_STATE && st_we && st_addr == 5'd11), .st_wdata, .st_word(m1_st)
     );
     tia_ball u_bl (
         .clk, .rst, .cc, .tick(obj_tick[4]), .regular, .moving(moving_now[4]), .mstep,
@@ -230,7 +260,7 @@ module tia #(
         .w_vdel(wr && addr == VDELBL), .vdel(din[0]),
         .w_enabl(enabl_pend), .enabl(enabl_new), .w_shuffle(grp1_pend),
         .last, .on(bl_on), .cv(bl_cv), .sched(bl_sched),
-        .st_we(SAVE_STATE && st_we && st_addr == 4'd12), .st_wdata, .st_word(bl_st)
+        .st_we(SAVE_STATE && st_we && st_addr == 5'd12), .st_wdata, .st_word(bl_st)
     );
 
     // ---- Collisions ----
@@ -346,6 +376,10 @@ module tia #(
             latched     <= 2'b00;
             pix         <= 8'd0;
             pix_on      <= 1'b0;
+            actr        <= 8'd0;
+            aud0        <= 4'd0;
+            aud1        <= 4'd0;
+            aud_tick    <= 1'b0;
             x           <= 8'd0;
             line_end    <= 1'b0;
         end else if (cc) begin
@@ -354,6 +388,10 @@ module tia #(
             pix_on   <= pf_tick;
             x        <= xc;
             line_end <= last;
+            aud0     <= lvl0;
+            aud1     <= lvl1;
+            aud_tick <= aph1;
+            actr     <= actr == 8'd227 ? 8'd0 : actr + 8'd1;
             if (pf_tick) begin
                 pf_bit    <= pf_bit_now;
                 reflect_l <= refl_now;
@@ -448,18 +486,19 @@ module tia #(
                 endcase
         end else if (SAVE_STATE && st_we) begin
             case (st_addr)
-                4'd9: {enabl_new, enam1_new, enam0_new, enabl_pend, enam1_pend, enam0_pend, refp1_new,
+                5'd9: {enabl_new, enam1_new, enam0_new, enabl_pend, enam1_pend, enam0_pend, refp1_new,
                        refp0_new, grp1_new, grp0_new, refp1_pend, refp0_pend, grp1_pend,
                        grp0_pend} <= st_wdata[27:0];
-                4'd0: {pf_cnt, vblank_pend, vblank_new, vblank_r, vsync_r, wsync, pf_bit, reflect_l,
+                5'd0: {pf_cnt, vblank_pend, vblank_new, vblank_r, vsync_r, wsync, pf_bit, reflect_l,
                        pfp, score, reflect, hctr} <= st_wdata[19:0];
-                4'd1: {colubk, colupf, colup1, colup0} <= st_wdata[27:0];
-                4'd2: pf <= st_wdata[19:0];
-                4'd3: pf_new <= st_wdata[19:0];
-                4'd4: {rs_delta, line_end, x, pix_on, pix} <= st_wdata[25:0];
-                4'd13: {hmove_sr, hmw_sr, hmw_sel, hmw_val, mclk, mactive, ext, hblank} <= st_wdata[22:0];
-                4'd14: {moving, hm[4], hm[3], hm[2], hm[1], hm[0]} <= st_wdata[24:0];
-                4'd15: {latched, latch_mode, pf_cv, cx} <= st_wdata[18:0];
+                5'd1: {colubk, colupf, colup1, colup0} <= st_wdata[27:0];
+                5'd2: pf <= st_wdata[19:0];
+                5'd3: pf_new <= st_wdata[19:0];
+                5'd4: {rs_delta, line_end, x, pix_on, pix} <= st_wdata[25:0];
+                5'd13: {hmove_sr, hmw_sr, hmw_sel, hmw_val, mclk, mactive, ext, hblank} <= st_wdata[22:0];
+                5'd14: {moving, hm[4], hm[3], hm[2], hm[1], hm[0]} <= st_wdata[24:0];
+                5'd15: {latched, latch_mode, pf_cv, cx} <= st_wdata[18:0];
+                5'd16: {aud_tick, aud1, aud0, actr} <= st_wdata[16:0];
                 default: ;
             endcase
         end
@@ -489,30 +528,33 @@ module tia #(
     if (SAVE_STATE) begin : g_st
         always_ff @(posedge clk)
             case (st_addr)
-                4'd0: st_rdata <= {12'd0, pf_cnt, vblank_pend, vblank_new, vblank_r, vsync_r, wsync, pf_bit,
+                5'd0: st_rdata <= {12'd0, pf_cnt, vblank_pend, vblank_new, vblank_r, vsync_r, wsync, pf_bit,
                                    reflect_l, pfp, score, reflect, hctr};
-                4'd1: st_rdata <= {4'd0, colubk, colupf, colup1, colup0};
-                4'd2: st_rdata <= {12'd0, pf};
-                4'd3: st_rdata <= {12'd0, pf_new};
-                4'd4: st_rdata <= {6'd0, rs_delta, line_end, x, pix_on, pix};
-                4'd5: st_rdata <= p0_st0;
-                4'd6: st_rdata <= p0_st1;
-                4'd7: st_rdata <= p1_st0;
-                4'd8: st_rdata <= p1_st1;
-                4'd9: st_rdata <= {4'd0, enabl_new, enam1_new, enam0_new, enabl_pend, enam1_pend, enam0_pend,
+                5'd1: st_rdata <= {4'd0, colubk, colupf, colup1, colup0};
+                5'd2: st_rdata <= {12'd0, pf};
+                5'd3: st_rdata <= {12'd0, pf_new};
+                5'd4: st_rdata <= {6'd0, rs_delta, line_end, x, pix_on, pix};
+                5'd5: st_rdata <= p0_st0;
+                5'd6: st_rdata <= p0_st1;
+                5'd7: st_rdata <= p1_st0;
+                5'd8: st_rdata <= p1_st1;
+                5'd9: st_rdata <= {4'd0, enabl_new, enam1_new, enam0_new, enabl_pend, enam1_pend, enam0_pend,
                                    refp1_new, refp0_new, grp1_new, grp0_new, refp1_pend, refp0_pend,
                                    grp1_pend, grp0_pend};
-                4'd10: st_rdata <= m0_st;
-                4'd11: st_rdata <= m1_st;
-                4'd12: st_rdata <= bl_st;
-                4'd13: st_rdata <= {9'd0, hmove_sr, hmw_sr, hmw_sel, hmw_val, mclk, mactive, ext, hblank};
-                4'd14: st_rdata <= {7'd0, moving, hm[4], hm[3], hm[2], hm[1], hm[0]};
-                4'd15: st_rdata <= {13'd0, latched, latch_mode, pf_cv, cx};
+                5'd10: st_rdata <= m0_st;
+                5'd11: st_rdata <= m1_st;
+                5'd12: st_rdata <= bl_st;
+                5'd13: st_rdata <= {9'd0, hmove_sr, hmw_sr, hmw_sel, hmw_val, mclk, mactive, ext, hblank};
+                5'd14: st_rdata <= {7'd0, moving, hm[4], hm[3], hm[2], hm[1], hm[0]};
+                5'd15: st_rdata <= {13'd0, latched, latch_mode, pf_cv, cx};
+                5'd16: st_rdata <= {15'd0, aud_tick, aud1, aud0, actr};
+                5'd17: st_rdata <= a0_st;
+                5'd18: st_rdata <= a1_st;
                 default: st_rdata <= '0;
             endcase
     end else begin : g_no_st
         assign st_rdata = '0;
-        wire unused_pst = &{1'b0, p0_st0, p0_st1, p1_st0, p1_st1, m0_st, m1_st, bl_st};
+        wire unused_pst = &{1'b0, p0_st0, p0_st1, p1_st0, p1_st1, m0_st, m1_st, bl_st, a0_st, a1_st};
     end
 
 endmodule

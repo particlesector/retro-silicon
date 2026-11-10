@@ -14,7 +14,8 @@
 # from golden_from. score_glitch_crc: the frame with video/tia's
 # SCORE_GLITCH on, where it differs, from score_glitch_from (Stella's
 # dev.tia.pfscoreglitch setting draws it); frames.py writes those to
-# harness/golden/a2600_score_glitch_crc32.txt.
+# harness/golden/a2600_score_glitch_crc32.txt. audio_samples: the core's sound
+# must match Stella's first N samples too (harness/golden/a2600_audio_crc32.txt).
 
 [sources.a2600-carts]
 dir = "a2600"
@@ -141,3 +142,15 @@ stella = "Eight bands of a blue player at the left; missile 1 back on the right 
 stella_crc = "0x4153eb84"
 golden_crc = "0x0f5e4ecd"
 golden_from = "Gopher2600 0.57.2's frame, in which the missile moves only after the windows covering the reset point, and Stella's after every window; the TIA's transistor-level netlist moves it after the same windows, give or take the one at each end of the range, where it lands writes a colour clock earlier than both emulators"
+
+[[rom]]
+id = "tia_audio"
+source = "a2600-carts"
+path = "tia_audio.bin"
+sha256 = "24702074171f29ea51296ac59ca31fe1ba55b4eb09eb5f6bdfc874bccb5ae93b"
+needs = "cpu, tia"
+covers = "The TIA's sound: every AUDC mode at several AUDF and AUDV on channel 0, and channel 1's AUDV, AUDF and AUDC writes landing a cycle later each frame across the line, and RSYNC landing there"
+check = "frame"
+frames = 108
+audio_samples = 55000
+stella = "Four bands (brown, purple, violet, blue) with a short black line where RSYNC cuts the last band's first line; the sound changes every frame"
