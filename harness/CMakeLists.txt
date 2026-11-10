@@ -59,6 +59,10 @@ rs_verilate(rs_sim_link COMPONENT nes_axi PREFIX Vnes_axi_sim
             PARAMS CLKS_PER_BIT=25 IDLE_CLKS=371250 DOT_NUM=9 DOT_DEN=61 CHR_AW=18 BUILD_ID=${nes_axi_id})
 # The 2600 as the Tang Nano 20K runs it: 27 MHz, colour clocks at 35/264 (NTSC's rate).
 rs_verilate(rs_sim_link COMPONENT a2600_sys PREFIX Va2600_sim PARAMS CLKS_PER_BIT=18 BUILD_ID=${a2600_id})
+# ...and with HDMI (boards/tang-nano-20k/rtl/a2600_top.sv's parameters): 46.40625 MHz, colour clocks
+# at 7/89, its display on a 74.25 MHz pixel clock.
+rs_verilate(rs_sim_link COMPONENT a2600_sys PREFIX Va2600_hdmi_sim
+            PARAMS CLKS_PER_BIT=31 IDLE_CLKS=464063 CC_NUM=7 CC_DEN=89 VIDEO=1 BUILD_ID=${a2600_id})
 target_include_directories(rs_sim_link PRIVATE ${PROJECT_SOURCE_DIR}/components/memory/sdram/sim
                                                ${PROJECT_SOURCE_DIR}/components/memory/axi-bridge/sim)
 # The build IDs the models and bitstreams report, for runners to check.
@@ -70,7 +74,8 @@ target_compile_definitions(rs_sim_link PUBLIC RS_SHELL_RAM_BUILD_ID=${shell_ram_
                                               RS_A2600_BUILD_ID=${a2600_id_c})
 
 rs_sim_test(harness_test SOURCES tests/echo_test_test.cpp tests/sim_link_test.cpp tests/shell_test.cpp
-                               tests/sdram_test.cpp tests/nes_test.cpp tests/hdmi_test.cpp tests/a2600_test.cpp)
+                               tests/sdram_test.cpp tests/nes_test.cpp tests/hdmi_test.cpp tests/a2600_test.cpp
+                               tests/a2600_hdmi_test.cpp)
 target_link_libraries(harness_test PRIVATE rs_sim_link)
 target_include_directories(harness_test PRIVATE ${PROJECT_SOURCE_DIR}/components/video/hdmi/sim)
 target_compile_definitions(harness_test PRIVATE
@@ -89,4 +94,6 @@ target_compile_definitions(harness_test PRIVATE
     RS_A2600_GOLDEN="${CMAKE_CURRENT_SOURCE_DIR}/golden/a2600_frames_crc32.txt"
     RS_A2600_AUDIO_GOLDEN="${CMAKE_CURRENT_SOURCE_DIR}/golden/a2600_audio_crc32.txt"
     RS_A2600_PADDLES="${CMAKE_CURRENT_SOURCE_DIR}/golden/a2600_paddles.txt"
+    RS_A2600_HDMI_GOLDEN="${CMAKE_CURRENT_SOURCE_DIR}/golden/a2600_hdmi_crc32.txt"
+    RS_TIA_RGB_SV="${PROJECT_SOURCE_DIR}/components/video/tia/rtl/tia_rgb.sv"
     RS_TESTROMS="${RS_TESTROMS}")

@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 #include "rig/sim_systems.hpp"
 
+#include "Va2600_hdmi_sim.h"
 #include "Va2600_sim.h"
 #include "Vshell_ram_sim.h"
 #include "Vnes_axi_sim.h"
@@ -184,6 +185,44 @@ private:
 };
 
 using NesHdmi = NesHdmiT<Vnes_hdmi_sim>;
+
+// The 2600 with HDMI on the 20K's clocks: NesHdmiT's, without the SDRAM.
+class A2600Hdmi : public SimModel {
+public:
+    explicit A2600Hdmi(std::function<void(uint32_t)> on_symbol) : on_symbol_(std::move(on_symbol)) {}
+
+    bool tick(bool rx) override {
+        m_.uart_rx = rx;
+        while (t_pix_ < t_sys_) pixel();
+        bool both = t_pix_ == t_sys_;
+        m_.clk = 0;
+        if (both) m_.pclk = 0;
+        m_.eval();
+        m_.clk = 1;
+        if (both) m_.pclk = 1;
+        m_.eval();
+        if (both) after_pixel();
+        t_sys_ += 8;
+        return m_.uart_tx;
+    }
+
+private:
+    void pixel() {
+        m_.pclk = 0;
+        m_.eval();
+        m_.pclk = 1;
+        m_.eval();
+        after_pixel();
+    }
+    void after_pixel() {
+        t_pix_ += 5;
+        if (on_symbol_) on_symbol_(m_.tmds0 | m_.tmds1 << 10 | static_cast<uint32_t>(m_.tmds2) << 20);
+    }
+
+    Va2600_hdmi_sim m_;
+    std::function<void(uint32_t)> on_symbol_;
+    uint64_t t_sys_ = 0, t_pix_ = 0;
+};
 // The NES as the Tang Console 138K runs it with HDMI: its SDRAM module, the
 // system clock at half the pixel clock, both from one PLL: a pixel clock on
 // every system clock's edge, and one between.
@@ -223,6 +262,11 @@ private:
 
 std::unique_ptr<SimLink> make_a2600_sim() {
     return std::make_unique<SimLink>(std::make_unique<Verilated<Va2600_sim>>());
+}
+
+std::unique_ptr<SimLink> make_a2600_hdmi_sim(std::function<void(uint32_t)> on_symbol) {
+    return std::make_unique<SimLink>(std::make_unique<A2600Hdmi>(std::move(on_symbol)), kNesHdmiClksPerBit, 64,
+                                     kNesHdmiClockHz);
 }
 
 std::unique_ptr<SimLink> make_uart_echo_sim() {

@@ -109,6 +109,27 @@ void Console::wait_stopped() {
 
 std::vector<uint8_t> Console::frame() { return c_.read(kFrameBuffer, kWidth * kHeight); }
 
+void Console::pace(bool on) { put32(kVideo, on ? 1 : 0, 1); }
+
+void Console::arm_video_crc(uint32_t index) {
+    put32(kVcapFrame, index);
+    put32(kVideo, 3, 1);  // pacing on, and take the CRC
+}
+
+Video Console::video() {
+    Video v;
+    v.valid = status() & kVideoCrcValid;
+    v.whole = c_.peek(kRegs + kVideoWhole, 1)[0] & 1;
+    v.crc = get32(kVideoCrc);
+    auto n = c_.peek(kRegs + kVideoShown, 6);
+    v.shown = static_cast<uint16_t>(n[0] | n[1] << 8);
+    v.late = static_cast<uint16_t>(n[2] | n[3] << 8);
+    v.overrun = static_cast<uint16_t>(n[4] | n[5] << 8);
+    return v;
+}
+
+std::pair<uint32_t, uint32_t> Console::pcm() { return {get32(kPcmCrc), get32(kPcmCount)}; }
+
 std::vector<Golden> load_golden(const std::string& file) {
     std::vector<Golden> out;
     for (const std::string& line : lines(file)) {
@@ -205,6 +226,70 @@ TestResult cart_test(Link& link, const std::string& name, const std::vector<uint
             if (*r.audio_crc32 != audio->crc)
                 return finish("sound CRC " + hex(*r.audio_crc32, 8) + ", Stella's " + hex(audio->crc, 8));
         }
+        return finish("");
+    } catch (const shell::StatusError& e) {
+        return finish(e.what());
+    }
+}
+
+TestResult hdmi_test(Link& link, const std::string& name, const std::vector<uint8_t>& rom, uint32_t frames,
+                     uint32_t crc, const Paddles& paddles, std::optional<uint32_t> build_id) {
+    TestResult r;
+    r.name = name;
+    auto t0 = std::chrono::steady_clock::now();
+    shell::Client client(link);
+    Console vcs(client);
+
+    auto finish = [&](std::string detail) {
+        r.passed = detail.empty();
+        r.detail = std::move(detail);
+        r.seconds = std::chrono::duration<double>(std::chrono::steady_clock::now() - t0).count();
+        if (!r.notes.empty()) r.notes += "; ";
+        r.notes += std::to_string(client.stats.commands) + " commands in " + std::to_string(client.stats.attempts) +
+                   " attempts";
+        return r;
+    };
+
+    try {
+        auto info = client.info();
+        if (info.version != shell::kVersion)
+            return finish("shell protocol version " + std::to_string(info.version) + ", expected " +
+                          std::to_string(shell::kVersion));
+        if (build_id && info.build_id != *build_id)
+            return finish("build ID " + hex(info.build_id, 8) + ", expected " + hex(*build_id, 8) +
+                          ": the wrong bitstream is loaded");
+        vcs.hold_reset();
+        if (auto e = vcs.load(rom)) return finish(*e);
+        r.bytes = rom.size();
+        vcs.set_paddles(paddles);
+        vcs.audio_limit(0);
+        Video before = vcs.video();
+        vcs.arm_video_crc(frames - 1);
+        // Stopped at its end, the frame's lines are all in; the display frame showing it runs on.
+        vcs.stop_frame(frames);
+        vcs.run();
+        vcs.wait_stopped();
+        // Read on for over two display frames, so a stopped system the display still waits on
+        // shows up as late lines.
+        Video v = vcs.video();
+        for (int i = 0; i < 64 || !v.valid; i++) {
+            if (i >= 100 && !v.valid) break;
+            v = vcs.video();
+        }
+        r.crc32 = v.crc;
+        r.notes = "shown " + std::to_string(static_cast<uint16_t>(v.shown - before.shown)) + " display frames, " +
+                  std::to_string(static_cast<uint16_t>(v.late - before.late)) + " lines late";
+        // The frame it showed is the golden frame: the system's own CRC of it.
+        auto c = vcs.frame_crc();
+        if (!c || c->second != frames) return finish("no frame CRC for frame " + std::to_string(frames));
+        if (c->first != crc)
+            return finish("frame " + std::to_string(frames) + " has CRC " + hex(c->first, 8) + ", Stella's " +
+                          hex(crc, 8));
+        if (!v.valid) return finish("no video CRC for frame " + std::to_string(frames));
+        if (!v.whole) return finish("the display frame showing frame " + std::to_string(frames) + " wasn't whole");
+        if (v.late != before.late || v.overrun != before.overrun)
+            return finish(std::to_string(static_cast<uint16_t>(v.late - before.late)) + " lines late, " +
+                          std::to_string(static_cast<uint16_t>(v.overrun - before.overrun)) + " overwritten");
         return finish("");
     } catch (const shell::StatusError& e) {
         return finish(e.what());
