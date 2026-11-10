@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 #include "rig/sim_systems.hpp"
 
+#include "Va2600_sim.h"
 #include "Vshell_ram_sim.h"
 #include "Vnes_axi_sim.h"
 #include "Vnes_ext_sim.h"
@@ -219,6 +220,10 @@ private:
 };
 
 } // namespace
+
+std::unique_ptr<SimLink> make_a2600_sim() {
+    return std::make_unique<SimLink>(std::make_unique<Verilated<Va2600_sim>>());
+}
 
 std::unique_ptr<SimLink> make_uart_echo_sim() {
     return std::make_unique<SimLink>(std::make_unique<Verilated<Vuart_echo_sim>>());
