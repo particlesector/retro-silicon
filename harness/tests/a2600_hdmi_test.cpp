@@ -75,6 +75,7 @@ public:
         bool timing = true;   // syncs, blanking and the black border where they belong
         bool picture = true;  // the picture is `expect`'s
         bool black = true;    // the picture is all black
+        size_t samples = 0;   // the sound's samples received by the frame's end
     };
     std::vector<Result> frames;
     const std::vector<uint8_t>* expect = nullptr;
@@ -127,6 +128,7 @@ public:
         }
         if (++idx_ == static_cast<long>(kH * kV)) {
             cur_.crc = ~crc_;
+            cur_.samples = dec.samples.size();
             frames.push_back(cur_);
             idx_ = 0;
             cur_ = Result{};
@@ -206,18 +208,35 @@ std::optional<uint32_t> on_hdmi(const std::string& id) {
     CHECK(rx.dec.n == 6144);
     CHECK(rx.dec.cts == 74250);
     CHECK(pcm_n > 790 * (c->g.frames - 1));
-    REQUIRE(rx.dec.samples.size() == pcm_n);
-    uint32_t crc = 0xFFFFFFFFu;
+    // The system's samples, every one in order, among those the receiver heard: after the FIFO's
+    // start (repeats of the last sample, 0 from reset) and before its end (it ran dry when the run
+    // stopped, which hdmi_test waited for). The system's run starts with samples of 0 too, so each
+    // start up to the first sample that isn't is tried.
+    const auto& hs = rx.dec.samples;
     bool same = true;
-    for (auto [l, rr] : rx.dec.samples) {
-        same = same && l == rr;
-        for (uint8_t b : {static_cast<uint8_t>(l), static_cast<uint8_t>(static_cast<uint16_t>(l) >> 8)}) {
-            crc ^= b;
-            for (int k = 0; k < 8; k++) crc = (crc >> 1) ^ (crc & 1 ? 0xEDB88320u : 0);
-        }
-    }
+    for (auto [l, rr] : hs) same = same && l == rr;
     CHECK(same);
-    CHECK(~crc == pcm_crc);
+    std::array<uint32_t, 256> tab{};
+    for (uint32_t i = 0; i < 256; i++) {
+        uint32_t v = i;
+        for (int k = 0; k < 8; k++) v = (v >> 1) ^ (v & 1 ? 0xEDB88320u : 0);
+        tab[i] = v;
+    }
+    auto crc_of = [&](size_t from) {
+        uint32_t crc = 0xFFFFFFFFu;
+        for (size_t i = from; i < from + pcm_n; i++) {
+            auto u = static_cast<uint16_t>(hs[i].first);
+            crc = (crc >> 8) ^ tab[(crc ^ u) & 0xFF];
+            crc = (crc >> 8) ^ tab[(crc ^ (u >> 8)) & 0xFF];
+        }
+        return ~crc;
+    };
+    size_t first = 0;
+    while (first < hs.size() && hs[first].first == 0) first++;
+    bool found = false;
+    for (size_t from = 0; from <= first && from + pcm_n <= hs.size() && !found; from++)
+        found = crc_of(from) == pcm_crc;
+    CHECK(found);
     REQUIRE(rx.frames.size() > 2);
     int matched = 0;
     for (size_t i = 0; i < rx.frames.size(); i++) {
@@ -230,6 +249,12 @@ std::optional<uint32_t> on_hdmi(const std::string& id) {
         }
     }
     CHECK(matched >= 1);
+    // The sound comes at 48 kHz, 800 samples in every display frame, whatever the 2600's frames'
+    // length, or a receiver's buffer fills or runs dry and it mutes.
+    for (size_t i = 1; i < rx.frames.size(); i++) {
+        INFO("display frame " << i);
+        CHECK(rx.frames[i].samples - rx.frames[i - 1].samples == 800);
+    }
     return r.crc32;
 }
 

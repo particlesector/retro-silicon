@@ -46,6 +46,7 @@ enum Reg : uint32_t {
     kVideoShown = 0x40,  // 2 bytes, read-only: display frames whose frame started on request
     kVideoLate = 0x42,   // 2 bytes, read-only: lines late
     kVideoOverrun = 0x44,  // 2 bytes, read-only: lines overwritten before they were shown
+    kVideoGaps = 0x46,     // 2 bytes, read-only: the HDMI sound ran dry while playing, or dropped a sample
     kPcmCrc = 0x48,      // 4 bytes, read-only: CRC-32 of every 48 kHz sample (16 bits, little-endian)
     kPcmCount = 0x4C,    // 4 bytes, read-only: how many
 };
@@ -58,6 +59,7 @@ struct Video {
     bool whole = false;  // ...and its display frame showed its frame whole
     uint32_t crc = 0;
     uint16_t shown = 0, late = 0, overrun = 0;
+    uint16_t gaps = 0;   // the HDMI sound ran dry while playing, or dropped a sample
 };
 
 // Paddles in INPT0-3, each a knob position (a pot of n / 256 Mohm), or -1 for none.

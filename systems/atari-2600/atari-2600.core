@@ -20,6 +20,7 @@ filesets:
       - retro-silicon:common:clock-enable
       - retro-silicon:common:por
       - retro-silicon:common:cdc
+      - retro-silicon:common:fifo
       - retro-silicon:audio:resampler
       - retro-silicon:video:hdmi
       - retro-silicon:debug:test-shell
