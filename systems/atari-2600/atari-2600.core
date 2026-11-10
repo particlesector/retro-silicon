@@ -1,7 +1,7 @@
 CAPI=2:
 # SPDX-License-Identifier: Apache-2.0
 name: retro-silicon:system:atari-2600:0.1.0
-description: The Atari 2600 so far - the 6507, the TIA (line, sync, background, playfield, players) and the RIOT - with the cartridge outside
+description: The Atari 2600 - the 6507, the TIA (picture and sound), the RIOT and the paddles' inputs - with the cartridge outside
 
 filesets:
   rtl:
@@ -12,6 +12,7 @@ filesets:
       - retro-silicon:cpu:6502
       - retro-silicon:video:tia
       - retro-silicon:io:riot-6532
+      - retro-silicon:io:paddles
 
 targets:
   default: &default

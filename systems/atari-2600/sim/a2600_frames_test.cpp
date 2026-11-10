@@ -14,6 +14,7 @@
 #include <cstdio>
 #include <cstdlib>
 #include <fstream>
+#include <map>
 #include <sstream>
 #include <string>
 #include <vector>
@@ -131,6 +132,28 @@ std::vector<AudioGolden> audio_golden() {
     return out;
 }
 
+// harness/golden/a2600_paddles.txt: id, then INPT0-3's paddles, each a knob position (a pot of
+// n / 256 Mohm) or - for none. A cartridge not listed has none.
+using Paddles = std::array<int, 4>;
+std::map<std::string, Paddles> paddles_golden() {
+    std::ifstream f(RS_A2600_PADDLES);
+    std::map<std::string, Paddles> out;
+    std::string line;
+    while (std::getline(f, line)) {
+        if (line.empty() || line[0] == '#') continue;
+        std::istringstream s(line);
+        std::string id, p;
+        Paddles pads{};
+        s >> id;
+        for (int& pos : pads) {
+            s >> p;
+            pos = p == "-" ? -1 : std::stoi(p);
+        }
+        out[id] = pads;
+    }
+    return out;
+}
+
 std::vector<Golden> golden() {
     std::ifstream f(RS_A2600_GOLDEN);
     std::vector<Golden> out;
@@ -153,12 +176,19 @@ std::vector<Golden> golden() {
 // colour clock's levels as <dump_name>.lvl (a byte each: aud0 | aud1 << 4) and VSYNC as <dump_name>.vs
 // (a byte each), to compare with a transistor-level TIA's pins.
 uint32_t run(const std::vector<uint8_t>& rom, int frames, std::vector<uint8_t>& sound,
-             const std::string& dump_name = "") {
+             const Paddles& paddles, const std::string& dump_name = "") {
     Va2600 m;
     FrameCutter cut;
     m.joy = 0xFF;
     m.switches = 0xFF;
     m.fire_n = 3;
+    m.paddle_on = 0;
+    m.paddle_pos = 0;
+    for (int i = 0; i < 4; i++)
+        if (paddles[i] >= 0) {
+            m.paddle_on |= 1u << i;
+            m.paddle_pos |= uint32_t(paddles[i]) << 8 * i;
+        }
     m.cart_data = 0;
     m.clk = 0;
     m.cc = 0;
@@ -178,9 +208,9 @@ uint32_t run(const std::vector<uint8_t>& rom, int frames, std::vector<uint8_t>& 
     uint32_t sum0 = 0, sum1 = 0;
     std::vector<uint8_t> levels, vsyncs;
     const char* dump_dir = std::getenv("RS_A2600_DUMP");
-    // A colour clock every 2 clocks.
+    // A colour clock every 6 clocks, the least io/paddles takes.
     for (uint64_t clock = 0; cut.frames < frames; clock++) {
-        const bool cc = clock & 1;
+        const bool cc = clock % 6 == 5;
         m.cc = cc;
         m.clk = 0;
         m.eval();
@@ -231,6 +261,7 @@ uint32_t run(const std::vector<uint8_t>& rom, int frames, std::vector<uint8_t>& 
 
 TEST_CASE("atari2600 test cartridges match Stella's frames and sound") {
     const std::vector<AudioGolden> sounds = audio_golden();
+    const std::map<std::string, Paddles> pads = paddles_golden();
     for (const Golden& g : golden()) {
         const char* roms = std::getenv("RS_TESTROMS");
         const std::string path = std::string(roms ? roms : RS_TESTROMS) + "/" + g.path;
@@ -243,7 +274,8 @@ TEST_CASE("atari2600 test cartridges match Stella's frames and sound") {
         INFO(g.id);
         REQUIRE((rom.size() == 2048 || rom.size() == 4096));
         std::vector<uint8_t> sound;
-        CHECK(run(rom, g.frames, sound, g.id) == g.crc);
+        const auto pad = pads.find(g.id);
+        CHECK(run(rom, g.frames, sound, pad == pads.end() ? Paddles{-1, -1, -1, -1} : pad->second, g.id) == g.crc);
         for (const AudioGolden& a : sounds) {
             if (a.id != g.id) continue;
             INFO("sound, " << sound.size() / 4 << " samples");

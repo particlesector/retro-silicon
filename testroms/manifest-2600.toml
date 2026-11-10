@@ -16,6 +16,8 @@
 # dev.tia.pfscoreglitch setting draws it); frames.py writes those to
 # harness/golden/a2600_score_glitch_crc32.txt. audio_samples: the core's sound
 # must match Stella's first N samples too (harness/golden/a2600_audio_crc32.txt).
+# paddles: INPT0-3's knobs (0-255, a pot of n / 256 Mohm) or "-" for none, as Stella plugs them
+# in (harness/golden/a2600_paddles.txt); a cartridge without has none.
 
 [sources.a2600-carts]
 dir = "a2600"
@@ -154,3 +156,15 @@ check = "frame"
 frames = 108
 audio_samples = 55000
 stella = "Four bands (brown, purple, violet, blue) with a short black line where RSYNC cuts the last band's first line; the sound changes every frame"
+
+[[rom]]
+id = "tia_paddles"
+source = "a2600-carts"
+path = "tia_paddles.bin"
+sha256 = "77fbd49a35138b2e2e4d9e593732cff1b24f2fca0a1c22515ec1c903494e5b77"
+needs = "cpu, tia, paddles"
+covers = "The paddles' inputs (INPT0-3) and their dump (VBLANK bit 7): each input's capacitor charging from a dump of 27 to 58 cycles, read the 2 cycles before Stella's crossing and the 2 after; and reads before and in the dump"
+check = "frame"
+frames = 134
+paddles = [128, 128, 128, 128]
+stella = "Bytes 0-15 each 00110011 (each group of 4 reads: 0, 0, 1, 1); bytes 16-31 all 1s but the first frame's (charged before the dump, 0 in it)"

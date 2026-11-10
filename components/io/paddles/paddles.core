@@ -1,0 +1,31 @@
+CAPI=2:
+# SPDX-License-Identifier: Apache-2.0
+name: retro-silicon:io:paddles:0.1.0
+description: The Atari 2600's paddle inputs, each capacitor's charge and dump a colour clock at a time, as Stella models them
+
+filesets:
+  rtl:
+    files:
+      - rtl/paddles_rate.sv
+      - rtl/paddles.sv
+    file_type: systemVerilogSource
+
+targets:
+  default: &default
+    filesets: [rtl]
+    toplevel: paddles
+  lint:
+    <<: *default
+    default_tool: verilator
+    parameters: [SAVE_STATE]
+    tools:
+      verilator:
+        mode: lint-only
+        verilator_options: [-Wall]
+
+parameters:
+  SAVE_STATE:
+    datatype: bool
+    default: true
+    paramtype: vlogparam
+    description: 0 leaves out the save-state port's logic

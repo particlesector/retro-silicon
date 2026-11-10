@@ -14,3 +14,4 @@ tia_collisions 30 0xf8fb443f frame - a2600-carts/tia_collisions.bin
 tia_rsync 30 0x40c6ee03 frame - a2600-carts/tia_rsync.bin
 tia_resmp 30 0x0f5e4ecd frame - a2600-carts/tia_resmp.bin
 tia_audio 108 0x0091e4e4 frame - a2600-carts/tia_audio.bin
+tia_paddles 134 0x6c018a61 frame - a2600-carts/tia_paddles.bin

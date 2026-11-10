@@ -23,6 +23,7 @@ How to read it:
 | `mem_arbiter` | `components/memory/arbiter` | 402 MHz, 53 LUTs | 380 MHz, 53 LUTs | 442 MHz, 52 LUTs |
 | `mem_cache` | `components/memory/cache` | 120 MHz, 1172 LUTs, 19 BRAM | 170 MHz, 1214 LUTs, 19 BRAM | 152 MHz, 961 LUTs, 19 BRAM |
 | `mem_port_cdc` | `components/memory/port-cdc` | 304 MHz, 47 LUTs | 626 MHz, 46 LUTs | 257 MHz, 41 LUTs |
+| `paddles` | `components/io/paddles` | 226 MHz, 1802 LUTs, 1 BRAM, 3 DSP | 72 MHz, 4304 LUTs, 1 BRAM | 39 MHz, 1278 LUTs, 4 DSP |
 | `por` | `components/common/por` | 622 MHz, 15 LUTs | 616 MHz, 15 LUTs | 521 MHz, 18 LUTs |
 | `ppu_2c02` | `components/video/ppu-2c02` | 85 MHz, 5966 LUTs, 2 BRAM | 73 MHz, 5851 LUTs, 2 BRAM | 54 MHz, 4495 LUTs |
 | `ppu_2c02_rgb` | `components/video/ppu-2c02` | 371 MHz, 9 LUTs, 1 BRAM | 371 MHz, 9 LUTs, 1 BRAM | 552 MHz, 9 LUTs, 1 BRAM |
