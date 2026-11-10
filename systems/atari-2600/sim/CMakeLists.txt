@@ -16,3 +16,8 @@ target_compile_definitions(a2600_score_glitch_test PRIVATE RS_TESTROMS="${RS_TES
     RS_A2600_GOLDEN="${PROJECT_SOURCE_DIR}/harness/golden/a2600_score_glitch_crc32.txt"
     RS_A2600_AUDIO_GOLDEN="${PROJECT_SOURCE_DIR}/harness/golden/a2600_audio_crc32.txt"
     RS_A2600_PADDLES="${PROJECT_SOURCE_DIR}/harness/golden/a2600_paddles.txt")
+
+# a2600_frame against the frame manager's model (frame_cutter.hpp).
+rs_sim_test(a2600_frame_test SOURCES a2600_frame_test.cpp)
+rs_verilate(a2600_frame_test COMPONENT a2600_frame PREFIX Va2600_frame)
+target_link_libraries(a2600_frame_test PRIVATE ZLIB::ZLIB)

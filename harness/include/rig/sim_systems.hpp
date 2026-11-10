@@ -55,5 +55,8 @@ std::unique_ptr<SimLink> make_nes_ext_sim();
 // bit, dots at 9/61, 2% fast), 256 KB of CHR in block RAM, without the display.
 // Reports RS_NES_AXI_BUILD_ID.
 std::unique_ptr<SimLink> make_nes_axi_sim();
+// The Atari 2600 (systems/atari-2600's a2600_sys) as the Tang Nano 20K runs it: 27 MHz, 18 clocks a
+// bit, colour clocks at 35/264 of the clock (NTSC's 3.579545 MHz). Reports RS_A2600_BUILD_ID.
+std::unique_ptr<SimLink> make_a2600_sim();
 
 } // namespace rig

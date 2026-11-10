@@ -37,3 +37,7 @@ rs_board_bitstream(nes BUILD ${build} COMPONENT nes_top CST nes.cst PARAMS BUILD
 # video probe. Same clocks.
 rs_board_bitstream(nes_lean BUILD ${build} COMPONENT nes_top CST nes.cst PARAMS BUILD_ID=${nes_id} DEBUG=0
                    CLOCKS sclk=46.40625 pclk=74.25 fclk=371.25 SEED 1)
+# The Atari 2600 under the test shell (systems/atari-2600's a2600_sys), on the 27 MHz oscillator:
+# 18 clocks a bit, colour clocks at 35/264 of it (NTSC's rate). No display yet.
+get_property(a2600_id GLOBAL PROPERTY RS_A2600_BUILD_ID)
+rs_board_bitstream(a2600 BUILD ${build} COMPONENT a2600_sys CST uart_echo.cst PARAMS CLKS_PER_BIT=18 BUILD_ID=${a2600_id})

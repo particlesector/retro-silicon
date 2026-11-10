@@ -28,6 +28,7 @@ openFPGALoader -b tangnano20k build/fpga/uart_echo/uart_echo.fs
 | `shell_ram_bitstream` | `systems/shell-ram` | `uart_echo.cst` | 1.5 Mbaud; `BUILD_ID` from the RTL's SHA-256 |
 | `shell_sdram_bitstream` | `systems/shell-sdram`, through `rtl/shell_sdram_top.sv` | `uart_echo.cst` | As shell-ram, with the SDRAM |
 | `nes_bitstream` | `systems/nes` on the SDRAM (`nes_sdram`), through `rtl/nes_top.sv` | `nes.cst` | 46.40625 MHz from the PLL; HDMI at 720p (below) |
+| `a2600_bitstream` | `systems/atari-2600`'s `a2600_sys` | `uart_echo.cst` | The 27 MHz oscillator, 1.5 Mbaud; colour clocks at 35/264 of it (NTSC's rate); no display yet |
 
 ## SDRAM
 
