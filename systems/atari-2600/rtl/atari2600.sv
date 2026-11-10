@@ -1,15 +1,21 @@
 // SPDX-License-Identifier: Apache-2.0
 // The Atari 2600 (NTSC): the 6507 (`cpu/6502` with decimal mode, 13 address lines), the TIA
-// (`video/tia`, picture and sound) and the RIOT (`io/riot-6532`) on one bus, with the cartridge outside.
+// (`video/tia`, picture and sound) and the RIOT (`io/riot-6532`) on one bus, with the cartridge outside,
+// and the paddles' inputs (`io/paddles`).
 //
-// One colour clock per `cc`; a CPU cycle is 3 of them, so `cc` must come at least 2 clocks apart for
-// the RIOT's registered read. The cartridge sees the CPU's address on `cart_addr` while `cart_sel` is
+// One colour clock per `cc`; a CPU cycle is 3 of them. `cc` must come at least 6 clocks apart: the
+// paddles step their four capacitors in turn between colour clocks (and the RIOT's registered read
+// needs 2). The cartridge sees the CPU's address on `cart_addr` while `cart_sel` is
 // high (A12) and must have `cart_data` there by the clock that ends the cycle.
 //
 // The bus: A12 high selects the cartridge; A12 low with A7 low the TIA (writes by A5-A0, reads by
 // A3-A0, which drive only bits 7-6: the rest keep the bus's last value, as on the console); A12 low
 // with A7 high the RIOT, its RAM when A9 is low. Port A's pins are wired-AND: a bit reads low if the
 // joystick pulls it low or the RIOT drives it low as an output.
+//
+// Paddles: a pair plugs into each joystick port, paddle 0 and 1 into player 0's (INPT0, INPT1), 2 and 3
+// into player 1's (INPT2, INPT3). Their fire buttons are joystick lines: paddle 0's is P0 right (`joy`
+// bit 7), paddle 1's P0 left (bit 6), paddle 2's P1 right (bit 3), paddle 3's P1 left (bit 2).
 
 module atari2600 #(
     parameter bit TIA_SCORE_GLITCH = 1'b0  // video/tia's SCORE_GLITCH
@@ -27,6 +33,8 @@ module atari2600 #(
     input  logic [7:0]  joy,         // SWCHA's pins: P0 right, left, down, up in 7-4, P1 in 3-0; 0 pressed
     input  logic [7:0]  switches,    // SWCHB's pins: 0 reset, 1 select, 3 colour, 6-7 difficulty; 0 pressed
     input  logic [1:0]  fire_n,      // INPT4, INPT5: P0's and P1's fire buttons
+    input  logic [3:0]  paddle_on,   // paddle i is plugged in (INPT0-3); unplugged, an input reads 0
+    input  logic [31:0] paddle_pos,  // paddle i's knob in bits 8i+7:8i: a pot of pos / 256 Mohm
 
     output logic [7:0]  pix,         // the TIA's picture (video/tia's README)
     output logic        pix_on,
@@ -80,9 +88,18 @@ module atari2600 #(
     tia #(.SAVE_STATE(1'b0), .SCORE_GLITCH(TIA_SCORE_GLITCH)) u_tia (
         .clk, .rst, .cc, .ce,
         .cs(sel_tia), .addr(we ? addr[5:0] : {2'b00, addr[3:0]}), .we, .din(cpu_dout),
-        .dout(tia_dout), .rdy, .fire_n,
+        .dout(tia_dout), .rdy, .fire_n, .pot_hi, .dump,
         .pix, .pix_on, .x(pix_x), .line_end, .vsync, .vblank, .aud0, .aud1, .aud_tick,
         .st_addr(5'd0), .st_rdata(tia_st), .st_we(1'b0), .st_wdata(32'd0)
+    );
+
+    // ---- Paddles ----
+    logic [3:0]  pot_hi;
+    logic        dump;
+    logic [31:0] pot_st;
+    paddles #(.SAVE_STATE(1'b0)) u_paddles (
+        .clk, .rst, .cc, .dump, .on(paddle_on), .pos(paddle_pos), .hi(pot_hi),
+        .st_addr(3'd0), .st_rdata(pot_st), .st_we(1'b0), .st_wdata(32'd0)
     );
 
     // ---- RIOT ----
@@ -123,7 +140,7 @@ module atari2600 #(
     assign cart_wdata = cpu_dout;
 
     // The 2600 leaves the CPU's interrupts unconnected.
-    wire unused = &{1'b0, tia_dout[5:0], bus[7:6], addr[15:13], dbg_a, dbg_x, dbg_y, dbg_s, dbg_p, halted, cpu_st, tia_st, riot_st,
+    wire unused = &{1'b0, tia_dout[5:0], bus[7:6], addr[15:13], dbg_a, dbg_x, dbg_y, dbg_s, dbg_p, halted, cpu_st, tia_st, riot_st, pot_st,
                     riot_irq_n, pb_out, pb_ddr};
 
 endmodule

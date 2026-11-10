@@ -4,8 +4,8 @@
 // So far: the line (228 colour clocks: 68 of horizontal blank, then 160 pixels), VSYNC, VBLANK,
 // WSYNC, the background, the playfield with its colours, reflection, score mode and priority, the two
 // players (`tia_player`), the two missiles (`tia_missile`), the ball (`tia_ball`), HMOVE, collisions and
-// the fire buttons' input ports, RSYNC, and sound (`tia_audio`, each of the two channels). The paddles'
-// ports come next.
+// the input ports (the fire buttons', and the paddles' with their dump), RSYNC, and sound (`tia_audio`,
+// each of the two channels).
 //
 // Timing, as Stella 7.0 runs it:
 // - Each CPU cycle is 3 colour clocks; `ce` marks the colour clock that ends one, and the cycle's access
@@ -24,7 +24,10 @@
 // - RSYNC sets the line's counter to 225, so the line ends 3 colour clocks later; any of those in the
 //   picture draw on from the column the line had reached. A line's columns it doesn't draw are black.
 // - INPT4 and INPT5 read the fire buttons' pins (0 pressed); with VBLANK bit 6 set they latch a press
-//   until it's cleared. INPT0-3 read 0: no paddles yet (Stella's joystick leaves them unconnected).
+//   until it's cleared. INPT0-3 read the paddles' pins (`pot_hi`: each one's capacitor is above the
+//   TIA's threshold, `io/paddles`), 0 while VBLANK bit 7 dumps them to ground. The dump (`dump`) lands
+//   after its colour clock, as other writes do (and as Stella's timestamps have it), not a clock later
+//   as VBLANK's blanking does.
 // - WSYNC holds `rdy` low from the write to the line's end, so the CPU's next read cycle completes as
 //   the first cycle of the next line (`cpu/6502` repeats a read cycle that ends with rdy low). A write
 //   in the cycle that ends the line doesn't hold it.
@@ -53,6 +56,8 @@ module tia #(
     output logic [7:0]  dout,    // bits 7-6; the bus keeps its last value in bits 5-0
     output logic        rdy,
     input  logic [1:0]  fire_n,  // INPT4's and INPT5's pins: player 0's and player 1's fire, 0 pressed
+    input  logic [3:0]  pot_hi,  // INPT0-3's pins: each paddle's capacitor is above the threshold
+    output logic        dump,    // VBLANK bit 7: INPT0-3's capacitors dumped (to `io/paddles`)
 
     output logic [7:0]  pix,
     output logic        pix_on,
@@ -288,6 +293,7 @@ module tia #(
     // ---- Input ports ----
     logic       latch_mode;              // VBLANK bit 6
     logic [1:0] latched;                 // 0: a press seen since latching began
+    logic       dump_r;                  // VBLANK bit 7: INPT0-3's capacitors dumped to ground
     wire  [1:0] inpt45 = latch_mode ? latched & fire_n : fire_n;
 
     // ---- The colour, by priority ----
@@ -373,6 +379,7 @@ module tia #(
             rs_delta    <= 8'd0;
             cx          <= 15'd0;
             latch_mode  <= 1'b0;
+            dump_r      <= 1'b0;
             latched     <= 2'b00;
             pix         <= 8'd0;
             pix_on      <= 1'b0;
@@ -455,6 +462,7 @@ module tia #(
                         vblank_new  <= din[1];
                         vblank_pend <= 1'b1;
                         latch_mode  <= din[6];
+                        dump_r      <= din[7];
                         if (!din[6]) latched <= 2'b11;
                     end
                     CXCLR:  cx <= 15'd0;
@@ -497,7 +505,7 @@ module tia #(
                 5'd4: {rs_delta, line_end, x, pix_on, pix} <= st_wdata[25:0];
                 5'd13: {hmove_sr, hmw_sr, hmw_sel, hmw_val, mclk, mactive, ext, hblank} <= st_wdata[22:0];
                 5'd14: {moving, hm[4], hm[3], hm[2], hm[1], hm[0]} <= st_wdata[24:0];
-                5'd15: {latched, latch_mode, pf_cv, cx} <= st_wdata[18:0];
+                5'd15: {dump_r, latched, latch_mode, pf_cv, cx} <= st_wdata[19:0];
                 5'd16: {aud_tick, aud1, aud0, actr} <= st_wdata[16:0];
                 default: ;
             endcase
@@ -508,6 +516,7 @@ module tia #(
     // first to complete.
     assign rdy    = !wsync;
     // Reads by A3-A0: the collision latches (with this colour clock's check), then INPT0-5.
+    wire [3:0] inpt03 = dump_r ? 4'd0 : pot_hi;
     always_comb
         case (addr[3:0])
             4'h0: dout = {cx_seen[14:13], 6'd0};
@@ -518,12 +527,17 @@ module tia #(
             4'h5: dout = {cx_seen[4:3], 6'd0};
             4'h6: dout = {cx_seen[2], 7'd0};
             4'h7: dout = {cx_seen[1:0], 6'd0};
+            4'h8: dout = {inpt03[0], 7'd0};
+            4'h9: dout = {inpt03[1], 7'd0};
+            4'hA: dout = {inpt03[2], 7'd0};
+            4'hB: dout = {inpt03[3], 7'd0};
             4'hC: dout = {inpt45[0], 7'd0};
             4'hD: dout = {inpt45[1], 7'd0};
-            default: dout = 8'd0;  // INPT0-3: no paddles yet
+            default: dout = 8'd0;
         endcase
     assign vsync  = vsync_r;
     assign vblank = vblank_r;
+    assign dump   = dump_r;
 
     if (SAVE_STATE) begin : g_st
         always_ff @(posedge clk)
@@ -546,7 +560,7 @@ module tia #(
                 5'd12: st_rdata <= bl_st;
                 5'd13: st_rdata <= {9'd0, hmove_sr, hmw_sr, hmw_sel, hmw_val, mclk, mactive, ext, hblank};
                 5'd14: st_rdata <= {7'd0, moving, hm[4], hm[3], hm[2], hm[1], hm[0]};
-                5'd15: st_rdata <= {13'd0, latched, latch_mode, pf_cv, cx};
+                5'd15: st_rdata <= {12'd0, dump_r, latched, latch_mode, pf_cv, cx};
                 5'd16: st_rdata <= {15'd0, aud_tick, aud1, aud0, actr};
                 5'd17: st_rdata <= a0_st;
                 5'd18: st_rdata <= a1_st;

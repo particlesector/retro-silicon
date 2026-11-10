@@ -3,7 +3,7 @@
 The Atari 2600's reference is [Stella](https://github.com/stella-emu/stella), run headless through its libretro core, as the NES's is MesenCE.
 
 - `stella-frames` (`stella_frames.cpp`) runs a cartridge from power-up and prints each chosen frame's CRC-32 as TIA colour values: 160 x 228 bytes, from the 23rd line after VSYNC ends (Stella's NTSC window), each the colour register's value. It learns the core's palette from a colour-bar cartridge of its own, so no palette is copied here. `--dump DIR` writes the frame's bytes (`.tia`) and a picture (`.ppm`).
-- `frames.py` runs every cartridge in `testroms/manifest-2600.toml` with `check = "frame"` and writes `harness/golden/a2600_frames_crc32.txt`.
+- `frames.py` runs every cartridge in `testroms/manifest-2600.toml` with `check = "frame"` and writes `harness/golden/a2600_frames_crc32.txt`; with them `a2600_score_glitch_crc32.txt`, `a2600_audio_crc32.txt` (Stella's sound, from a core with the rig's audio hook) and `a2600_paddles.txt` (the paddles Stella plugs in, from each cartridge's `paddles`).
 
 ## Building the core
 
