@@ -90,7 +90,7 @@ Gaps:
 
 ## Size
 
-About 2,500 LUTs and 110 flip-flops on a GW2A-18C with `DECIMAL = 0`. That's room to shrink, not a gap: a smaller build would take fewer of the FPGA's cells, but the CPU's behaviour, cycle for cycle, would be the same.
+On a GW2A-18C with `DECIMAL = 0`, Yosys makes it about 2,400 LUTs and 115 flip-flops with `SAVE_STATE = 0`, and about 3,000 LUTs and 140 flip-flops with save states. The logic hasn't been optimised for size yet. That's room to shrink, not a gap: a smaller build would take fewer of the FPGA's cells, but the CPU's behaviour, cycle for cycle, would be the same.
 
 ## References
 
