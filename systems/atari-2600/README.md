@@ -129,6 +129,6 @@ With `VIDEO`, `a2600_sys` shows the frames on HDMI at 720p with their sound, as 
 
 ## Status
 
-On the Tang Nano 20K, every cartridge matches its golden frame and sound, and on HDMI `tia_colours`, `tia_playfield` and `tia_audio` give the sim's video CRCs, with no line late, and the capture dongle sees each golden frame at 720p.
+On the Tang Nano 20K, every cartridge that fits its 16 KB matches its golden frame and sound (the bank-switching ones but `bank_f4`, `bank_f4sc` and `bank_f0`), and on HDMI `tia_colours`, `tia_playfield` and `tia_audio` give the sim's video CRCs, with no line late, and the capture dongle sees each golden frame at 720p.
 
-In the sim, all twelve test cartridges match their golden frames, and `tia_audio` its golden sound (Stella's, but for `tia_missiles_ball` and `tia_resmp`: see `video/tia`'s README), with `TIA_SCORE_GLITCH` off and on: `tia_colours`, `riot_ram`, `riot_timer`, `tia_playfield`, `tia_players`, `tia_missiles_ball`, `tia_hmove`, `tia_collisions`, `tia_rsync`, `tia_resmp`, `tia_audio` and `tia_paddles`.
+In the sim, every bank-switching cartridge matches its golden frame through `a2600_sys` (`bank_f8`, `bank_f6`, `bank_f4`, their Superchip versions, `bank_fa`, `bank_f0`, `bank_fe`, `bank_e0`, `bank_3f` and `bank_e7`), and all twelve other test cartridges match their golden frames, and `tia_audio` its golden sound (Stella's, but for `tia_missiles_ball` and `tia_resmp`: see `video/tia`'s README), with `TIA_SCORE_GLITCH` off and on: `tia_colours`, `riot_ram`, `riot_timer`, `tia_playfield`, `tia_players`, `tia_missiles_ball`, `tia_hmove`, `tia_collisions`, `tia_rsync`, `tia_resmp`, `tia_audio` and `tia_paddles`.
