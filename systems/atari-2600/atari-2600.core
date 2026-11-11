@@ -8,6 +8,7 @@ filesets:
     files:
       - rtl/atari2600.sv
       - rtl/a2600_frame.sv
+      - rtl/a2600_cart.sv
       - rtl/a2600_video.sv
       - rtl/a2600_sys.sv
     file_type: systemVerilogSource

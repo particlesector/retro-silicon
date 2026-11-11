@@ -15,3 +15,15 @@ tia_rsync 30 0x40c6ee03 frame - a2600-carts/tia_rsync.bin
 tia_resmp 30 0x0f5e4ecd frame - a2600-carts/tia_resmp.bin
 tia_audio 108 0x0091e4e4 frame - a2600-carts/tia_audio.bin
 tia_paddles 134 0x6c018a61 frame - a2600-carts/tia_paddles.bin
+bank_f8 10 0x53cdfd05 frame - a2600-carts/bank_f8.F8
+bank_f6 10 0xae19aa54 frame - a2600-carts/bank_f6.F6
+bank_f4 10 0xfb19af4d frame - a2600-carts/bank_f4.F4
+bank_f8sc 10 0x922917a3 frame - a2600-carts/bank_f8sc.F8SC
+bank_f6sc 10 0x6ffd40f2 frame - a2600-carts/bank_f6sc.F6SC
+bank_f4sc 10 0x3afd45eb frame - a2600-carts/bank_f4sc.F4SC
+bank_fa 10 0xec41e84d frame - a2600-carts/bank_fa.FA
+bank_f0 10 0x6c1abb12 frame - a2600-carts/bank_f0.F0
+bank_fe 10 0x2637e3c8 frame - a2600-carts/bank_fe.FE
+bank_e0 10 0xf469fda3 frame - a2600-carts/bank_e0.E0
+bank_3f 10 0xdb5003b1 frame - a2600-carts/bank_3f.3F
+bank_e7 10 0x4c513a2a frame - a2600-carts/bank_e7.E7

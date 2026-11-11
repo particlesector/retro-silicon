@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
-// The Atari 2600 (atari2600) under the test shell: its cartridge in block RAM, run and stop by
+// The Atari 2600 (atari2600) under the test shell: its cartridge in block RAM (a2600_cart, banked by
+// the scheme register 50 sets), run and stop by
 // register, and the checks a board can give the host: each whole frame's CRC as Stella cuts frames
 // (a2600_frame) and the sound's CRC as Stella samples it, so the host compares them with the golden
 // lists without taking the picture over the link.
@@ -16,7 +17,7 @@
 // it), the frame whose CRC frame_crc gives as frame vcap_frame + 1.
 //
 // Shell address map (README.md has the registers):
-//   0x00000000-0x00000FFF  the cartridge, 4 KB (a 2 KB one written twice)
+//   0x00000000-...         the cartridge's ROM, 2^ROM_LOG2 bytes (a 2 KB one written twice)
 //   0x01000000-0x0100007F  control and status registers
 //   0x05000000-0x05008E7F  the frame buffer: y x 160 + x, the last frame as Stella would show it
 // LEDs (active low): led[0] a corrupt command frame, led[1] a stalled one, led[3] running, led[4]
@@ -29,6 +30,7 @@ module a2600_sys #(
     parameter int          CC_DEN           = 264,      //   3.579545 MHz from 27 MHz
     parameter bit          TIA_SCORE_GLITCH = 1'b0,
     parameter bit          VIDEO            = 1'b0,     // HDMI out (a2600_video), on pclk
+    parameter int          ROM_LOG2         = 16,       // the cartridge's ROM: 2^ROM_LOG2 bytes
     parameter logic [31:0] BUILD_ID         = '0
 ) (
     input  logic       clk,
@@ -65,11 +67,15 @@ module a2600_sys #(
     logic [1:0]  fire_n;          // 2E
     logic [3:0]  paddle_on;       // 2F
     logic [31:0] paddle_pos;      // 30
+    logic [3:0]  cart_scheme;     // 50: a2600_cart's scheme
+    logic        cart_sc;         //     bit 4: the Superchip's RAM
+    logic [4:0]  cart_size;       // 51: the ROM's size, log2
 
     wire rst = por_rst || ctrl[1];
 
     logic [31:0] cycles, samples, audio_crc, frames, frame_crc, crc_frame;
-    logic        busy, pace_wait;
+    logic        busy, fb_busy, cart_clearing, pace_wait;
+    assign busy = fb_busy || cart_clearing;
     wire at_limit = (stop_cycle != 0 && cycles >= stop_cycle) || (stop_frame != 0 && frames >= stop_frame);
     wire running  = ctrl[0] && !rst && !busy && !at_limit && !pace_wait;
 
@@ -85,7 +91,7 @@ module a2600_sys #(
     logic [7:0]  pix, pix_x;
     logic        pix_on, line_end, vsync, vblank, aud_tick;
     logic [3:0]  aud0, aud1;
-    logic        cpu_sync, bus_ce, bus_we;
+    logic        cpu_sync, bus_ce, bus_we, bus_stall;
     logic [15:0] cpu_pc;
     logic [12:0] bus_addr;
     logic [7:0]  bus_data;
@@ -94,18 +100,17 @@ module a2600_sys #(
         .cart_addr, .cart_sel, .cart_we, .cart_wdata, .cart_data,
         .joy, .switches, .fire_n, .paddle_on, .paddle_pos,
         .pix, .pix_on, .pix_x, .line_end, .vsync, .vblank, .aud0, .aud1, .aud_tick,
-        .cpu_sync, .cpu_pc, .bus_ce, .bus_addr, .bus_we, .bus_data);
+        .cpu_sync, .cpu_pc, .bus_ce, .bus_addr, .bus_we, .bus_data, .bus_stall);
 
-    // The cartridge: 4 KB of block RAM, read every clock (a CPU cycle is at least 18), written by the
-    // shell. A 2600 cartridge is ROM: the system's writes to it go nowhere.
-    logic [7:0] cart [4096];
+    // The cartridge, read every clock (a CPU cycle is at least 18) and written by the shell. It
+    // watches every access (bus_*), as a cartridge's bank switching does.
     logic [7:0] cart_sh;
-    wire        sh_cart = s_req && s_addr[31:24] == 8'h00 && s_addr[23:12] == '0;
-    always_ff @(posedge clk) begin
-        if (sh_cart && s_we) cart[s_addr[11:0]] <= s_wdata;
-        cart_data <= cart[cart_addr];
-        cart_sh   <= cart[s_addr[11:0]];
-    end
+    wire        sh_cart = s_req && s_addr[31:24] == 8'h00 && s_addr[23:ROM_LOG2] == '0;
+    a2600_cart #(.ROM_LOG2(ROM_LOG2)) u_cart (
+        .clk, .rst, .scheme(cart_scheme), .sc(cart_sc), .size_log2(cart_size), .clearing(cart_clearing),
+        .ce(bus_ce && !bus_stall), .addr(bus_addr), .we(bus_we), .data(bus_data), .q(cart_data),
+        .sh_we(sh_cart && s_we && !s_ack), .sh_rd(sh_cart && !s_we), .sh_addr(s_addr[ROM_LOG2-1:0]), .sh_wdata(s_wdata),
+        .sh_q(cart_sh));
 
     // ---- Counts and the sound's CRC ----
     // Each sample is the two channels' levels summed over the colour clocks since the last, as two
@@ -146,7 +151,7 @@ module a2600_sys #(
     assign fb_req = sh_fb && !s_ack;
     a2600_frame u_frame (
         .clk, .rst, .step, .pix_on, .pix_x, .pix, .line_end, .vsync,
-        .frames, .crc(frame_crc), .crc_frame, .busy,
+        .frames, .crc(frame_crc), .crc_frame, .busy(fb_busy),
         .rd_req(fb_req), .rd_addr(s_addr[15:0]), .rd_ack(fb_ack), .rd_data(fb_data),
         .vw_we, .vw_y, .vw_w, .vw_d, .row_done, .line_busy, .frame_done);
 
@@ -263,6 +268,7 @@ module a2600_sys #(
             5'h11: reg_q = byte_of({v_gaps, v_overrun}, r[1:0]);
             5'h12: reg_q = byte_of(pcm_crc, r[1:0]);
             5'h13: reg_q = byte_of(pcm_n, r[1:0]);
+            5'h14: reg_q = byte_of({8'd0, 8'(ROM_LOG2), 3'd0, cart_size, 3'd0, cart_sc, cart_scheme}, r[1:0]);
             default: ;
         endcase
     end
@@ -288,6 +294,9 @@ module a2600_sys #(
             paddle_pos  <= '0;
             vid_pace    <= 1'b0;
             vcap_frame  <= '0;
+            cart_scheme <= '0;
+            cart_sc     <= 1'b0;
+            cart_size   <= 5'd12;
         end else if (s_req && !s_ack) begin
             if (sh_fb) begin
                 if (fb_ack) begin
@@ -319,6 +328,11 @@ module a2600_sys #(
                                   2'd3: paddle_on <= s_wdata[3:0];
                               endcase
                         5'h0C: paddle_pos <= set_byte(paddle_pos, r[1:0], s_wdata);
+                        5'h14: case (r[1:0])
+                                  2'd0: {cart_sc, cart_scheme} <= s_wdata[4:0];
+                                  2'd1: cart_size <= s_wdata[4:0];
+                                  default: ;
+                              endcase
                         default: ;
                     endcase
             end
@@ -342,6 +356,5 @@ module a2600_sys #(
         end
     assign led = ~{beat[24], at_limit, running, 1'b0, stalled, bad_frame};
 
-    wire unused = &{1'b0, cart_sel, cart_we, cart_wdata, vblank, cpu_sync, cpu_pc, bus_addr, bus_we, bus_data,
-                    s_addr[23:16]};
+    wire unused = &{1'b0, cart_addr, cart_sel, cart_we, cart_wdata, vblank, cpu_sync, cpu_pc};
 endmodule

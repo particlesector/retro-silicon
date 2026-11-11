@@ -188,6 +188,9 @@ TEST_CASE("atari2600 test cartridges match Stella's frames and sound") {
     const std::vector<AudioGolden> sounds = audio_golden();
     const std::map<std::string, Paddles> pads = paddles_golden();
     for (const Golden& g : golden()) {
+        // A banked cartridge (named for its scheme, bank_f8.F8) needs a2600_cart, which
+        // harness/tests/a2600_test.cpp runs through a2600_sys; this test's cartridge is 2 or 4 KB.
+        if (g.path.size() < 4 || g.path.substr(g.path.size() - 4) != ".bin") continue;
         const char* roms = std::getenv("RS_TESTROMS");
         const std::string path = std::string(roms ? roms : RS_TESTROMS) + "/" + g.path;
         std::ifstream f(path, std::ios::binary);

@@ -31,13 +31,15 @@ void matches_stella(const std::string& id) {
             SKIP("no " << path);
         }
         std::vector<uint8_t> rom((std::istreambuf_iterator<char>(f)), {});
+        auto cart = rig::a2600::cart_from_name(g.path);
+        REQUIRE(cart);
         auto link = rig::make_a2600_sim();
         const auto p = paddles.find(g.id);
         const auto s = sounds.find(g.id);
         auto r = rig::a2600::cart_test(*link, g.id, rom, g.frames, g.crc,
                                        p == paddles.end() ? rig::a2600::kNoPaddles : p->second,
                                        s == sounds.end() ? std::nullopt : std::make_optional(s->second),
-                                       RS_A2600_BUILD_ID);
+                                       RS_A2600_BUILD_ID, *cart);
         INFO(r.detail << " (" << r.notes << ")");
         CHECK(r.passed);
         return;
@@ -48,6 +50,8 @@ void matches_stella(const std::string& id) {
 const std::vector<std::string> kCarts = {
     "tia_colours", "riot_ram", "riot_timer", "tia_playfield", "tia_players", "tia_missiles_ball",
     "tia_hmove", "tia_collisions", "tia_rsync", "tia_resmp", "tia_audio", "tia_paddles",
+    "bank_f8", "bank_f6", "bank_f4", "bank_f8sc", "bank_f6sc", "bank_f4sc", "bank_fa", "bank_f0",
+    "bank_fe", "bank_e0", "bank_3f", "bank_e7",
 };
 
 } // namespace
@@ -67,6 +71,18 @@ MATCHES_STELLA("tia_rsync")
 MATCHES_STELLA("tia_resmp")
 MATCHES_STELLA("tia_audio")
 MATCHES_STELLA("tia_paddles")
+MATCHES_STELLA("bank_f8")
+MATCHES_STELLA("bank_f6")
+MATCHES_STELLA("bank_f4")
+MATCHES_STELLA("bank_f8sc")
+MATCHES_STELLA("bank_f6sc")
+MATCHES_STELLA("bank_f4sc")
+MATCHES_STELLA("bank_fa")
+MATCHES_STELLA("bank_f0")
+MATCHES_STELLA("bank_fe")
+MATCHES_STELLA("bank_e0")
+MATCHES_STELLA("bank_3f")
+MATCHES_STELLA("bank_e7")
 
 TEST_CASE("a2600_sys: every cartridge of a2600_frames_crc32.txt has its test case") {
     std::vector<std::string> ids;

@@ -45,8 +45,9 @@ module a2600_top #(
 
     logic [9:0] tmds0, tmds1, tmds2;
 
+    // The cartridge's ROM in 16 KB of block RAM (8 of the 46): F8, F6, E0, FE, FA, E7 and 3F up to 16 KB.
     a2600_sys #(.CLKS_PER_BIT(CLKS_PER_BIT), .IDLE_CLKS(464_063), .CC_NUM(7), .CC_DEN(89), .VIDEO(1'b1),
-                .BUILD_ID(BUILD_ID)) u_sys (
+                .ROM_LOG2(14), .BUILD_ID(BUILD_ID)) u_sys (
         .clk(sclk), .uart_rx, .uart_tx, .led, .pclk, .tmds0, .tmds1, .tmds2);
 
     tmds_phy #(.TRUE_LVDS(1'b1)) u_phy (

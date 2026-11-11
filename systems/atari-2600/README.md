@@ -29,7 +29,8 @@ Paddles plug into the joystick ports in pairs: paddles 0 and 1 into player 0's (
 | `pix`, `pix_on`, `pix_x`, `line_end`, `vsync`, `vblank` | out | | The TIA's picture (its README) |
 | `aud0`, `aud1`, `aud_tick` | out | 4, 4, 1 | The TIA's sound: each channel's level, and Stella's sample points (its README) |
 | `cpu_sync`, `cpu_pc` | out | 1, 16 | For traces |
-| `bus_ce`, `bus_addr`, `bus_we`, `bus_data` | out | 1, 13, 1, 8 | For traces: the clock that ends a CPU cycle, and its access |
+| `bus_ce`, `bus_addr`, `bus_we`, `bus_data` | out | 1, 13, 1, 8 | The clock that ends a CPU cycle, and its access (a read's data is what the CPU read), for traces and a cartridge's bank switching |
+| `bus_stall` | out | 1 | This cycle is a read WSYNC stalls, which the CPU makes again: not an access to a cartridge |
 
 ## Parameters
 
@@ -39,7 +40,7 @@ Paddles plug into the joystick ports in pairs: paddles 0 and 1 into player 0's (
 
 ## Under the test shell: `a2600_sys`
 
-`a2600_sys` puts `atari2600` under `debug/test-shell` with its cartridge in 4 KB of block RAM, so the host can load a cartridge, run it to a frame and check what it drew, on a board as in the sim. It takes the checks the golden lists hold itself, so nothing but CRCs crosses the link:
+`a2600_sys` puts `atari2600` under `debug/test-shell` with its cartridge (`a2600_cart`, below) in block RAM, so the host can load a cartridge, run it to a frame and check what it drew, on a board as in the sim. It takes the checks the golden lists hold itself, so nothing but CRCs crosses the link:
 
 - **Frames:** `a2600_frame` cuts frames from the TIA's picture as Stella 7.0's frame manager does (as `a2600_frames_test` does, `sim/frame_cutter.hpp`) into a frame buffer of 160 x 228 colour values (four byte lanes of 9,120), and after each frame reads it through into a CRC-32, 4 pixels a clock. The buffer is one, as Stella's is, so a frame that ends on the line its last frame did keeps that line's old pixels, as Stella's does.
 - **Sound:** the CRC-32 of the first `audio_limit` samples, each as the golden sound's (two little-endian 16-bit channel sums).
@@ -48,7 +49,7 @@ Colour clocks come at `CC_NUM`/`CC_DEN` of the clock (`common/clock-enable`), NT
 
 | Shell address | Bytes | Meaning |
 | --- | --- | --- |
-| `0x00000000` | 4,096 | The cartridge: a 2 KB one written twice |
+| `0x00000000` | 2^`ROM_LOG2` | The cartridge's ROM: a 2 KB one written twice |
 | `0x01000000` + `00` | 1 | Control: bit 0 run, bit 1 hold the system in reset (power-up: reset held) |
 | `04` | 4 | Stop once this many CPU cycles have run since reset; 0 never |
 | `08` | 4 | CPU cycles since reset (read-only) |
@@ -72,6 +73,9 @@ Colour clocks come at `CC_NUM`/`CC_DEN` of the clock (`common/clock-enable`), NT
 | `46` | 2 | Times the HDMI sound ran dry while playing or dropped a sample (read-only) |
 | `48` | 4 | CRC-32 of every 48 kHz sample made since reset, 16 bits little-endian (read-only) |
 | `4C` | 4 | How many (read-only) |
+| `50` | 1 | The cartridge's scheme (bits 3-0) and the Superchip's RAM (bit 4): `a2600_cart` (below); power-up 0 |
+| `51` | 1 | The cartridge's ROM size, log2 |
+| `52` | 1 | The board's room for cartridge ROM, log2 (`ROM_LOG2`; read-only) |
 | `0x05000000` | 36,480 | The frame buffer (read-only): y x 160 + x |
 
 LEDs (active low): `led[0]` a corrupt command frame, `led[1]` a stalled one, `led[3]` running, `led[4]` stopped at a limit, `led[5]` the heartbeat.
@@ -82,8 +86,30 @@ LEDs (active low): `led[0]` a corrupt command frame, `led[1]` a stalled one, `le
 | `CC_NUM`, `CC_DEN` | 35, 264 | Colour clocks per `CC_DEN` clocks: at most 1 in 6 |
 | `TIA_SCORE_GLITCH` | 0 | `atari2600`'s |
 | `VIDEO` | 0 | 1: the picture and sound on HDMI (`a2600_video`), on `pclk` |
+| `ROM_LOG2` | 16 | The cartridge's ROM: 2^`ROM_LOG2` bytes of block RAM |
 
-The Tang Nano 20K's `a2600` bitstream (`boards/tang-nano-20k`) is `a2600_sys` with `VIDEO` (`rtl/a2600_top.sv`), on the NES's clocks: 46.40625 MHz, 31 clocks a bit, colour clocks at 7/89 of it (3.64986 MHz, 2% fast of NTSC's), and 74.25 MHz pixels.
+The Tang Nano 20K's `a2600` bitstream (`boards/tang-nano-20k`) is `a2600_sys` with `VIDEO` (`rtl/a2600_top.sv`), on the NES's clocks: 46.40625 MHz, 31 clocks a bit, colour clocks at 7/89 of it (3.64986 MHz, 2% fast of NTSC's), and 74.25 MHz pixels, and 16 KB of cartridge ROM (`ROM_LOG2` 14).
+
+## The cartridge: `a2600_cart`
+
+`a2600_cart` holds the cartridge's ROM (the shell writes it) and any RAM, and banks them by the scheme register `50` sets, as Stella 7.0 runs each. It watches every access on the bus (`bus_*`, but for the reads WSYNC stalls, which Stella doesn't make either), as a cartridge's hotspot logic does: a hotspot switches on a read or a write, and a read of it gets its byte from the bank it selects (FE's aside). The RAM starts as 0s, as Stella's does with its RAM randomising off: after a reset the cartridge clears it, 2,048 clocks within the frame buffer's clear.
+
+| Scheme (register `50`) | ROM | Banking | Starts in |
+| --- | --- | --- | --- |
+| 0 | 2 or 4 KB | None (2 KB written twice) | |
+| 1 F8 | 8 KB | 4 KB banks: `$1FF8`, `$1FF9` | Bank 1 |
+| 2 F6 | 16 KB | `$1FF6`-`$1FF9` | Bank 0 |
+| 3 F4 | 32 KB | `$1FF4`-`$1FFB` | Bank 0 |
+| 4 FE | 8 KB | The access after one of `$01FE` (seeing only `$01C0`-`$01FF` and the cartridge) selects bank !D5 of its data: a JSR or RTS with S = `$FF` | Bank 0 |
+| 5 E0 | 8 KB | 1 KB slices: `$1000`, `$1400`, `$1800` by `$1FE0`-7, `$1FE8`-F, `$1FF0`-7; `$1C00` slice 7 | Slices 4, 5, 6 |
+| 6 3F | 2-512 KB | 2 KB banks: a write to `$0000`-`$003F` selects `$1000`'s by its value (modulo the banks); `$1800` the last | Bank 0 |
+| 7 FA | 12 KB | `$1FF8`-`$1FFA`, and 256 bytes of RAM: written at `$1000`-`$10FF`, read at `$1100`-`$11FF` | Bank 2 |
+| 8 E7 | 16 KB | 2 KB slices: `$1000` by `$1FE0`-6, or with `$1FE7` 1 KB of RAM (written at `$1000`, read at `$1400`); 256 bytes of RAM in four banks (`$1FE8`-B) written at `$1800`, read at `$1900`; `$1A00`-`$1FFF` slice 7 | Slice 0, RAM bank 0 |
+| 9 F0 | 64 KB | `$1FF0` steps to the next of 16 4 KB banks | Bank 15 |
+
+Register `50` bit 4 adds the Superchip's 128 bytes of RAM to F8, F6 and F4 (Stella's F8SC, F6SC, F4SC): written at `$1000`-`$107F`, read at `$1080`-`$10FF`. Register `51` is the ROM's size (log2; 3F's bank count comes from it), and `52` (read-only) the board's room for ROM, `ROM_LOG2`. The harness takes a cartridge's scheme from its file's extension, as Stella does (`bank_f8.F8`; `.bin` and `.a26` are unbanked), and a ROM bigger than the board's room isn't run.
+
+One place it parts from Stella: Stella's 3F takes all of `$0000`-`$003F`, so writes there don't reach the TIA and reads there come from the cartridge. On the console the TIA still sees them, and so it does here; Tigervision's games write the TIA through its mirror at `$0040`, so none depends on it.
 
 ## HDMI: `a2600_video`
 
@@ -103,6 +129,6 @@ With `VIDEO`, `a2600_sys` shows the frames on HDMI at 720p with their sound, as 
 
 ## Status
 
-On the Tang Nano 20K, every cartridge matches its golden frame and sound, and on HDMI `tia_colours`, `tia_playfield` and `tia_audio` give the sim's video CRCs, with no line late, and the capture dongle sees each golden frame at 720p.
+On the Tang Nano 20K, every cartridge that fits its 16 KB matches its golden frame and sound (the bank-switching ones but `bank_f4`, `bank_f4sc` and `bank_f0`), and on HDMI `tia_colours`, `tia_playfield` and `tia_audio` give the sim's video CRCs, with no line late, and the capture dongle sees each golden frame at 720p.
 
-In the sim, all twelve test cartridges match their golden frames, and `tia_audio` its golden sound (Stella's, but for `tia_missiles_ball` and `tia_resmp`: see `video/tia`'s README), with `TIA_SCORE_GLITCH` off and on: `tia_colours`, `riot_ram`, `riot_timer`, `tia_playfield`, `tia_players`, `tia_missiles_ball`, `tia_hmove`, `tia_collisions`, `tia_rsync`, `tia_resmp`, `tia_audio` and `tia_paddles`.
+In the sim, every bank-switching cartridge matches its golden frame through `a2600_sys` (`bank_f8`, `bank_f6`, `bank_f4`, their Superchip versions, `bank_fa`, `bank_f0`, `bank_fe`, `bank_e0`, `bank_3f` and `bank_e7`), and all twelve other test cartridges match their golden frames, and `tia_audio` its golden sound (Stella's, but for `tia_missiles_ball` and `tia_resmp`: see `video/tia`'s README), with `TIA_SCORE_GLITCH` off and on: `tia_colours`, `riot_ram`, `riot_timer`, `tia_playfield`, `tia_players`, `tia_missiles_ball`, `tia_hmove`, `tia_collisions`, `tia_rsync`, `tia_resmp`, `tia_audio` and `tia_paddles`.

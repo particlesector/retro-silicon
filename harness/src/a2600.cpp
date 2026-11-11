@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 #include "rig/a2600.hpp"
 
+#include <cctype>
 #include <chrono>
 #include <cstdio>
 #include <fstream>
@@ -44,11 +45,47 @@ uint32_t Console::get32(uint32_t reg) {
 
 void Console::hold_reset() { put32(kCtrl, 2, 1); }
 
-std::optional<std::string> Console::load(const std::vector<uint8_t>& rom) {
-    if (rom.size() != 2048 && rom.size() != 4096)
-        return "a cartridge of " + std::to_string(rom.size()) + " bytes: only 2 and 4 KB ones run yet";
+std::optional<Cart> cart_from_name(const std::string& path) {
+    auto dot = path.find_last_of('.');
+    std::string ext = dot == std::string::npos ? "" : path.substr(dot + 1);
+    for (auto& ch : ext) ch = static_cast<char>(std::toupper(static_cast<unsigned char>(ch)));
+    static const std::map<std::string, Cart> names = {
+        {"BIN", {}}, {"A26", {}}, {"2K", {}}, {"4K", {}},
+        {"F8", {Scheme::F8, false}}, {"F6", {Scheme::F6, false}}, {"F4", {Scheme::F4, false}},
+        {"F8SC", {Scheme::F8, true}}, {"F6SC", {Scheme::F6, true}}, {"F4SC", {Scheme::F4, true}},
+        {"FE", {Scheme::FE, false}}, {"E0", {Scheme::E0, false}}, {"3F", {Scheme::F3F, false}},
+        {"FA", {Scheme::FA, false}}, {"E7", {Scheme::E7, false}}, {"F0", {Scheme::F0, false}},
+    };
+    auto it = names.find(ext);
+    if (it == names.end()) return std::nullopt;
+    return it->second;
+}
+
+std::optional<std::string> Console::load(const std::vector<uint8_t>& rom, Cart cart) {
+    size_t want_size = 0;
+    switch (cart.scheme) {
+    case Scheme::k4K: want_size = rom.size() == 2048 ? 2048 : 4096; break;
+    case Scheme::F8: case Scheme::FE: case Scheme::E0: want_size = 8192; break;
+    case Scheme::F6: case Scheme::E7: want_size = 16384; break;
+    case Scheme::F4: want_size = 32768; break;
+    case Scheme::FA: want_size = 12288; break;
+    case Scheme::F0: want_size = 65536; break;
+    case Scheme::F3F:
+        want_size = rom.size();
+        if (rom.size() < 2048 || rom.size() > 512 * 1024 || (rom.size() & (rom.size() - 1)))
+            return "a 3F cartridge of " + std::to_string(rom.size()) + " bytes: 2 KB to 512 KB, a power of 2";
+        break;
+    }
+    if (rom.size() != want_size)
+        return "a cartridge of " + std::to_string(rom.size()) + " bytes for a scheme of " +
+               std::to_string(want_size);
     std::vector<uint8_t> image(rom);
     if (image.size() == 2048) image.insert(image.end(), rom.begin(), rom.end());
+    uint32_t room = 1u << c_.peek(kRegs + kCartRom, 1)[0];
+    if (image.size() > room) return std::string(kNoRoom);
+    uint32_t size_log2 = 0;
+    while ((1u << size_log2) < image.size()) size_log2++;
+    put32(kCartScheme, static_cast<uint32_t>(cart.scheme) | (cart.sc ? 0x10u : 0u) | size_log2 << 8, 2);
     c_.write(kCart, image);
     Crc32 want;
     want.update(image);
@@ -177,7 +214,7 @@ std::map<std::string, AudioGolden> load_audio(const std::string& file) {
 
 TestResult cart_test(Link& link, const std::string& name, const std::vector<uint8_t>& rom, uint32_t frames,
                      uint32_t crc, const Paddles& paddles, std::optional<AudioGolden> audio,
-                     std::optional<uint32_t> build_id) {
+                     std::optional<uint32_t> build_id, Cart cart) {
     TestResult r;
     r.name = name;
     auto t0 = std::chrono::steady_clock::now();
@@ -203,7 +240,7 @@ TestResult cart_test(Link& link, const std::string& name, const std::vector<uint
             return finish("build ID " + hex(info.build_id, 8) + ", expected " + hex(*build_id, 8) +
                           ": the wrong bitstream is loaded");
         vcs.hold_reset();
-        if (auto e = vcs.load(rom)) return finish(*e);
+        if (auto e = vcs.load(rom, cart)) return finish(*e);
         r.bytes = rom.size();
         vcs.set_paddles(paddles);
         vcs.stop_frame(frames);
@@ -234,7 +271,7 @@ TestResult cart_test(Link& link, const std::string& name, const std::vector<uint
 }
 
 TestResult hdmi_test(Link& link, const std::string& name, const std::vector<uint8_t>& rom, uint32_t frames,
-                     uint32_t crc, const Paddles& paddles, std::optional<uint32_t> build_id) {
+                     uint32_t crc, const Paddles& paddles, std::optional<uint32_t> build_id, Cart cart) {
     TestResult r;
     r.name = name;
     auto t0 = std::chrono::steady_clock::now();
@@ -260,7 +297,7 @@ TestResult hdmi_test(Link& link, const std::string& name, const std::vector<uint
             return finish("build ID " + hex(info.build_id, 8) + ", expected " + hex(*build_id, 8) +
                           ": the wrong bitstream is loaded");
         vcs.hold_reset();
-        if (auto e = vcs.load(rom)) return finish(*e);
+        if (auto e = vcs.load(rom, cart)) return finish(*e);
         r.bytes = rom.size();
         vcs.set_paddles(paddles);
         vcs.audio_limit(0);

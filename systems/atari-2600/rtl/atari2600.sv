@@ -51,7 +51,8 @@ module atari2600 #(
     output logic        bus_ce,      // for traces: this clock ends a CPU cycle, whose access is on bus_*
     output logic [12:0] bus_addr,
     output logic        bus_we,
-    output logic [7:0]  bus_data
+    output logic [7:0]  bus_data,
+    output logic        bus_stall    // this cycle's read is one WSYNC stalls (the CPU reads it again)
 );
 
     // ---- Cycle ----
@@ -133,6 +134,7 @@ module atari2600 #(
     assign bus_addr   = addr[12:0];
     assign bus_we     = we;
     assign bus_data   = we ? cpu_dout : cpu_din;
+    assign bus_stall  = !(rdy || we);
 
     assign cart_addr  = addr[11:0];
     assign cart_sel   = sel_cart;

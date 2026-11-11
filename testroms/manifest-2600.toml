@@ -168,3 +168,135 @@ check = "frame"
 frames = 134
 paddles = [128, 128, 128, 128]
 stella = "Bytes 0-15 each 00110011 (each group of 4 reads: 0, 0, 1, 1); bytes 16-31 all 1s but the first frame's (charged before the dump, 0 in it)"
+
+[[rom]]
+id = "bank_f8"
+source = "a2600-carts"
+path = "bank_f8.F8"
+sha256 = "6e818b5067cf064702ff5bf313555dabbe4d762f7f5481ee0d2ed0b4cb78de70"
+needs = "cpu, tia, bank switching"
+covers = "F8 (Atari, 8 KB): starting in bank 1, $1FF8 and $1FF9 read and written, each read getting the new bank's byte"
+check = "frame"
+frames = 10
+stella = "41 08 40 19 41 40 41, then 0s: started in bank 1; each hotspot read gave the new bank's byte and the bank it selects; writes switch too"
+
+[[rom]]
+id = "bank_f6"
+source = "a2600-carts"
+path = "bank_f6.F6"
+sha256 = "b69985b70bd441a5a10ad31ca585bcf400807018a9998bacbd22c06e124be3dc"
+needs = "cpu, tia, bank switching"
+covers = "F6 (Atari, 16 KB): starting in bank 0, $1FF6-$1FF9 read and written"
+check = "frame"
+frames = 10
+stella = "40, then for each bank its hotspot's byte and ID (06 40 17 41 28 42 39 43), then 40-43 for the writes"
+
+[[rom]]
+id = "bank_f4"
+source = "a2600-carts"
+path = "bank_f4.F4"
+sha256 = "df296bce6e3f9811bedda8ee6c5c1e7a14727c68138f446f4b2ebab4a2485731"
+needs = "cpu, tia, bank switching"
+covers = "F4 (Atari, 32 KB): starting in bank 0, $1FF4-$1FFB read and written"
+check = "frame"
+frames = 10
+stella = "40, then 04 40 15 41 ... 7b 47 for the reads, 40-47 for the writes"
+
+[[rom]]
+id = "bank_f8sc"
+source = "a2600-carts"
+path = "bank_f8sc.F8SC"
+sha256 = "03dd227487d161130bca3ce5fac9e8bb040305e8bd13746d0c53c1b9dc731e98"
+needs = "cpu, tia, bank switching"
+covers = "F8 with the Superchip's 128 bytes of RAM: F8's switching, and the RAM's write and read ports, its start as 0s, through a switch, and a write to the read port going nowhere"
+check = "frame"
+frames = 10
+stella = "As bank_f8, and bytes 26-31: 00 00 00 7d 7d 00"
+
+[[rom]]
+id = "bank_f6sc"
+source = "a2600-carts"
+path = "bank_f6sc.F6SC"
+sha256 = "994a1d0f07e09775bbee6f3b6017ac4cf261bbf868939d4b76415cbd2cede932"
+needs = "cpu, tia, bank switching"
+covers = "F6 with the Superchip's RAM"
+check = "frame"
+frames = 10
+stella = "As bank_f6, and bytes 26-31: 00 00 00 7d 7d 00"
+
+[[rom]]
+id = "bank_f4sc"
+source = "a2600-carts"
+path = "bank_f4sc.F4SC"
+sha256 = "ccbdf979e996d1de37cd655aba0f69907b456f6034e48ec13ac889af96585e9c"
+needs = "cpu, tia, bank switching"
+covers = "F4 with the Superchip's RAM"
+check = "frame"
+frames = 10
+stella = "As bank_f4, and bytes 26-31: 00 00 00 7d 7d 00"
+
+[[rom]]
+id = "bank_fa"
+source = "a2600-carts"
+path = "bank_fa.FA"
+sha256 = "8d2acc44896e69d5322297f7ff303f84ccb1d86b3f8a96fe20b0361afc344102"
+needs = "cpu, tia, bank switching"
+covers = "FA (CBS RAM Plus, 12 KB): starting in bank 2, $1FF8-$1FFA, and its 256 bytes of RAM"
+check = "frame"
+frames = 10
+stella = "42, then 08 40 19 41 2a 42, 40 41 42; bytes 26-31: 00 00 00 7d 7d 00"
+
+[[rom]]
+id = "bank_f0"
+source = "a2600-carts"
+path = "bank_f0.F0"
+sha256 = "6c671a610e0970ba837d2b5b0052f99c203d85dc67b6d2e22e57441a727e5c60"
+needs = "cpu, tia, bank switching"
+covers = "F0 (Dynacom Megaboy, 64 KB): starting in bank 15, each access to $1FF0 stepping to the next of 16 banks"
+check = "frame"
+frames = 10
+stella = "4f, then 40-4f (16 reads, round to bank 15 again), the first 8 reads' bytes 00 10 ... 70, then 40 41 for two writes"
+
+[[rom]]
+id = "bank_fe"
+source = "a2600-carts"
+path = "bank_fe.FE"
+sha256 = "81f20769b8a84720d3dd98511f4cd1ed4ebf4fbeb6338a2ec9e22221487a0cac"
+needs = "cpu, tia, bank switching"
+covers = "FE (Activision, 8 KB): the bank chosen by the access after $01FE, a JSR or RTS with S = $FF, and not by calls with S lower"
+check = "frame"
+frames = 10
+stella = "40 41 40 40 40 41 41"
+
+[[rom]]
+id = "bank_e0"
+source = "a2600-carts"
+path = "bank_e0.E0"
+sha256 = "809800ac00600d610f5523399cb88b1d126f15b0e7be56329b91981469313f07"
+needs = "cpu, tia, bank switching"
+covers = "E0 (Parker Brothers, 8 KB): each 1 KB slice into each of the three switched slots, starting with 4, 5, 6, and the fixed slot's slice 7"
+check = "frame"
+frames = 10
+stella = "44 45 46, then 40-47 three times, 47, 42"
+
+[[rom]]
+id = "bank_3f"
+source = "a2600-carts"
+path = "bank_3f.3F"
+sha256 = "b3818e158d2bbb50efede76110eaba124349f0a631fd1052d395e1727236c156"
+needs = "cpu, tia, bank switching"
+covers = "3F (Tigervision, 16 KB here): a write to $0000-$003F selecting the 2 KB bank at $1000 by its value modulo the banks; a write to $0040 or a read of $003F not; the last bank fixed at $1800. The TIA is written through its mirror at $0040, as Tigervision's games do (Stella's 3F takes all of $0000-$003F)"
+check = "frame"
+frames = 10
+stella = "40, 40-47 twice, 43 43 43 47"
+
+[[rom]]
+id = "bank_e7"
+source = "a2600-carts"
+path = "bank_e7.E7"
+sha256 = "9c2ff9003cf84636fefde84ab29094e896d960d662c85b7326344bd5d24db80a"
+needs = "cpu, tia, bank switching"
+covers = "E7 (M Network, 16 KB): each 2 KB slice at $1000, the 1 KB RAM there, the four 256-byte RAM banks at $1800, their start as 0s, and a write to a read port going nowhere"
+check = "frame"
+frames = 10
+stella = "40 40-46 00 00 00 43 7d 00 b0-b3 c0-c3 00"

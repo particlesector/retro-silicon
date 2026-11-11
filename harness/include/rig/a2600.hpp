@@ -16,7 +16,7 @@
 
 namespace rig::a2600 {
 
-constexpr uint32_t kCart = 0x00000000;   // the cartridge, 4 KB
+constexpr uint32_t kCart = 0x00000000;   // the cartridge's ROM, up to the board's (kCartRom)
 constexpr uint32_t kRegs = 0x01000000;
 constexpr uint32_t kFrameBuffer = 0x05000000;  // y x 160 + x
 constexpr int kWidth = 160, kHeight = 228;
@@ -49,6 +49,9 @@ enum Reg : uint32_t {
     kVideoGaps = 0x46,     // 2 bytes, read-only: the HDMI sound ran dry while playing, or dropped a sample
     kPcmCrc = 0x48,      // 4 bytes, read-only: CRC-32 of every 48 kHz sample (16 bits, little-endian)
     kPcmCount = 0x4C,    // 4 bytes, read-only: how many
+    kCartScheme = 0x50,  // bits 3-0 the bank-switching scheme (Scheme), bit 4 the Superchip's RAM
+    kCartSize = 0x51,    // the ROM's size, log2
+    kCartRom = 0x52,     // read-only: the board's room for ROM, log2
 };
 
 enum Status : uint8_t { kStopped = 1, kRunning = 2, kCrcValid = 4, kBusy = 8, kVideoCrcValid = 16 };
@@ -67,14 +70,29 @@ using Paddles = std::array<int, 4>;
 inline constexpr Paddles kNoPaddles{-1, -1, -1, -1};
 
 // a2600_sys through its test shell. Every call is an absolute register write or read.
+// The bank-switching schemes a2600_cart has (its README), as register 50 takes them.
+enum class Scheme : uint8_t { k4K = 0, F8, F6, F4, FE, E0, F3F, FA, E7, F0 };
+
+// A cartridge's scheme: Stella's name for it ("F8", "F8SC", "3F", ...; "2K" and "4K" unbanked), and
+// whether it has the Superchip's RAM.
+struct Cart {
+    Scheme scheme = Scheme::k4K;
+    bool sc = false;
+};
+// The scheme a file's extension names (as Stella takes it: bank_f8.F8), or for .bin and .a26 an
+// unbanked 2 or 4 KB cartridge; nullopt for an extension Stella has that a2600_cart doesn't.
+std::optional<Cart> cart_from_name(const std::string& path);
+
 class Console {
 public:
     explicit Console(shell::Client& c) : c_(c) {}
 
     void hold_reset();
-    // Writes the cartridge (2 or 4 KB; a 2 KB one twice) and checks it reads back; an error message
-    // if it doesn't.
-    std::optional<std::string> load(const std::vector<uint8_t>& rom);
+    // Sets the cartridge's scheme and writes its ROM (a 2 KB one twice), and checks it reads back; an
+    // error message if it doesn't, or if the ROM's size isn't the scheme's. A ROM bigger than the
+    // board has room for gives kNoRoom.
+    std::optional<std::string> load(const std::vector<uint8_t>& rom, Cart cart = {});
+    static constexpr const char* kNoRoom = "the board has no room for this cartridge";
     void set_paddles(const Paddles& p);
     void stop_frame(uint32_t n);
     void audio_limit(uint32_t samples);
@@ -127,7 +145,7 @@ std::map<std::string, AudioGolden> load_audio(const std::string& file);
 TestResult cart_test(Link& link, const std::string& name, const std::vector<uint8_t>& rom, uint32_t frames,
                      uint32_t crc, const Paddles& paddles = kNoPaddles,
                      std::optional<AudioGolden> audio = std::nullopt,
-                     std::optional<uint32_t> build_id = std::nullopt);
+                     std::optional<uint32_t> build_id = std::nullopt, Cart cart = {});
 
 // The cartridge on HDMI: runs it, keeping pace with the display, to frame `frames` and returns the
 // video CRC of the display frame that shows it (the frame a2600_frames_crc32.txt's CRC is of).
@@ -135,6 +153,6 @@ TestResult cart_test(Link& link, const std::string& name, const std::vector<uint
 // or was overwritten. Needs a system with a display: the board, or make_a2600_hdmi_sim().
 TestResult hdmi_test(Link& link, const std::string& name, const std::vector<uint8_t>& rom, uint32_t frames,
                      uint32_t crc, const Paddles& paddles = kNoPaddles,
-                     std::optional<uint32_t> build_id = std::nullopt);
+                     std::optional<uint32_t> build_id = std::nullopt, Cart cart = {});
 
 } // namespace rig::a2600
