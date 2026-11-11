@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 // The Atari 2600's cartridge: its ROM (and any RAM) in block RAM, banked by the scheme the shell sets,
-// each as Stella 7.0 runs it. The shell writes the ROM; the system reads it.
+// each as Stella 7.0 runs it. The shell writes the ROM; the system reads it. With ROM_EXT the ROM is
+// in an outside memory (a byte port as memory/sdram's) instead, and the cartridge fetches each byte
+// the system reads from it: see "ROM outside" below.
 //
 // The cartridge watches every access on the system's bus (`addr`, `we`, `data`, ending with `ce`;
 // a cycle the CPU is stalled by WSYNC isn't one), as a cartridge's hotspot logic does. A hotspot in
@@ -31,12 +33,20 @@
 // does with its RAM randomising off: after `rst` the cartridge clears it, `clearing` while it does
 // (2,048 clocks), and the system must not run until it's done. A read of a RAM write port reads ROM.
 //
-// `q` is the byte at `addr` (in the cartridge's space) the clock after; the system takes it at the
-// cycle's end.
+// `q` is the byte at `addr` (in the cartridge's space) the clock after (with ROM_EXT, once `rom_wait`
+// is low); the system takes it at the cycle's end.
+//
+// ROM outside (ROM_EXT): when an access in the cartridge's space reads ROM, the cartridge fetches that
+// byte through `mem_*` and holds it, raising `rom_wait` until it has it. The access's address is there
+// from the start of its cycle, so a fetch is usually done long before the cycle ends; when it isn't
+// (a refresh in the way), the system must stop between colour clocks until `rom_wait` falls, which
+// leaves it as if it had run on. The shell's accesses take the port between fetches.
 module a2600_cart #(
-    parameter int ROM_LOG2 = 16          // the ROM's block RAM: 2^ROM_LOG2 bytes
+    parameter int ROM_LOG2 = 16,         // the ROM: 2^ROM_LOG2 bytes
+    parameter bit ROM_EXT  = 1'b0        // the ROM in an outside memory (mem_*), not block RAM
 ) (
     input  logic                clk,
+    input  logic                por_rst, // power-on reset (ROM_EXT's memory port)
     input  logic                rst,     // the console's reset: banks to their start, RAM cleared
     input  logic [3:0]          scheme,
     input  logic                sc,
@@ -48,12 +58,25 @@ module a2600_cart #(
     input  logic                we,
     input  logic [7:0]          data,    // a write's data, or a read's (FE)
     output logic [7:0]          q,
+    output logic                rom_wait,  // ROM_EXT: the access's ROM byte isn't here yet
 
-    input  logic                sh_we,   // the shell's port on the ROM
-    input  logic                sh_rd,   // a read: `sh_q` the clock after (the system's reads wait)
+    // The shell's port on the ROM: hold sh_req until sh_ack (a one-clock pulse, with a read's sh_q),
+    // and drop it the clock after.
+    input  logic                sh_req,
+    input  logic                sh_we,
     input  logic [ROM_LOG2-1:0] sh_addr,
     input  logic [7:0]          sh_wdata,
-    output logic [7:0]          sh_q
+    output logic                sh_ack,
+    output logic [7:0]          sh_q,
+
+    // ROM_EXT: the outside memory, a byte port (memory/sdram's): req held until ack, which brings a
+    // read's rdata; req drops the clock after
+    output logic                mem_req,
+    output logic                mem_we,
+    output logic [ROM_LOG2-1:0] mem_addr,
+    output logic [7:0]          mem_wdata,
+    input  logic                mem_ack,
+    input  logic [7:0]          mem_rdata
 );
     localparam logic [3:0] S_F8 = 4'd1, S_F6 = 4'd2, S_F4 = 4'd3, S_FE = 4'd4,
                            S_E0 = 4'd5, S_3F = 4'd6, S_FA = 4'd7, S_E7 = 4'd8, S_F0 = 4'd9;
@@ -184,16 +207,72 @@ module a2600_cart #(
         end
 
     // ---- ROM ----
-    logic [7:0] rom [2**ROM_LOG2];
     logic [7:0] rom_q;
-    // One write port (the shell's) and one read port, which a shell read takes over: so the ROM is a
-    // simple dual-port memory, 2 KB a block RAM on the Tang Nano 20K, where a second read port
-    // doubled it. The shell reads the ROM only to check a load, with the system held in reset.
-    always_ff @(posedge clk)
-        if (sh_we) rom[sh_addr] <= sh_wdata;
-    always_ff @(posedge clk)
-        rom_q <= rom[sh_rd ? sh_addr : ra[ROM_LOG2-1:0]];
-    assign sh_q = rom_q;
+    wire [ROM_LOG2-1:0] ra_r = ra[ROM_LOG2-1:0];
+
+    if (!ROM_EXT) begin : g_rom
+        logic [7:0] rom [2**ROM_LOG2];
+        logic       rd_d;  // a shell read's data is out
+        // One write port (the shell's) and one read port, which a shell read takes over: so the ROM
+        // is a simple dual-port memory, 2 KB a block RAM on the Tang Nano 20K, where a second read
+        // port doubled it. The shell reads the ROM only to check a load, with the system held in
+        // reset.
+        always_ff @(posedge clk)
+            if (sh_req && sh_we) rom[sh_addr] <= sh_wdata;
+        always_ff @(posedge clk) begin
+            rom_q <= rom[sh_req && !sh_we ? sh_addr : ra_r];
+            rd_d  <= sh_req && !sh_we && !rd_d;
+        end
+        assign sh_ack    = sh_req && (sh_we || rd_d);
+        assign sh_q      = rom_q;
+        assign rom_wait  = 1'b0;
+        assign mem_req   = 1'b0;
+        assign mem_we    = 1'b0;
+        assign mem_addr  = '0;
+        assign mem_wdata = '0;
+        wire unused_mem = &{1'b0, por_rst, mem_ack, mem_rdata};
+    end else begin : g_rom_ext
+        // Reset by `por_rst` only: the shell loads the ROM with the system held in reset, and an
+        // access the memory has started must finish.
+        logic                busy, for_sh;  // a memory access is under way, and whose
+        logic                f_valid;       // rom_q is the byte at f_ra
+        logic [ROM_LOG2-1:0] f_ra;
+        wire                 want = in_cart && !we && !ram_rd;  // this access reads ROM
+        wire                 have = f_valid && f_ra == ra_r;
+
+        always_ff @(posedge clk) begin
+            if (!busy) begin
+                if (sh_req) begin
+                    busy      <= 1'b1;
+                    for_sh    <= 1'b1;
+                    mem_we    <= sh_we;
+                    mem_addr  <= sh_addr;
+                    mem_wdata <= sh_wdata;
+                    if (sh_we) f_valid <= 1'b0;
+                end else if (want && !have) begin
+                    busy     <= 1'b1;
+                    for_sh   <= 1'b0;
+                    mem_we   <= 1'b0;
+                    mem_addr <= ra_r;
+                end
+            end else if (mem_ack) begin
+                busy <= 1'b0;
+                if (!for_sh) begin
+                    rom_q   <= mem_rdata;
+                    f_ra    <= mem_addr;
+                    f_valid <= 1'b1;
+                end
+            end
+            if (por_rst) begin
+                busy    <= 1'b0;
+                f_valid <= 1'b0;
+            end
+        end
+        assign mem_req  = busy;
+        assign sh_ack   = busy && for_sh && mem_ack;
+        assign sh_q     = mem_rdata;
+        assign rom_wait = want && !have;
+    end
 
     // ---- RAM: 2 KB, cleared after reset ----
     logic [7:0]  ram [2048];

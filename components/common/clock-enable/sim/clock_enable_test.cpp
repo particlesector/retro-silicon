@@ -17,6 +17,7 @@ template <class V>
 std::vector<bool> run(V& m, int clocks, std::mt19937* gate = nullptr) {
     m.rst = 1;
     m.en = 0;
+    m.hold = 0;
     m.clk = 0;
     m.eval();
     m.clk = 1;
@@ -70,4 +71,44 @@ TEST_CASE("clock_enable handles the edge ratios 1/2 and 1/1") {
     CHECK(f == std::vector<bool>{false, true, false, true, false, true, false, true, false, true});
     Vce_all all;
     for (bool x : run(all, 10)) CHECK(x);
+}
+
+TEST_CASE("clock_enable's hold holds back only a pulse that's due") {
+    // Bursts of hold, as a system waiting on memory raises it: a pulse due during one waits for it
+    // to fall, and clocks with no pulse due advance as usual. Checked against the rule itself, and
+    // the clocks lost are only the ones a pulse waited.
+    Vce_nes m;
+    m.rst = 1;
+    m.en = 0;
+    m.hold = 0;
+    m.clk = 0;
+    m.eval();
+    m.clk = 1;
+    m.eval();
+    m.rst = 0;
+    m.en = 1;
+    std::mt19937 rng(7);
+    int acc = 0, pulses = 0, held = 0, hold_left = 0, hold_clocks = 0;
+    const int clocks = 50'000;
+    for (int i = 0; i < clocks; i++) {
+        if (hold_left == 0 && rng() % 6 == 0) hold_left = 1 + static_cast<int>(rng() % 9);
+        m.hold = hold_left > 0;
+        if (hold_left > 0) hold_left--, hold_clocks++;
+        m.clk = 0;
+        m.eval();
+        const bool due = acc + 35 >= 176;
+        const bool want = due && !m.hold;
+        REQUIRE((m.ce != 0) == want);
+        if (due && m.hold) held++;
+        else acc = due ? acc + 35 - 176 : acc + 35;
+        pulses += want;
+        m.clk = 1;
+        m.eval();
+    }
+    // Every clock not spent holding a pulse advanced the phase: as many pulses as a steady
+    // run of that many clocks, give or take the one in progress.
+    CHECK(pulses == 35 * (clocks - held) / 176);
+    // Some held clocks held a pulse back, and some advanced: hold isn't en.
+    CHECK(held > 0);
+    CHECK(held < hold_clocks);
 }

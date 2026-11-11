@@ -60,8 +60,11 @@ std::unique_ptr<SimLink> make_nes_axi_sim();
 std::unique_ptr<SimLink> make_a2600_sim();
 // The 2600 as the Tang Nano 20K runs it with HDMI (boards/tang-nano-20k/rtl/a2600_top.sv): the
 // NES's clocks, 46.40625 MHz for the system (31 clocks a bit, colour clocks at 7/89, 2% fast) and
-// 74.25 MHz pixels, and its display (a2600_video), keeping pace with it when asked. Each pixel
-// clock's TMDS symbols go to on_symbol, as make_nes_hdmi_sim()'s do. Reports RS_A2600_BUILD_ID.
+// 74.25 MHz pixels, the cartridge's ROM in the SDRAM (a2600_sdram, with the SDRAM model), and its
+// display (a2600_video), keeping pace with it when asked. Each pixel clock's TMDS symbols go to
+// on_symbol, as make_nes_hdmi_sim()'s do. Reports RS_A2600_BUILD_ID.
 std::unique_ptr<SimLink> make_a2600_hdmi_sim(std::function<void(uint32_t)> on_symbol = {});
+// The same without the display: no pacing, and no pixel clock.
+std::unique_ptr<SimLink> make_a2600_ext_sim();
 
 } // namespace rig

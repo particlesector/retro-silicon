@@ -6,7 +6,7 @@ rs_component(tmds_phy RTL ../gowin/rtl/tmds_phy.sv
              LINT ${PROJECT_SOURCE_DIR}/boards/gowin/lint/gowin_prims.sv)
 rs_component(nes_top RTL rtl/nes_top.sv DEPENDS nes_sdram tmds_phy
              LINT ${PROJECT_SOURCE_DIR}/boards/gowin/lint/gowin_prims.sv)
-rs_component(a2600_top RTL rtl/a2600_top.sv DEPENDS a2600_sys tmds_phy
+rs_component(a2600_top RTL rtl/a2600_top.sv DEPENDS a2600_sdram tmds_phy
              LINT ${PROJECT_SOURCE_DIR}/boards/gowin/lint/gowin_prims.sv)
 
 if(NOT RS_BITSTREAMS)
@@ -39,7 +39,8 @@ rs_board_bitstream(nes BUILD ${build} COMPONENT nes_top CST nes.cst PARAMS BUILD
 # video probe. Same clocks.
 rs_board_bitstream(nes_lean BUILD ${build} COMPONENT nes_top CST nes.cst PARAMS BUILD_ID=${nes_id} DEBUG=0
                    CLOCKS sclk=46.40625 pclk=74.25 fclk=371.25 SEED 1)
-# The Atari 2600 under the test shell (systems/atari-2600's a2600_sys) with HDMI (rtl/a2600_top.sv):
+# The Atari 2600 under the test shell, its cartridge's ROM in the SDRAM (systems/atari-2600's
+# a2600_sdram), with HDMI (rtl/a2600_top.sv):
 # the NES's clocks, colour clocks at 7/89 of the system's (2% fast of NTSC's, to keep pace with
 # the display).
 get_property(a2600_id GLOBAL PROPERTY RS_A2600_BUILD_ID)

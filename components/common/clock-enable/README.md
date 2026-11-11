@@ -4,6 +4,8 @@ A clock enable at NUM/DEN of the clock rate, exact on average: a phase accumulat
 
 While `en` is low the accumulator holds, so stopping the enables and starting them again leaves the pulse pattern as if no time had passed: a system can pause between cycles without changing what it does.
 
+While `hold` is high, only a pulse that's due waits: the accumulator holds on that clock until `hold` falls, and clocks with no pulse due advance as usual. A system waiting on something its next pulse needs (`systems/atari-2600`'s cartridge fetching a ROM byte from the SDRAM) loses time only when the pulse has to wait, and pulses stay at least floor(DEN/NUM) clocks apart.
+
 Module `clock_enable`.
 
 ## Ports
@@ -12,6 +14,7 @@ Module `clock_enable`.
 | --- | --- | --- | --- |
 | `clk`, `rst` | in | 1 | Clock; synchronous reset, which restarts the phase from 0 |
 | `en` | in | 1 | Advance this clock |
+| `hold` | in | 1 | Keep a pulse that's due this clock waiting (the accumulator holds); 0 when unused |
 | `ce` | out | 1 | One-clock pulse, NUM per DEN enabled clocks |
 
 ## Parameters
@@ -34,6 +37,6 @@ Each top module placed alone by `tools/timing/report.py` (see `docs/timing.md` f
 
 ## Status
 
-Sim tests: 35/176 gives exactly 35 pulses every 176 clocks, 5 or 6 clocks apart; a randomly gated `en` gives the same pulse sequence over the enabled clocks as a steady one; 1/2 and 7/7 behave at the edges.
+Sim tests: 35/176 gives exactly 35 pulses every 176 clocks, 5 or 6 clocks apart; a randomly gated `en` gives the same pulse sequence over the enabled clocks as a steady one; bursts of `hold` hold back only the pulses due in them, clock for clock as the rule above, losing only those clocks; 1/2 and 7/7 behave at the edges.
 
-In `systems/nes` on a Tang Nano 20K, as the PPU's dot clock.
+In `systems/nes` on a Tang Nano 20K, as the PPU's dot clock, and in `systems/atari-2600` as the colour clock.
