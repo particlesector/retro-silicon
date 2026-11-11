@@ -1,12 +1,15 @@
 // SPDX-License-Identifier: Apache-2.0
-// systems/atari-2600's a2600_sys through its test shell, in the sim as the Tang Nano 20K runs it:
-// every cartridge in harness/golden/a2600_frames_crc32.txt to its golden frame, whose CRC the
-// system computes itself, and the sound's CRC where a2600_audio_crc32.txt has one. Skipped when the
+// systems/atari-2600's a2600_sys through its test shell, in the sim: every cartridge in
+// harness/golden/a2600_frames_crc32.txt to its golden frame, whose CRC the system computes itself,
+// and the sound's CRC where a2600_audio_crc32.txt has one; and the bank-switching cartridges again as
+// the Tang Nano 20K runs them, their ROM in the SDRAM (make_a2600_ext_sim). Skipped when the
 // cartridges aren't fetched (testroms/fetch.py).
 #include <catch2/catch_test_macros.hpp>
 
 #include <cstdlib>
 #include <fstream>
+#include <functional>
+#include <memory>
 #include <iterator>
 #include <string>
 #include <vector>
@@ -19,7 +22,8 @@
 namespace {
 
 // One cartridge of a2600_frames_crc32.txt through the shell, as rig-run --test a2600 runs it.
-void matches_stella(const std::string& id) {
+void matches_stella(const std::string& id,
+                    const std::function<std::unique_ptr<rig::SimLink>()>& make = rig::make_a2600_sim) {
     const auto paddles = rig::a2600::load_paddles(RS_A2600_PADDLES);
     const auto sounds = rig::a2600::load_audio(RS_A2600_AUDIO_GOLDEN);
     const char* roms = std::getenv("RS_TESTROMS");
@@ -33,7 +37,7 @@ void matches_stella(const std::string& id) {
         std::vector<uint8_t> rom((std::istreambuf_iterator<char>(f)), {});
         auto cart = rig::a2600::cart_from_name(g.path);
         REQUIRE(cart);
-        auto link = rig::make_a2600_sim();
+        auto link = make();
         const auto p = paddles.find(g.id);
         const auto s = sounds.find(g.id);
         auto r = rig::a2600::cart_test(*link, g.id, rom, g.frames, g.crc,
@@ -58,6 +62,8 @@ const std::vector<std::string> kCarts = {
 
 #define MATCHES_STELLA(id) \
     TEST_CASE(id " passes in the sim and its frame matches Stella's") { matches_stella(id); }
+#define MATCHES_STELLA_SDRAM(id) \
+    TEST_CASE(id " passes from the SDRAM as the Tang Nano 20K runs it") { matches_stella(id, rig::make_a2600_ext_sim); }
 
 MATCHES_STELLA("tia_colours")
 MATCHES_STELLA("riot_ram")
@@ -83,6 +89,19 @@ MATCHES_STELLA("bank_fe")
 MATCHES_STELLA("bank_e0")
 MATCHES_STELLA("bank_3f")
 MATCHES_STELLA("bank_e7")
+
+MATCHES_STELLA_SDRAM("bank_f8")
+MATCHES_STELLA_SDRAM("bank_f6")
+MATCHES_STELLA_SDRAM("bank_f4")
+MATCHES_STELLA_SDRAM("bank_f8sc")
+MATCHES_STELLA_SDRAM("bank_f6sc")
+MATCHES_STELLA_SDRAM("bank_f4sc")
+MATCHES_STELLA_SDRAM("bank_fa")
+MATCHES_STELLA_SDRAM("bank_f0")
+MATCHES_STELLA_SDRAM("bank_fe")
+MATCHES_STELLA_SDRAM("bank_e0")
+MATCHES_STELLA_SDRAM("bank_3f")
+MATCHES_STELLA_SDRAM("bank_e7")
 
 TEST_CASE("a2600_sys: every cartridge of a2600_frames_crc32.txt has its test case") {
     std::vector<std::string> ids;

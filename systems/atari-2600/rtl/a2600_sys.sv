@@ -1,13 +1,16 @@
 // SPDX-License-Identifier: Apache-2.0
 // The Atari 2600 (atari2600) under the test shell: its cartridge in block RAM (a2600_cart, banked by
-// the scheme register 50 sets), run and stop by
+// the scheme register 50 sets; with ROM_EXT its ROM in an outside memory on `mem_*`, a byte port as
+// memory/sdram's, from address 0), run and stop by
 // register, and the checks a board can give the host: each whole frame's CRC as Stella cuts frames
 // (a2600_frame) and the sound's CRC as Stella samples it, so the host compares them with the golden
 // lists without taking the picture over the link.
 //
 // Colour clocks come at CC_NUM/CC_DEN of the clock (clock_enable), at least 6 clocks apart, while the
 // system runs. The system stops between colour clocks, so stopping and starting leave it exactly as
-// if it had run on: the same on any board and in the sim. A reset clears the frame buffer first
+// if it had run on: the same on any board and in the sim. With ROM_EXT a colour clock also waits
+// while the cartridge is fetching the byte its access reads (clock_enable's hold), so only a fetch
+// that isn't done by then costs time. A reset clears the frame buffer first
 // (about 9,000 clocks) and starts no colour clock until that's done.
 //
 // With VIDEO set, the picture and sound go out as HDMI at 720p (a2600_video, on `pclk`), and with
@@ -31,6 +34,7 @@ module a2600_sys #(
     parameter bit          TIA_SCORE_GLITCH = 1'b0,
     parameter bit          VIDEO            = 1'b0,     // HDMI out (a2600_video), on pclk
     parameter int          ROM_LOG2         = 16,       // the cartridge's ROM: 2^ROM_LOG2 bytes
+    parameter bit          ROM_EXT          = 1'b0,     // the ROM on mem_*, not in block RAM
     parameter logic [31:0] BUILD_ID         = '0
 ) (
     input  logic       clk,
@@ -42,7 +46,15 @@ module a2600_sys #(
     input  logic       pclk,
     output logic [9:0] tmds0,
     output logic [9:0] tmds1,
-    output logic [9:0] tmds2
+    output logic [9:0] tmds2,
+
+    // With ROM_EXT: the memory the ROM is in (memory/sdram's byte port)
+    output logic        mem_req,
+    output logic        mem_we,
+    output logic [23:0] mem_addr,
+    output logic [7:0]  mem_wdata,
+    input  logic        mem_ack,
+    input  logic [7:0]  mem_rdata
 );
     logic por_rst;
     por u_por (.clk, .rst(por_rst));
@@ -74,14 +86,14 @@ module a2600_sys #(
     wire rst = por_rst || ctrl[1];
 
     logic [31:0] cycles, samples, audio_crc, frames, frame_crc, crc_frame;
-    logic        busy, fb_busy, cart_clearing, pace_wait;
+    logic        busy, fb_busy, cart_clearing, cart_wait, pace_wait;
     assign busy = fb_busy || cart_clearing;
     wire at_limit = (stop_cycle != 0 && cycles >= stop_cycle) || (stop_frame != 0 && frames >= stop_frame);
     wire running  = ctrl[0] && !rst && !busy && !at_limit && !pace_wait;
 
     // ---- Colour clocks ----
     logic cc, step;
-    clock_enable #(.NUM(CC_NUM), .DEN(CC_DEN)) u_cc (.clk, .rst, .en(running), .ce(cc));
+    clock_enable #(.NUM(CC_NUM), .DEN(CC_DEN)) u_cc (.clk, .rst, .en(running), .hold(cart_wait), .ce(cc));
     always_ff @(posedge clk) step <= cc && !rst;
 
     // ---- The system ----
@@ -104,13 +116,18 @@ module a2600_sys #(
 
     // The cartridge, read every clock (a CPU cycle is at least 18) and written by the shell. It
     // watches every access (bus_*), as a cartridge's bank switching does.
-    logic [7:0] cart_sh;
-    wire        sh_cart = s_req && s_addr[31:24] == 8'h00 && s_addr[23:ROM_LOG2] == '0;
-    a2600_cart #(.ROM_LOG2(ROM_LOG2)) u_cart (
-        .clk, .rst, .scheme(cart_scheme), .sc(cart_sc), .size_log2(cart_size), .clearing(cart_clearing),
+    logic [7:0]          cart_sh;
+    logic                cart_sh_ack;
+    logic [ROM_LOG2-1:0] cart_mem_addr;
+    wire                 sh_cart = s_req && s_addr[31:24] == 8'h00 && s_addr[23:ROM_LOG2] == '0;
+    a2600_cart #(.ROM_LOG2(ROM_LOG2), .ROM_EXT(ROM_EXT)) u_cart (
+        .clk, .por_rst, .rst, .scheme(cart_scheme), .sc(cart_sc), .size_log2(cart_size), .clearing(cart_clearing),
         .ce(bus_ce && !bus_stall), .addr(bus_addr), .we(bus_we), .data(bus_data), .q(cart_data),
-        .sh_we(sh_cart && s_we && !s_ack), .sh_rd(sh_cart && !s_we), .sh_addr(s_addr[ROM_LOG2-1:0]), .sh_wdata(s_wdata),
-        .sh_q(cart_sh));
+        .rom_wait(cart_wait),
+        .sh_req(sh_cart && !s_ack), .sh_we(s_we), .sh_addr(s_addr[ROM_LOG2-1:0]), .sh_wdata(s_wdata),
+        .sh_ack(cart_sh_ack), .sh_q(cart_sh),
+        .mem_req, .mem_we, .mem_addr(cart_mem_addr), .mem_wdata, .mem_ack, .mem_rdata);
+    assign mem_addr = 24'(cart_mem_addr);
 
     // ---- Counts and the sound's CRC ----
     // Each sample is the two channels' levels summed over the colour clocks since the last, as two
@@ -268,7 +285,7 @@ module a2600_sys #(
             5'h11: reg_q = byte_of({v_gaps, v_overrun}, r[1:0]);
             5'h12: reg_q = byte_of(pcm_crc, r[1:0]);
             5'h13: reg_q = byte_of(pcm_n, r[1:0]);
-            5'h14: reg_q = byte_of({8'd0, 8'(ROM_LOG2), 3'd0, cart_size, 3'd0, cart_sc, cart_scheme}, r[1:0]);
+            5'h14: reg_q = byte_of({7'd0, ROM_EXT, 8'(ROM_LOG2), 3'd0, cart_size, 3'd0, cart_sc, cart_scheme}, r[1:0]);
             default: ;
         endcase
     end
@@ -278,10 +295,8 @@ module a2600_sys #(
         set_byte[8 * b +: 8] = d;
     endfunction
 
-    logic       sh_cart_d;
     always_ff @(posedge clk) begin
-        s_ack     <= 1'b0;
-        sh_cart_d <= 1'b0;
+        s_ack <= 1'b0;
         if (por_rst) begin
             ctrl        <= 2'b10;
             stop_cycle  <= '0;
@@ -304,9 +319,7 @@ module a2600_sys #(
                     s_rdata <= fb_data;
                 end
             end else if (sh_cart) begin
-                // A read's data is the clock after its address.
-                sh_cart_d <= !s_we && !sh_cart_d;
-                if (s_we || sh_cart_d) begin
+                if (cart_sh_ack) begin
                     s_ack   <= 1'b1;
                     s_rdata <= cart_sh;
                 end

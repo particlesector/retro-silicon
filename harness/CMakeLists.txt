@@ -61,9 +61,11 @@ rs_verilate(rs_sim_link COMPONENT nes_axi PREFIX Vnes_axi_sim
 # bank-switching scheme's test cartridge fits.
 rs_verilate(rs_sim_link COMPONENT a2600_sys PREFIX Va2600_sim PARAMS CLKS_PER_BIT=18 BUILD_ID=${a2600_id})
 # ...and as the Tang Nano 20K runs it, with HDMI (boards/tang-nano-20k/rtl/a2600_top.sv's parameters):
-# 46.40625 MHz, colour clocks at 7/89, its display on a 74.25 MHz pixel clock, 16 KB of ROM.
-rs_verilate(rs_sim_link COMPONENT a2600_sys PREFIX Va2600_hdmi_sim
-            PARAMS CLKS_PER_BIT=31 IDLE_CLKS=464063 CC_NUM=7 CC_DEN=89 VIDEO=1 ROM_LOG2=14 BUILD_ID=${a2600_id})
+# 46.40625 MHz, colour clocks at 7/89, its display on a 74.25 MHz pixel clock, the cartridge's ROM
+# in the SDRAM (a2600_sdram, 512 KB of room); and the same without the display.
+set(a2600_20k_params CLKS_PER_BIT=31 IDLE_CLKS=464063 CC_NUM=7 CC_DEN=89 FREQ_MHZ=47 BUILD_ID=${a2600_id})
+rs_verilate(rs_sim_link COMPONENT a2600_sdram PREFIX Va2600_hdmi_sim PARAMS ${a2600_20k_params} VIDEO=1)
+rs_verilate(rs_sim_link COMPONENT a2600_sdram PREFIX Va2600_ext_sim PARAMS ${a2600_20k_params})
 target_include_directories(rs_sim_link PRIVATE ${PROJECT_SOURCE_DIR}/components/memory/sdram/sim
                                                ${PROJECT_SOURCE_DIR}/components/memory/axi-bridge/sim)
 # The build IDs the models and bitstreams report, for runners to check.

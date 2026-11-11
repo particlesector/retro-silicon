@@ -40,7 +40,7 @@ Paddles plug into the joystick ports in pairs: paddles 0 and 1 into player 0's (
 
 ## Under the test shell: `a2600_sys`
 
-`a2600_sys` puts `atari2600` under `debug/test-shell` with its cartridge (`a2600_cart`, below) in block RAM, so the host can load a cartridge, run it to a frame and check what it drew, on a board as in the sim. It takes the checks the golden lists hold itself, so nothing but CRCs crosses the link:
+`a2600_sys` puts `atari2600` under `debug/test-shell` with its cartridge (`a2600_cart`, below) in block RAM (or its ROM in an SDRAM: `a2600_sdram`, below), so the host can load a cartridge, run it to a frame and check what it drew, on a board as in the sim. It takes the checks the golden lists hold itself, so nothing but CRCs crosses the link:
 
 - **Frames:** `a2600_frame` cuts frames from the TIA's picture as Stella 7.0's frame manager does (as `a2600_frames_test` does, `sim/frame_cutter.hpp`) into a frame buffer of 160 x 228 colour values (four byte lanes of 9,120), and after each frame reads it through into a CRC-32, 4 pixels a clock. The buffer is one, as Stella's is, so a frame that ends on the line its last frame did keeps that line's old pixels, as Stella's does.
 - **Sound:** the CRC-32 of the first `audio_limit` samples, each as the golden sound's (two little-endian 16-bit channel sums).
@@ -76,6 +76,7 @@ Colour clocks come at `CC_NUM`/`CC_DEN` of the clock (`common/clock-enable`), NT
 | `50` | 1 | The cartridge's scheme (bits 3-0) and the Superchip's RAM (bit 4): `a2600_cart` (below); power-up 0 |
 | `51` | 1 | The cartridge's ROM size, log2 |
 | `52` | 1 | The board's room for cartridge ROM, log2 (`ROM_LOG2`; read-only) |
+| `53` | 1 | Bit 0: the ROM is in an outside memory (`ROM_EXT`; read-only) |
 | `0x05000000` | 36,480 | The frame buffer (read-only): y x 160 + x |
 
 LEDs (active low): `led[0]` a corrupt command frame, `led[1]` a stalled one, `led[3]` running, `led[4]` stopped at a limit, `led[5]` the heartbeat.
@@ -86,9 +87,16 @@ LEDs (active low): `led[0]` a corrupt command frame, `led[1]` a stalled one, `le
 | `CC_NUM`, `CC_DEN` | 35, 264 | Colour clocks per `CC_DEN` clocks: at most 1 in 6 |
 | `TIA_SCORE_GLITCH` | 0 | `atari2600`'s |
 | `VIDEO` | 0 | 1: the picture and sound on HDMI (`a2600_video`), on `pclk` |
-| `ROM_LOG2` | 16 | The cartridge's ROM: 2^`ROM_LOG2` bytes of block RAM |
+| `ROM_LOG2` | 16 | The cartridge's ROM: 2^`ROM_LOG2` bytes (of block RAM, or with `ROM_EXT` of the outside memory) |
+| `ROM_EXT` | 0 | 1: the ROM in an outside memory on `mem_*` (below), not block RAM |
 
-The Tang Nano 20K's `a2600` bitstream (`boards/tang-nano-20k`) is `a2600_sys` with `VIDEO` (`rtl/a2600_top.sv`), on the NES's clocks: 46.40625 MHz, 31 clocks a bit, colour clocks at 7/89 of it (3.64986 MHz, 2% fast of NTSC's), and 74.25 MHz pixels, and 16 KB of cartridge ROM (`ROM_LOG2` 14).
+### The ROM in an SDRAM: `a2600_sdram`
+
+With `ROM_EXT`, `a2600_cart` keeps no ROM of its own: when an access in the cartridge's space reads ROM, it fetches that byte through `mem_*`, a byte port as `memory/sdram`'s (request held until acknowledged), from address 0, and holds it. The access's address is there from the start of its CPU cycle, so the fetch is usually done long before the cycle ends; a colour clock that falls due while it isn't waits for it (`common/clock-enable`'s `hold`), a stop between colour clocks like the others, so only a fetch not done in time costs time and nothing the system does changes. The shell's reads and writes of the ROM take the port between fetches. Register `53` bit 0 reads `ROM_EXT`.
+
+`a2600_sdram` is `a2600_sys` with `ROM_EXT` on `memory/sdram`'s controller, by default for the Tang Nano 20K's 2M x 32 chip, with `ROM_LOG2` 19: up to 512 KB, 3F's largest. Its parameters are `a2600_sys`'s and the controller's (`FREQ_MHZ`, `DQ_W`, `ROW_W`, `COL_W`, `RANKS`, `REFRESH_NS`).
+
+The Tang Nano 20K's `a2600` bitstream (`boards/tang-nano-20k`) is `a2600_sdram` with `VIDEO` (`rtl/a2600_top.sv`), on the NES's clocks: 46.40625 MHz, 31 clocks a bit, colour clocks at 7/89 of it (3.64986 MHz, 2% fast of NTSC's), and 74.25 MHz pixels; the SDRAM is wired as the NES's. At 46.40625 MHz a fetch takes about 8 clocks of a CPU cycle's 38, and a refresh in its way a few more, so with pacing on a frame still takes 98.2% of a display frame. `make_a2600_hdmi_sim` runs it on the SDRAM model, and `make_a2600_ext_sim` the same without the display.
 
 ## The cartridge: `a2600_cart`
 
@@ -129,6 +137,6 @@ With `VIDEO`, `a2600_sys` shows the frames on HDMI at 720p with their sound, as 
 
 ## Status
 
-On the Tang Nano 20K, every cartridge that fits its 16 KB matches its golden frame and sound (the bank-switching ones but `bank_f4`, `bank_f4sc` and `bank_f0`), and on HDMI `tia_colours`, `tia_playfield` and `tia_audio` give the sim's video CRCs, with no line late, and the capture dongle sees each golden frame at 720p.
+On the Tang Nano 20K, with the cartridge's ROM in its SDRAM (`a2600_sdram`), every cartridge matches its golden frame and sound, all twelve bank-switching ones included, and on HDMI `tia_colours`, `tia_playfield` and `tia_audio` give the sim's video CRCs, with no line late, and the capture dongle sees each golden frame at 720p.
 
 In the sim, every bank-switching cartridge matches its golden frame through `a2600_sys` (`bank_f8`, `bank_f6`, `bank_f4`, their Superchip versions, `bank_fa`, `bank_f0`, `bank_fe`, `bank_e0`, `bank_3f` and `bank_e7`), and all twelve other test cartridges match their golden frames, and `tia_audio` its golden sound (Stella's, but for `tia_missiles_ball` and `tia_resmp`: see `video/tia`'s README), with `TIA_SCORE_GLITCH` off and on: `tia_colours`, `riot_ram`, `riot_timer`, `tia_playfield`, `tia_players`, `tia_missiles_ball`, `tia_hmove`, `tia_collisions`, `tia_rsync`, `tia_resmp`, `tia_audio` and `tia_paddles`.

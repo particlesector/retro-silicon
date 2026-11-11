@@ -256,7 +256,7 @@ module nes #(
     logic mem_wait;
 
     clock_enable #(.NUM(DOT_NUM), .DEN(DOT_DEN)) u_dot (
-        .clk, .rst(boot), .en((cs == C_RUN || cs == C_END || go) && !mem_wait), .ce(dot_slot));
+        .clk, .rst(boot), .en((cs == C_RUN || cs == C_END || go) && !mem_wait), .hold(1'b0), .ce(dot_slot));
 
     logic        st_we_cpu, st_we_ppu, st_we_sys, st_we_apu, st_we_cart;  // save-state writes, below
     logic [3:0]  st_sys_w;
