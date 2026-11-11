@@ -158,7 +158,7 @@ module a2600_sys #(
     logic        vcap_arm;  // a write of register 34 with bit 1 set, below
     logic        v_req, v_crc_ok, v_crc_t;
     logic [31:0] v_crc;
-    logic [15:0] v_shown, v_late, v_overrun;
+    logic [15:0] v_shown, v_late, v_overrun, v_gaps;
     logic        pcm_valid;
     logic [15:0] pcm;
     logic [31:0] pcm_crc, pcm_n;
@@ -212,7 +212,7 @@ module a2600_sys #(
             .waiting(v_waiting), .req(v_req),
             .a_ce(cc && bus_ce), .a_level(5'(aud0) + 5'(aud1)),
             .cap_t(v_cap_t), .crc(v_crc), .crc_ok(v_crc_ok), .crc_t(v_crc_t),
-            .shown(v_shown), .late(v_late), .overrun(v_overrun), .pcm_valid, .pcm,
+            .shown(v_shown), .late(v_late), .overrun(v_overrun), .gaps(v_gaps), .pcm_valid, .pcm,
             .pclk, .tmds0, .tmds1, .tmds2);
     end else begin : g_no_video
         assign v_req     = 1'b0;
@@ -222,6 +222,7 @@ module a2600_sys #(
         assign v_shown   = '0;
         assign v_late    = '0;
         assign v_overrun = '0;
+        assign v_gaps    = '0;
         assign pcm_valid = 1'b0;
         assign pcm       = '0;
         assign tmds0     = '0;
@@ -259,7 +260,7 @@ module a2600_sys #(
             5'h0E: reg_q = byte_of(vcap_frame, r[1:0]);
             5'h0F: reg_q = byte_of(vcrc, r[1:0]);
             5'h10: reg_q = byte_of({v_late, v_shown}, r[1:0]);
-            5'h11: reg_q = byte_of({16'd0, v_overrun}, r[1:0]);
+            5'h11: reg_q = byte_of({v_gaps, v_overrun}, r[1:0]);
             5'h12: reg_q = byte_of(pcm_crc, r[1:0]);
             5'h13: reg_q = byte_of(pcm_n, r[1:0]);
             default: ;

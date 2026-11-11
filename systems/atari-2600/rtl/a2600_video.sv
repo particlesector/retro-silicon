@@ -21,9 +21,32 @@
 // Stella's is; a line overwritten is black and counts in `overrun`. In a working system neither
 // count moves.
 //
-// The sound: each CPU cycle (`a_ce`) the two channels' levels summed (`a_level`, 0 to 30) go into
-// audio/resampler, 800 samples per 19,912 cycles: a frame of 262 lines, so 800 to the display
-// frame that shows it. A sample crosses to the pixel clock by a toggle, as in nes_video.
+// The sound: the two channels' levels summed (`a_level`, 0 to 30) go into audio/resampler, 800
+// samples per 19,912 inputs. HDMI plays them at 48 kHz, 800 to a display frame, so each 2600 frame's
+// sound must be 800 samples for each display frame it takes, however many lines the cartridge gives
+// it: at one input a CPU cycle, frames of 263 lines made 803 and the receiver's buffer filled, and a
+// frame over 266 lines, which misses its request and takes two display frames, made 815 for the two
+// and it ran dry; either way it muted. So the inputs come at 19,912 x N / C of the CPU cycles
+// (`a_ce`), C being the last frame's cycles (counted between `frame_done`s) and N the display frames
+// it took (1, and 1 more for each request that came while it ran, up to 4). Frames of a steady
+// length then make exactly 800 samples a display frame. A change of length misjudges a frame by up
+// to 800 either way, which the FIFO below takes up, and to keep it from adding up the FIFO's level
+// steers the next: each frame makes T = 800 x N + (2,048 - level) / 2 samples (0 to 4,000), the
+// level taken at the frame's end. Each cycle adds T x 2,489 to an accumulator, and each clock it
+// holds C x 100 or more it takes that off and gives the resampler the level of that cycle: T x
+// 2,489 / 100 inputs a frame, so T samples. C is taken as at least 16,384 cycles (216 lines: a
+// shorter frame still takes a display frame, and a rate from it would flood a longer one after)
+// and at most 79,648 (four display frames), and as 19,912 before the first frame. A request with no cycle since the one before
+// (the 2600 stopped) isn't counted.
+// A sample crosses to the pixel clock by a toggle, as in nes_video, into a FIFO of 4,096, and goes
+// to HDMI at exactly 48 kHz (64 / 99,000 of the pixel clock: 800 to a display frame), so a
+// receiver's buffer neither fills nor runs dry whatever the 2600 does. It starts once 2,048 are
+// waiting, so the sound is 43 ms behind the picture: the room to take misjudged frames either way
+// (`tia_audio`'s frames, alternating between two display frames and part of one, take its level
+// from 550 to 2,650; with 2,048 of room it ran dry). If it runs dry it repeats the last sample
+// until 2,048 are waiting again, and a sample to a full FIFO is dropped.
+// `gaps` counts both while playing: none while a cartridge runs at a steady pace, and one when it
+// stops and the FIFO drains.
 //
 // `pcm_valid` and `pcm` are the samples as they're made, for the test shell's CRC of them.
 //
@@ -60,6 +83,7 @@ module a2600_video #(
     output logic [15:0] shown,
     output logic [15:0] late,
     output logic [15:0] overrun,
+    output logic [15:0] gaps,      // the sound ran dry or dropped a sample
     output logic        pcm_valid,   // a 48 kHz sample, as it goes to the HDMI
     output logic [15:0] pcm,
 
@@ -233,8 +257,56 @@ module a2600_video #(
     logic               a_busy;
     logic [31:0]        a_st;
     /* verilator lint_on UNUSEDSIGNAL */
+    localparam int K = 19_912;   // a 262-line frame's CPU cycles: the resampler's 800 samples
+
+    logic [16:0] a_cyc;          // this frame's cycles so far
+    logic [1:0]  a_miss;         // requests missed this frame
+    logic        a_ran;          // a cycle since the last request
+    logic [23:0] a_thr;          // the last frame's cycles x 100
+    logic [23:0] a_add, a_acc;   // T x 2,489 a cycle
+    logic [4:0]  a_lvl;
+    logic        a_in;
+    logic [12:0] a_qlv;          // the FIFO's level, from the pixel clock
+    wire         a_missed = req && !waiting && a_ran;
+    wire  [2:0]  a_n = 3'(a_miss) + 3'(a_missed && a_miss != '1) + 3'd1;
+    wire  [16:0] a_c = a_cyc < 17'd16384 ? 17'd16384 : a_cyc > 17'(4 * K) ? 17'(4 * K) : a_cyc;
+    wire  signed [13:0] a_tgt = $signed(14'(a_n)) * 14'sd800 + ((14'sd2048 - 14'($signed({1'b0, a_qlv}))) >>> 1);
+    wire  [11:0] a_tc = a_tgt < 0 ? '0 : a_tgt > 14'sd4000 ? 12'd4000 : 12'(a_tgt);
+
+    always_ff @(posedge clk) begin
+        if (frame_done) begin
+            a_thr  <= 24'(a_c) * 24'd100;
+            a_add  <= 24'(a_tc) * 24'd2489;
+            a_cyc  <= 17'(a_ce);
+            a_miss <= '0;
+        end else begin
+            if (a_ce && a_cyc != '1)
+                a_cyc <= a_cyc + 1'b1;
+            if (a_missed && a_miss != '1)
+                a_miss <= a_miss + 1'b1;
+        end
+        if (req)
+            a_ran <= a_ce;
+        else if (a_ce)
+            a_ran <= 1'b1;
+        if (a_ce)
+            a_lvl <= a_level;
+        a_in  <= a_acc >= a_thr;
+        a_acc <= a_acc + (a_ce ? a_add : '0) - (a_acc >= a_thr ? a_thr : '0);
+        if (rst) begin
+            a_cyc  <= '0;
+            a_thr  <= 24'(K) * 24'd100;
+            a_add  <= 24'd800 * 24'd2489;
+            a_miss <= '0;
+            a_ran  <= 1'b0;
+            a_acc  <= '0;
+            a_lvl  <= '0;
+            a_in   <= 1'b0;
+        end
+    end
+
     resampler #(.NUM(100), .DEN(2489), .SAVE_STATE(1'b0)) u_rs (
-        .clk, .rst, .ce(a_ce), .in({a_level, 11'd0}), .valid(a_valid), .busy(a_busy), .out(a_pcm),
+        .clk, .rst, .ce(a_in), .in({a_lvl, 11'd0}), .valid(a_valid), .busy(a_busy), .out(a_pcm),
         .st_addr(2'd0), .st_rdata(a_st), .st_we(1'b0), .st_wdata(32'd0));
 
     assign pcm_valid = a_valid;
@@ -242,6 +314,7 @@ module a2600_video #(
 
     logic [15:0] a_hold, a_p;
     logic        a_t, a_seen, a_last, a_new;
+    logic        n_gap;
 
     always_ff @(posedge clk)
         if (rst)
@@ -264,9 +337,56 @@ module a2600_video #(
         end
     end
 
+    // The FIFO, drained at 48 kHz.
+    localparam int AQ_LOG2 = 12, AQW = AQ_LOG2 + 1, AQ_START = 2048;
+    logic [15:0]        aq_q, a_out;
+    logic               aq_full, aq_empty, aq_ren, a_play, a_play_d, a_tick, a_send;
+    logic [AQ_LOG2:0]   aq_n;
+    logic [16:0]        a_nco;
+    logic [12:0]        aq_g, aq_s;   // aq_n Gray-coded, and across to clk (it moves by 1 at most)
+
+    fifo #(.WIDTH(16), .DEPTH_LOG2(AQ_LOG2)) u_aq (
+        .clk(pclk), .rst(prst), .wdata(a_p), .wen(a_new), .full(aq_full),
+        .ren(aq_ren), .rdata(aq_q), .empty(aq_empty));
+
+    assign a_tick = a_nco >= 17'd99_000 - 17'd64;
+    assign aq_ren = a_tick && a_play && !aq_empty;
+
+    cdc_sync #(.W(13)) u_aqn (.clk, .d(aq_g), .q(aq_s));
+    assign a_qlv = 13'(from_gray({3'b0, aq_s}));
+
+    always_ff @(posedge pclk) begin
+        aq_g   <= aq_n ^ (aq_n >> 1);
+        a_nco  <= a_tick ? a_nco + 17'd64 - 17'd99_000 : a_nco + 17'd64;
+        aq_n   <= aq_n + AQW'(a_new && !aq_full) - AQW'(aq_ren);
+        a_send <= a_tick;
+        if (a_play_d)
+            a_out <= aq_q;
+        n_gap <= a_play && ((a_new && aq_full) || (a_tick && aq_empty));
+        if (a_tick && a_play && aq_empty)
+            a_play <= 1'b0;
+        else if (!a_play && aq_n >= AQW'(AQ_START))
+            a_play <= 1'b1;
+        if (prst) begin
+            a_nco  <= '0;
+            aq_n   <= '0;
+            aq_g   <= '0;
+            a_send <= 1'b0;
+            a_out  <= '0;
+            a_play <= 1'b0;
+            n_gap  <= 1'b0;
+        end
+    end
+
+    // A sample popped is in aq_q the clock after; one not popped repeats a_out.
+    always_ff @(posedge pclk)
+        a_play_d <= aq_ren;
+
+    wire [15:0] a_snd = a_play_d ? aq_q : a_out;
+
     hdmi #(.LATENCY(LATENCY), .AUDIO(1'b1)) u_hdmi (
         .clk(pclk), .rst(prst), .x(hx), .y(hy), .act(hact), .frame(hframe), .line(hline),
-        .rgb(on_d[1] ? rgb : 24'h000000), .aud_valid(a_new), .aud_l(a_p), .aud_r(a_p),
+        .rgb(on_d[1] ? rgb : 24'h000000), .aud_valid(a_send), .aud_l(a_snd), .aud_r(a_snd),
         .tmds0, .tmds1, .tmds2, .packet);
 
     // ---- Frame CRC (nes_video's) ----
@@ -321,6 +441,7 @@ module a2600_video #(
 
     // ---- Counts, Gray-coded across ----
     logic [15:0] n_shown, g_shown, s_shown, n_late, g_late, s_late, n_over, g_over, s_over;
+    logic [15:0] n_gaps, g_gaps, s_gaps;
 
     always_ff @(posedge pclk)
         if (prst) begin
@@ -330,7 +451,13 @@ module a2600_video #(
             g_shown <= '0;
             g_late  <= '0;
             g_over  <= '0;
+            n_gaps  <= '0;
+            g_gaps  <= '0;
         end else begin
+            if (n_gap) begin
+                n_gaps <= n_gaps + 1'b1;
+                g_gaps <= (n_gaps + 1'b1) ^ ((n_gaps + 1'b1) >> 1);
+            end
             if (start && cur_ok) begin
                 n_shown <= n_shown + 1'b1;
                 g_shown <= (n_shown + 1'b1) ^ ((n_shown + 1'b1) >> 1);
@@ -348,10 +475,12 @@ module a2600_video #(
     cdc_sync #(.W(16)) u_shown (.clk, .d(g_shown), .q(s_shown));
     cdc_sync #(.W(16)) u_late (.clk, .d(g_late), .q(s_late));
     cdc_sync #(.W(16)) u_over (.clk, .d(g_over), .q(s_over));
+    cdc_sync #(.W(16)) u_gaps (.clk, .d(g_gaps), .q(s_gaps));
 
     assign shown   = from_gray(s_shown);
     assign late    = from_gray(s_late);
     assign overrun = from_gray(s_over);
+    assign gaps    = from_gray(s_gaps);
 
     // The CRC and its flag hold from before res_t toggles until the next frame's, so they cross
     // with it.

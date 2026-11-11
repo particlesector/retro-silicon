@@ -121,10 +121,11 @@ Video Console::video() {
     v.valid = status() & kVideoCrcValid;
     v.whole = c_.peek(kRegs + kVideoWhole, 1)[0] & 1;
     v.crc = get32(kVideoCrc);
-    auto n = c_.peek(kRegs + kVideoShown, 6);
+    auto n = c_.peek(kRegs + kVideoShown, 8);
     v.shown = static_cast<uint16_t>(n[0] | n[1] << 8);
     v.late = static_cast<uint16_t>(n[2] | n[3] << 8);
     v.overrun = static_cast<uint16_t>(n[4] | n[5] << 8);
+    v.gaps = static_cast<uint16_t>(n[6] | n[7] << 8);
     return v;
 }
 
@@ -276,9 +277,15 @@ TestResult hdmi_test(Link& link, const std::string& name, const std::vector<uint
             if (i >= 100 && !v.valid) break;
             v = vcs.video();
         }
+        // The sound's FIFO (21 ms) drains after the run: one gap, when it runs dry; any more were
+        // during the run.
+        for (int i = 0; i < 4000 && static_cast<uint16_t>(v.gaps - before.gaps) == 0; i++)
+            v = vcs.video();
+        uint16_t gaps = static_cast<uint16_t>(v.gaps - before.gaps);
         r.crc32 = v.crc;
         r.notes = "shown " + std::to_string(static_cast<uint16_t>(v.shown - before.shown)) + " display frames, " +
-                  std::to_string(static_cast<uint16_t>(v.late - before.late)) + " lines late";
+                  std::to_string(static_cast<uint16_t>(v.late - before.late)) + " lines late, " +
+                  std::to_string(gaps) + " sound gap" + (gaps == 1 ? "" : "s");
         // The frame it showed is the golden frame: the system's own CRC of it.
         auto c = vcs.frame_crc();
         if (!c || c->second != frames) return finish("no frame CRC for frame " + std::to_string(frames));
@@ -290,6 +297,9 @@ TestResult hdmi_test(Link& link, const std::string& name, const std::vector<uint
         if (v.late != before.late || v.overrun != before.overrun)
             return finish(std::to_string(static_cast<uint16_t>(v.late - before.late)) + " lines late, " +
                           std::to_string(static_cast<uint16_t>(v.overrun - before.overrun)) + " overwritten");
+        if (gaps > 1)
+            return finish("the sound ran dry or dropped samples " + std::to_string(gaps - 1) +
+                          " times while the cartridge ran");
         return finish("");
     } catch (const shell::StatusError& e) {
         return finish(e.what());
