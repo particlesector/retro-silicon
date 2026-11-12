@@ -27,6 +27,7 @@ openFPGALoader -b pynq_z2 build/fpga/pynq_uart_echo/pynq_echo_top.bit
 | `pynq_uart_echo_bitstream` | `systems/uart-echo` | `rtl/pynq_echo_top.sv` | 1.506 Mbaud (`CLKS_PER_BIT=83`), `pins.xdc` |
 | `pynq_shell_ram_bitstream` | `systems/shell-ram` | `rtl/pynq_shell_ram_top.sv` | As echo; `BUILD_ID` from the RTL's SHA-256, the same as the Tang boards' |
 | `pynq_nes_bitstream` | `systems/nes` through `nes_axi`, with HDMI | `rtl/pynq_nes_top.sv` | `nes.xdc`; its own clocks (below), 1.485 Mbaud (`CLKS_PER_BIT=25`), PRG ROM in the DDR3 and 256 KB of CHR in block RAM, paced by the display |
+| `pynq_a2600_bitstream` | `systems/atari-2600`'s `a2600_sys`, with HDMI | `rtl/pynq_a2600_top.sv` | `nes.xdc`; the NES's clocks, 1.485 Mbaud, 256 KB of cartridge ROM in block RAM, paced by the display; no DDR3 |
 
 ## Clocks
 
@@ -34,9 +35,13 @@ The echo and the shell run on the 125 MHz clock on H16, which the Ethernet PHY m
 
 The NES makes the Tang Nano 20K's HDMI clocks, 371.25 MHz for the serializers and 74.25 MHz for the pixels, and 37.125 MHz for the system, where a UART bit is 25 clocks (1.485 Mbaud, 1% slow) and the PPU's dot rate 9/61 of the clock, 2.0% faster than NTSC's. Keeping pace with the display, the NES waits at each frame's end, so it still makes 60 frames a second and its sound is unchanged; the 2% leaves room for the DDR3's waits. At NTSC's rate a frame takes 99.84% of a 60 Hz display frame, so a few hundred clocks of waits made a frame miss its display frame and wait for the next: Kirby's Adventure stuttered several times a second with enemies on screen (Nov 5). The system is slower than the 20K's 46.4 MHz because nextpnr-xilinx's placements of the NES reach anywhere from 38 to 52 MHz; it behaves the same at any clock. No integer PLL or MMCM setting makes 742.5 MHz from 125, and openXC7 sets an MMCM's fractional dividers wrong (measured on this board: a fractional multiplier gave about 11.8 MHz for 74.2, a fractional output divider no clock), so it takes two steps: a PLL makes 82.5 MHz (125 / 5 × 33 / 10), and an MMCM multiplies that by 9 to 742.5 MHz and divides it by 2, 10 and 20. The system's clock goes through a BUFGCE held off until the MMCM locks.
 
+The Atari 2600 runs on the same clocks, its colour clock 35/356 of the system clock (3.65 MHz, 2% fast of NTSC's). The system clock is half the pixel clock, as on the Tang Console 138K, so that's the Tang Nano 20K's colour clock against its pixel clock: the 2600 keeps pace with its display as there, a frame of 262 lines taking 98.2% of a display frame, and its video CRCs are the 20K's. nextpnr-xilinx places it at 40.2 MHz, with the pixel clock at 86 MHz.
+
 ## Memory
 
 `nes_axi` keeps PRG ROM in the DDR3 from 0x10000000, through HP0 and `memory/cache`, with HP0 and the AXI bridge on the 74.25 MHz pixel clock. CHR's 256 KB of block RAM is built in 32 KB banks: Yosys builds anything deeper from pairs of cascaded block RAMs, and nextpnr-xilinx fails to place them.
+
+The 2600's cartridge ROM, 256 KB (`ROM_LOG2` 18), is in block RAM in 32 KB memories the same way (`ROM_BANK_LOG2` 15): 64 of the XC7Z020's 140 36 Kb block RAMs. 512 KB, as the Tang boards have, would take 128, with the rest of the system needing more than the 12 left; 256 KB holds every scheme `a2600_cart` has.
 
 ## HDMI
 
