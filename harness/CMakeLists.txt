@@ -66,6 +66,11 @@ rs_verilate(rs_sim_link COMPONENT a2600_sys PREFIX Va2600_sim PARAMS CLKS_PER_BI
 set(a2600_20k_params CLKS_PER_BIT=31 IDLE_CLKS=464063 CC_NUM=7 CC_DEN=89 FREQ_MHZ=47 BUILD_ID=${a2600_id})
 rs_verilate(rs_sim_link COMPONENT a2600_sdram PREFIX Va2600_hdmi_sim PARAMS ${a2600_20k_params} VIDEO=1)
 rs_verilate(rs_sim_link COMPONENT a2600_sdram PREFIX Va2600_ext_sim PARAMS ${a2600_20k_params})
+# ...and as the Tang Console 138K runs it (boards/tang-console-138k/rtl/a2600_top.sv's parameters):
+# 37.1875 MHz, half its 74.375 MHz pixel clock, colour clocks at 35/356 (the 20K's ratio to the
+# pixel clock), 512 KB of cartridge ROM in block RAM.
+rs_verilate(rs_sim_link COMPONENT a2600_sys PREFIX Va2600_console_sim
+            PARAMS CLKS_PER_BIT=25 IDLE_CLKS=371875 CC_NUM=35 CC_DEN=356 VIDEO=1 ROM_LOG2=19 BUILD_ID=${a2600_id})
 target_include_directories(rs_sim_link PRIVATE ${PROJECT_SOURCE_DIR}/components/memory/sdram/sim
                                                ${PROJECT_SOURCE_DIR}/components/memory/axi-bridge/sim)
 # The build IDs the models and bitstreams report, for runners to check.

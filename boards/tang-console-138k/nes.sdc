@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-// The NES's clocks (rtl/nes_top.sv), from the 50 MHz oscillator through the
+// The NES's clocks (rtl/nes_top.sv), and the 2600's (rtl/a2600_top.sv, the same PLL), from the 50 MHz oscillator through the
 // PLL, as generated clocks of it: Gowin EDA then times every path between
 // them with the clock tree's real delays, setup and hold. (Its own derivation
 // of the PLL's outputs ignores the multiplier's fraction.) VCO 743.75 MHz =
