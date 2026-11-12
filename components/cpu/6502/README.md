@@ -88,7 +88,9 @@ Gaps:
 - **ARR with D set:** binary on this core; the NMOS chip adjusts it. The NES never sees it.
 - **perfect6502's ANC, ALR and ARR** leave out the AND with the operand, which real chips do (perfect6502 issue #13). Those three are checked by unit tests instead of the lockstep.
 
-About 2,500 LUTs and 110 flip-flops on a GW2A-18C with `DECIMAL = 0`; not optimised yet.
+## Size
+
+On a GW2A-18C with `DECIMAL = 0`, Yosys makes it about 2,400 LUTs and 115 flip-flops with `SAVE_STATE = 0`, and about 3,000 LUTs and 140 flip-flops with save states. The logic hasn't been optimised for size yet. That's room to shrink, not a gap: a smaller build would take fewer of the FPGA's cells, but the CPU's behaviour, cycle for cycle, would be the same.
 
 ## References
 
