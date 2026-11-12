@@ -69,6 +69,10 @@ const std::vector<std::string> kCarts = {
     TEST_CASE(id " passes as the Tang Console 138K runs it") {                         \
         matches_stella(id, [] { return rig::make_a2600_console_sim(); });              \
     }
+#define MATCHES_STELLA_PYNQ(id)                                                        \
+    TEST_CASE(id " passes as the PYNQ-Z2 runs it") {                                  \
+        matches_stella(id, [] { return rig::make_a2600_pynq_sim(); });                 \
+    }
 
 MATCHES_STELLA("tia_colours")
 MATCHES_STELLA("riot_ram")
@@ -132,6 +136,31 @@ MATCHES_STELLA_CONSOLE("bank_fe")
 MATCHES_STELLA_CONSOLE("bank_e0")
 MATCHES_STELLA_CONSOLE("bank_3f")
 MATCHES_STELLA_CONSOLE("bank_e7")
+
+MATCHES_STELLA_PYNQ("tia_colours")
+MATCHES_STELLA_PYNQ("riot_ram")
+MATCHES_STELLA_PYNQ("riot_timer")
+MATCHES_STELLA_PYNQ("tia_playfield")
+MATCHES_STELLA_PYNQ("tia_players")
+MATCHES_STELLA_PYNQ("tia_missiles_ball")
+MATCHES_STELLA_PYNQ("tia_hmove")
+MATCHES_STELLA_PYNQ("tia_collisions")
+MATCHES_STELLA_PYNQ("tia_rsync")
+MATCHES_STELLA_PYNQ("tia_resmp")
+MATCHES_STELLA_PYNQ("tia_audio")
+MATCHES_STELLA_PYNQ("tia_paddles")
+MATCHES_STELLA_PYNQ("bank_f8")
+MATCHES_STELLA_PYNQ("bank_f6")
+MATCHES_STELLA_PYNQ("bank_f4")
+MATCHES_STELLA_PYNQ("bank_f8sc")
+MATCHES_STELLA_PYNQ("bank_f6sc")
+MATCHES_STELLA_PYNQ("bank_f4sc")
+MATCHES_STELLA_PYNQ("bank_fa")
+MATCHES_STELLA_PYNQ("bank_f0")
+MATCHES_STELLA_PYNQ("bank_fe")
+MATCHES_STELLA_PYNQ("bank_e0")
+MATCHES_STELLA_PYNQ("bank_3f")
+MATCHES_STELLA_PYNQ("bank_e7")
 
 TEST_CASE("a2600_sys: every cartridge of a2600_frames_crc32.txt has its test case") {
     std::vector<std::string> ids;

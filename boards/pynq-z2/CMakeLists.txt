@@ -11,6 +11,8 @@ rs_component(tmds_phy_xc7 RTL ../xilinx/rtl/tmds_phy_xc7.sv
              LINT ${PROJECT_SOURCE_DIR}/boards/xilinx/lint/xilinx_prims.sv)
 rs_component(pynq_nes_top RTL rtl/pynq_nes_top.sv DEPENDS nes_axi ps7_hp0 tmds_phy_xc7
              LINT ${PROJECT_SOURCE_DIR}/boards/xilinx/lint/xilinx_prims.sv)
+rs_component(pynq_a2600_top RTL rtl/pynq_a2600_top.sv DEPENDS a2600_sys tmds_phy_xc7
+             LINT ${PROJECT_SOURCE_DIR}/boards/xilinx/lint/xilinx_prims.sv)
 add_subdirectory(../xilinx/sim xilinx_sim)
 
 if(NOT RS_BITSTREAMS OR NOT RS_NEXTPNR_XILINX)
@@ -33,3 +35,7 @@ get_property(nes_axi_id GLOBAL PROPERTY RS_NES_AXI_BUILD_ID)
 # Its PRG ROM is in the DDR3: rig-run sets that up over JTAG first.
 rs_board_bitstream(pynq_nes BUILD ${build} VENDOR xilinx COMPONENT pynq_nes_top CST nes.xdc
                    PARAMS BUILD_ID=${nes_axi_id})
+get_property(a2600_id GLOBAL PROPERTY RS_A2600_BUILD_ID)
+# The Atari 2600 on the NES's clocks and pins, its cartridge's ROM in block RAM: no DDR3 setup.
+rs_board_bitstream(pynq_a2600 BUILD ${build} VENDOR xilinx COMPONENT pynq_a2600_top CST nes.xdc
+                   PARAMS BUILD_ID=${a2600_id})

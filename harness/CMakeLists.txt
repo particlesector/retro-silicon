@@ -71,6 +71,12 @@ rs_verilate(rs_sim_link COMPONENT a2600_sdram PREFIX Va2600_ext_sim PARAMS ${a26
 # pixel clock), 512 KB of cartridge ROM in block RAM.
 rs_verilate(rs_sim_link COMPONENT a2600_sys PREFIX Va2600_console_sim
             PARAMS CLKS_PER_BIT=25 IDLE_CLKS=371875 CC_NUM=35 CC_DEN=356 VIDEO=1 ROM_LOG2=19 BUILD_ID=${a2600_id})
+# The 2600 as the PYNQ-Z2 runs it (boards/pynq-z2/rtl/pynq_a2600_top.sv): 37.125 MHz (the pixel
+# clock's half, as the 138K's, so colour clocks at 35/356 too), 256 KB of cartridge ROM in block RAM
+# in 32 KB memories (openXC7 places none deeper).
+rs_verilate(rs_sim_link COMPONENT a2600_sys PREFIX Va2600_pynq_sim
+            PARAMS CLKS_PER_BIT=25 IDLE_CLKS=371250 CC_NUM=35 CC_DEN=356 VIDEO=1 ROM_LOG2=18 ROM_BANK_LOG2=15
+                   BUILD_ID=${a2600_id})
 target_include_directories(rs_sim_link PRIVATE ${PROJECT_SOURCE_DIR}/components/memory/sdram/sim
                                                ${PROJECT_SOURCE_DIR}/components/memory/axi-bridge/sim)
 # The build IDs the models and bitstreams report, for runners to check.
