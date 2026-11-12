@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
-// systems/atari-2600's HDMI output (a2600_video) as the Tang Nano 20K runs it (make_a2600_hdmi_sim):
+// systems/atari-2600's HDMI output (a2600_video) as the Tang Nano 20K runs it (make_a2600_hdmi_sim)
+// and as the Tang Console 138K does (make_a2600_console_sim):
 // a receiver decodes every pixel clock, and each display frame must have 720p's timing, the frame
 // that shows a cartridge's golden frame must show it (6 x 3 times its size through the TIA's
 // colours, black around it), and the sound must be every sample the system made. Skipped when the
@@ -10,8 +11,10 @@
 #include <cstdint>
 #include <cstdlib>
 #include <fstream>
+#include <functional>
 #include <iterator>
 #include <map>
+#include <memory>
 #include <regex>
 #include <sstream>
 #include <string>
@@ -186,7 +189,9 @@ std::vector<uint8_t> golden_frame(const Cart& c) {
 // Runs a cartridge with HDMI and decodes its output: the display frame whose CRC a2600_video
 // reports must be one the receiver saw, showing the golden frame, every frame must have the
 // right timing, and the sound must be the system's samples. Returns the video CRC.
-std::optional<uint32_t> on_hdmi(const std::string& id) {
+using MakeHdmi = std::function<std::unique_ptr<rig::SimLink>(std::function<void(uint32_t)>)>;
+
+std::optional<uint32_t> on_hdmi(const std::string& id, const MakeHdmi& make) {
     auto c = cart(id);
     if (!c) {
         WARN("skipped: " << id << " isn't fetched");
@@ -196,7 +201,7 @@ std::optional<uint32_t> on_hdmi(const std::string& id) {
     Receiver rx;
     rx.expect = &frame;
     rx.pal = palette();
-    auto link = rig::make_a2600_hdmi_sim([&rx](uint32_t s) { rx(s); });
+    auto link = make([&rx](uint32_t s) { rx(s); });
     auto r = rig::a2600::hdmi_test(*link, id, c->rom, c->g.frames, c->g.crc, c->paddles, RS_A2600_BUILD_ID);
     INFO(r.detail << " / " << r.notes);
     REQUIRE(r.passed);
@@ -258,8 +263,9 @@ std::optional<uint32_t> on_hdmi(const std::string& id) {
     return r.crc32;
 }
 
-void matches_golden(const std::string& id) {
-    auto crc = on_hdmi(id);
+// The 20K's video CRCs: both boards' systems keep pace alike, so a display frame's symbols are the same.
+void matches_golden(const std::string& id, const MakeHdmi& make = rig::make_a2600_hdmi_sim) {
+    auto crc = on_hdmi(id, make);
     if (!crc) return;
     auto golden = golden_video();
     INFO("video CRC 0x" << std::hex << *crc);
@@ -267,21 +273,7 @@ void matches_golden(const std::string& id) {
     CHECK(*crc == golden[id]);
 }
 
-} // namespace
-
-TEST_CASE("a2600 HDMI: a receiver sees tia_colours's frame at 720p, every colour as tia_rgb has it") {
-    matches_golden("tia_colours");
-}
-
-TEST_CASE("a2600 HDMI: a receiver sees tia_playfield's frame and hears its sound") {
-    matches_golden("tia_playfield");
-}
-
-TEST_CASE("a2600 HDMI: a receiver hears tia_audio's sound as the system made it") {
-    matches_golden("tia_audio");
-}
-
-TEST_CASE("a2600 HDMI: the 2600 makes a frame of 262 lines in at most 98.5% of a display frame") {
+void paced_in_time(const MakeHdmi& make) {
     // Keeping pace, each frame has to be ready within a display frame, or it waits for the next and
     // the display shows the last one twice. At NTSC's rate a frame of 262 lines takes 100.1% of a
     // 60 Hz display frame, so the colour clock runs 2% fast. Measured with pacing off.
@@ -291,7 +283,7 @@ TEST_CASE("a2600 HDMI: the 2600 makes a frame of 262 lines in at most 98.5% of a
         return;
     }
     uint64_t pix = 0;
-    auto link = rig::make_a2600_hdmi_sim([&pix](uint32_t) { pix++; });
+    auto link = make([&pix](uint32_t) { pix++; });
     rig::shell::Client client(*link);
     rig::a2600::Console vcs(client);
     vcs.hold_reset();
@@ -309,4 +301,33 @@ TEST_CASE("a2600 HDMI: the 2600 makes a frame of 262 lines in at most 98.5% of a
     INFO(frames << " frames in " << shown << " display frames");
     CHECK(shown <= 0.985 * frames + 0.03);  // + the last frame's part, read late
     CHECK(shown >= 0.97 * frames);
+}
+
+} // namespace
+
+TEST_CASE("a2600 HDMI: a receiver sees tia_colours's frame at 720p, every colour as tia_rgb has it") {
+    matches_golden("tia_colours");
+}
+
+TEST_CASE("a2600 HDMI: a receiver sees tia_playfield's frame and hears its sound") {
+    matches_golden("tia_playfield");
+}
+
+TEST_CASE("a2600 HDMI: a receiver hears tia_audio's sound as the system made it") {
+    matches_golden("tia_audio");
+}
+
+TEST_CASE("a2600 HDMI: the 2600 makes a frame of 262 lines in at most 98.5% of a display frame") {
+    paced_in_time(rig::make_a2600_hdmi_sim);
+}
+
+TEST_CASE("a2600 HDMI on the Tang Console 138K: tia_colours, tia_playfield and tia_audio with the 20K's video CRCs") {
+    for (const char* id : {"tia_colours", "tia_playfield", "tia_audio"}) {
+        INFO(id);
+        matches_golden(id, [](std::function<void(uint32_t)> f) { return rig::make_a2600_console_sim(std::move(f)); });
+    }
+}
+
+TEST_CASE("a2600 HDMI on the Tang Console 138K: a frame of 262 lines in at most 98.5% of a display frame") {
+    paced_in_time([](std::function<void(uint32_t)> f) { return rig::make_a2600_console_sim(std::move(f)); });
 }

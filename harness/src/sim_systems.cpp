@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 #include "rig/sim_systems.hpp"
 
+#include "Va2600_console_sim.h"
 #include "Va2600_ext_sim.h"
 #include "Va2600_hdmi_sim.h"
 #include "Va2600_sim.h"
@@ -224,6 +225,41 @@ private:
     std::function<void(uint32_t)> on_symbol_;
 };
 
+// The 2600 as the Tang Console 138K runs it with HDMI: the system clock at half the pixel clock,
+// both from one PLL, as NesX16Hdmi's; its cartridge's ROM in block RAM, so no memory to model.
+class A2600ConsoleHdmi : public SimModel {
+public:
+    explicit A2600ConsoleHdmi(std::function<void(uint32_t)> on_symbol) : on_symbol_(std::move(on_symbol)) {
+        m_.mem_ack = 0;
+        m_.mem_rdata = 0;
+    }
+
+    bool tick(bool rx) override {
+        m_.uart_rx = rx;
+        m_.clk = 0;
+        m_.pclk = 0;
+        m_.eval();
+        m_.clk = 1;
+        m_.pclk = 1;
+        m_.eval();
+        symbol();
+        m_.pclk = 0;
+        m_.eval();
+        m_.pclk = 1;
+        m_.eval();
+        symbol();
+        return m_.uart_tx;
+    }
+
+private:
+    void symbol() {
+        if (on_symbol_) on_symbol_(m_.tmds0 | m_.tmds1 << 10 | static_cast<uint32_t>(m_.tmds2) << 20);
+    }
+
+    Va2600_console_sim m_;
+    std::function<void(uint32_t)> on_symbol_;
+};
+
 } // namespace
 
 std::unique_ptr<SimLink> make_a2600_sim() {
@@ -233,6 +269,11 @@ std::unique_ptr<SimLink> make_a2600_sim() {
 std::unique_ptr<SimLink> make_a2600_hdmi_sim(std::function<void(uint32_t)> on_symbol) {
     return std::make_unique<SimLink>(std::make_unique<A2600Hdmi>(std::move(on_symbol)), kNesHdmiClksPerBit, 64,
                                      kNesHdmiClockHz);
+}
+
+std::unique_ptr<SimLink> make_a2600_console_sim(std::function<void(uint32_t)> on_symbol) {
+    return std::make_unique<SimLink>(std::make_unique<A2600ConsoleHdmi>(std::move(on_symbol)), 25, 64,
+                                     kNesX16ClockHz);
 }
 
 std::unique_ptr<SimLink> make_a2600_ext_sim() {

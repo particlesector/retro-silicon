@@ -7,6 +7,8 @@ rs_component(console_shell_ram_top RTL rtl/shell_ram_top.sv DEPENDS shell_ram TO
 rs_component(console_shell_sdram_top RTL rtl/shell_sdram_top.sv DEPENDS shell_sdram TOPS shell_sdram_top)
 rs_component(console_nes_top RTL rtl/nes_top.sv DEPENDS nes_sdram tmds_phy TOPS nes_top
              LINT ${PROJECT_SOURCE_DIR}/boards/gowin/lint/gowin_prims.sv)
+rs_component(console_a2600_top RTL rtl/a2600_top.sv DEPENDS a2600_sys tmds_phy TOPS a2600_top
+             LINT ${PROJECT_SOURCE_DIR}/boards/gowin/lint/gowin_prims.sv)
 
 if(NOT RS_BITSTREAMS OR NOT DEFINED ENV{RS_GOWIN_EDA})
     return()
@@ -33,5 +35,11 @@ get_property(nes_sdram_id GLOBAL PROPERTY RS_NES_BUILD_ID)
 # to 41 MHz.
 rs_board_bitstream(console_nes BUILD ${build} VENDOR gowin-eda COMPONENT console_nes_top TOP nes_top CST nes.cst
                    PARAMS BUILD_ID=${nes_sdram_id}
+                   SDC nes.sdc
+                   OPTIONS timing_driven=1 place_option=2 route_option=2)
+# The Atari 2600 (rtl/a2600_top.sv): its cartridge's ROM in block RAM, on the NES's clocks (nes.sdc).
+get_property(a2600_id GLOBAL PROPERTY RS_A2600_BUILD_ID)
+rs_board_bitstream(console_a2600 BUILD ${build} VENDOR gowin-eda COMPONENT console_a2600_top TOP a2600_top CST a2600.cst
+                   PARAMS BUILD_ID=${a2600_id}
                    SDC nes.sdc
                    OPTIONS timing_driven=1 place_option=2 route_option=2)
