@@ -2,6 +2,7 @@
 #include "rig/sim_systems.hpp"
 
 #include "Va2600_console_sim.h"
+#include "Va2600_pynq_sim.h"
 #include "Va2600_ext_sim.h"
 #include "Va2600_hdmi_sim.h"
 #include "Va2600_sim.h"
@@ -227,9 +228,11 @@ private:
 
 // The 2600 as the Tang Console 138K runs it with HDMI: the system clock at half the pixel clock,
 // both from one PLL, as NesX16Hdmi's; its cartridge's ROM in block RAM, so no memory to model.
-class A2600ConsoleHdmi : public SimModel {
+// The 2600 on a board whose system clock is half its pixel clock (the 138K and the PYNQ-Z2), no
+// outside memory.
+template <class M> class A2600HalfClockHdmi : public SimModel {
 public:
-    explicit A2600ConsoleHdmi(std::function<void(uint32_t)> on_symbol) : on_symbol_(std::move(on_symbol)) {
+    explicit A2600HalfClockHdmi(std::function<void(uint32_t)> on_symbol) : on_symbol_(std::move(on_symbol)) {
         m_.mem_ack = 0;
         m_.mem_rdata = 0;
     }
@@ -256,7 +259,7 @@ private:
         if (on_symbol_) on_symbol_(m_.tmds0 | m_.tmds1 << 10 | static_cast<uint32_t>(m_.tmds2) << 20);
     }
 
-    Va2600_console_sim m_;
+    M m_;
     std::function<void(uint32_t)> on_symbol_;
 };
 
@@ -272,8 +275,13 @@ std::unique_ptr<SimLink> make_a2600_hdmi_sim(std::function<void(uint32_t)> on_sy
 }
 
 std::unique_ptr<SimLink> make_a2600_console_sim(std::function<void(uint32_t)> on_symbol) {
-    return std::make_unique<SimLink>(std::make_unique<A2600ConsoleHdmi>(std::move(on_symbol)), 25, 64,
-                                     kNesX16ClockHz);
+    return std::make_unique<SimLink>(std::make_unique<A2600HalfClockHdmi<Va2600_console_sim>>(std::move(on_symbol)),
+                                     25, 64, kNesX16ClockHz);
+}
+
+std::unique_ptr<SimLink> make_a2600_pynq_sim(std::function<void(uint32_t)> on_symbol) {
+    return std::make_unique<SimLink>(std::make_unique<A2600HalfClockHdmi<Va2600_pynq_sim>>(std::move(on_symbol)),
+                                     25, 64, 37'125'000);
 }
 
 std::unique_ptr<SimLink> make_a2600_ext_sim() {

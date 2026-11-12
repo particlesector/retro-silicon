@@ -33,7 +33,7 @@
 // does with its RAM randomising off: after `rst` the cartridge clears it, `clearing` while it does
 // (2,048 clocks), and the system must not run until it's done. A read of a RAM write port reads ROM.
 //
-// `q` is the byte at `addr` (in the cartridge's space) the clock after (with ROM_EXT, once `rom_wait`
+// `q` is the byte at `addr` (in the cartridge's space) two clocks after (with ROM_EXT, once `rom_wait`
 // is low); the system takes it at the cycle's end.
 //
 // ROM outside (ROM_EXT): when an access in the cartridge's space reads ROM, the cartridge fetches that
@@ -42,8 +42,10 @@
 // (a refresh in the way), the system must stop between colour clocks until `rom_wait` falls, which
 // leaves it as if it had run on. The shell's accesses take the port between fetches.
 module a2600_cart #(
-    parameter int ROM_LOG2 = 16,         // the ROM: 2^ROM_LOG2 bytes
-    parameter bit ROM_EXT  = 1'b0        // the ROM in an outside memory (mem_*), not block RAM
+    parameter int ROM_LOG2      = 16,        // the ROM: 2^ROM_LOG2 bytes
+    parameter int ROM_BANK_LOG2 = ROM_LOG2,  // in block RAM, built from memories of 2^ROM_BANK_LOG2 bytes
+                                             //   (openXC7 places none deeper than 32 KB)
+    parameter bit ROM_EXT       = 1'b0       // the ROM in an outside memory (mem_*), not block RAM
 ) (
     input  logic                clk,
     input  logic                por_rst, // power-on reset (ROM_EXT's memory port)
@@ -211,19 +213,42 @@ module a2600_cart #(
     wire [ROM_LOG2-1:0] ra_r = ra[ROM_LOG2-1:0];
 
     if (!ROM_EXT) begin : g_rom
-        logic [7:0] rom [2**ROM_LOG2];
-        logic       rd_d;  // a shell read's data is out
+        logic [1:0] rd_n;  // a shell read's clocks: its data is out at 2
         // One write port (the shell's) and one read port, which a shell read takes over: so the ROM
         // is a simple dual-port memory, 2 KB a block RAM on the Tang Nano 20K, where a second read
         // port doubled it. The shell reads the ROM only to check a load, with the system held in
-        // reset.
+        // reset. The read address is registered first: the CPU's address decode and the bank logic
+        // into a big ROM's block RAMs in one clock were the 138K's slowest path, and the system takes
+        // `q` only at the cycle's end, many clocks later.
+        logic [ROM_LOG2-1:0] rd_a;
         always_ff @(posedge clk)
-            if (sh_req && sh_we) rom[sh_addr] <= sh_wdata;
-        always_ff @(posedge clk) begin
-            rom_q <= rom[sh_req && !sh_we ? sh_addr : ra_r];
-            rd_d  <= sh_req && !sh_we && !rd_d;
+            rd_a <= sh_req && !sh_we ? sh_addr : ra_r;
+        if (ROM_BANK_LOG2 >= ROM_LOG2) begin : g_one
+            logic [7:0] rom [2**ROM_LOG2];
+            always_ff @(posedge clk)
+                if (sh_req && sh_we) rom[sh_addr] <= sh_wdata;
+            always_ff @(posedge clk)
+                rom_q <= rom[rd_a];
+        end else begin : g_banks
+            // As one memory, with its read byte chosen from the banks' by the bank the address had.
+            localparam int NB = 2 ** (ROM_LOG2 - ROM_BANK_LOG2);
+            logic [7:0]                       bq[NB];
+            logic [ROM_LOG2-ROM_BANK_LOG2-1:0] bsel;
+            for (genvar b = 0; b < NB; b++) begin : g_bank
+                logic [7:0] mem [2**ROM_BANK_LOG2];
+                always_ff @(posedge clk)
+                    if (sh_req && sh_we && sh_addr[ROM_LOG2-1:ROM_BANK_LOG2] == (ROM_LOG2 - ROM_BANK_LOG2)'(b))
+                        mem[sh_addr[ROM_BANK_LOG2-1:0]] <= sh_wdata;
+                always_ff @(posedge clk)
+                    bq[b] <= mem[rd_a[ROM_BANK_LOG2-1:0]];
+            end
+            always_ff @(posedge clk)
+                bsel <= rd_a[ROM_LOG2-1:ROM_BANK_LOG2];
+            assign rom_q = bq[bsel];
         end
-        assign sh_ack    = sh_req && (sh_we || rd_d);
+        always_ff @(posedge clk)
+            rd_n <= sh_req && !sh_we && rd_n != 2'd2 ? rd_n + 2'd1 : 2'd0;
+        assign sh_ack    = sh_req && (sh_we || rd_n == 2'd2);
         assign sh_q      = rom_q;
         assign rom_wait  = 1'b0;
         assign mem_req   = 1'b0;

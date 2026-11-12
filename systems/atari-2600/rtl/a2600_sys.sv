@@ -34,6 +34,7 @@ module a2600_sys #(
     parameter bit          TIA_SCORE_GLITCH = 1'b0,
     parameter bit          VIDEO            = 1'b0,     // HDMI out (a2600_video), on pclk
     parameter int          ROM_LOG2         = 16,       // the cartridge's ROM: 2^ROM_LOG2 bytes
+    parameter int          ROM_BANK_LOG2    = ROM_LOG2, // in block RAM, in memories of 2^ROM_BANK_LOG2 bytes
     parameter bit          ROM_EXT          = 1'b0,     // the ROM on mem_*, not in block RAM
     parameter logic [31:0] BUILD_ID         = '0
 ) (
@@ -120,7 +121,7 @@ module a2600_sys #(
     logic                cart_sh_ack;
     logic [ROM_LOG2-1:0] cart_mem_addr;
     wire                 sh_cart = s_req && s_addr[31:24] == 8'h00 && s_addr[23:ROM_LOG2] == '0;
-    a2600_cart #(.ROM_LOG2(ROM_LOG2), .ROM_EXT(ROM_EXT)) u_cart (
+    a2600_cart #(.ROM_LOG2(ROM_LOG2), .ROM_BANK_LOG2(ROM_BANK_LOG2), .ROM_EXT(ROM_EXT)) u_cart (
         .clk, .por_rst, .rst, .scheme(cart_scheme), .sc(cart_sc), .size_log2(cart_size), .clearing(cart_clearing),
         .ce(bus_ce && !bus_stall), .addr(bus_addr), .we(bus_we), .data(bus_data), .q(cart_data),
         .rom_wait(cart_wait),

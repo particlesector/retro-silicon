@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
-// systems/atari-2600's HDMI output (a2600_video) as the Tang Nano 20K runs it (make_a2600_hdmi_sim)
-// and as the Tang Console 138K does (make_a2600_console_sim):
+// systems/atari-2600's HDMI output (a2600_video) as the Tang Nano 20K runs it (make_a2600_hdmi_sim),
+// as the Tang Console 138K does (make_a2600_console_sim) and as the PYNQ-Z2 does (make_a2600_pynq_sim):
 // a receiver decodes every pixel clock, and each display frame must have 720p's timing, the frame
 // that shows a cartridge's golden frame must show it (6 x 3 times its size through the TIA's
 // colours, black around it), and the sound must be every sample the system made. Skipped when the
@@ -330,4 +330,15 @@ TEST_CASE("a2600 HDMI on the Tang Console 138K: tia_colours, tia_playfield and t
 
 TEST_CASE("a2600 HDMI on the Tang Console 138K: a frame of 262 lines in at most 98.5% of a display frame") {
     paced_in_time([](std::function<void(uint32_t)> f) { return rig::make_a2600_console_sim(std::move(f)); });
+}
+
+TEST_CASE("a2600 HDMI on the PYNQ-Z2: tia_colours, tia_playfield and tia_audio with the 20K's video CRCs") {
+    for (const char* id : {"tia_colours", "tia_playfield", "tia_audio"}) {
+        INFO(id);
+        matches_golden(id, [](std::function<void(uint32_t)> f) { return rig::make_a2600_pynq_sim(std::move(f)); });
+    }
+}
+
+TEST_CASE("a2600 HDMI on the PYNQ-Z2: a frame of 262 lines in at most 98.5% of a display frame") {
+    paced_in_time([](std::function<void(uint32_t)> f) { return rig::make_a2600_pynq_sim(std::move(f)); });
 }

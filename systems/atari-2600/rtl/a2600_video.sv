@@ -144,7 +144,11 @@ module a2600_video #(
         from_gray = b;
     endfunction
 
-    wire [15:0] rows_now = from_gray(p_rows);
+    // Decoded in a clock of its own: the decode, the subtraction from the frame's base and the
+    // comparisons with the row in one pixel clock were the 138K's slowest path at 74.375 MHz.
+    logic [15:0] rows_now;
+    always_ff @(posedge pclk)
+        rows_now <= from_gray(p_rows);
 
     // ---- Display ----
     logic [11:0] hx, hy;

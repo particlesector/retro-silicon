@@ -72,4 +72,9 @@ std::unique_ptr<SimLink> make_a2600_ext_sim();
 // it when asked; on_symbol as make_a2600_hdmi_sim()'s. Reports RS_A2600_BUILD_ID.
 std::unique_ptr<SimLink> make_a2600_console_sim(std::function<void(uint32_t)> on_symbol = {});
 
+// The 2600 as the PYNQ-Z2 runs it with HDMI (boards/pynq-z2/rtl/pynq_a2600_top.sv): 37.125 MHz for
+// the system (25 clocks a bit, colour clocks at 35/356), 74.25 MHz pixels, 256 KB of cartridge ROM in
+// block RAM in 32 KB memories; on_symbol as make_a2600_hdmi_sim()'s. Reports RS_A2600_BUILD_ID.
+std::unique_ptr<SimLink> make_a2600_pynq_sim(std::function<void(uint32_t)> on_symbol = {});
+
 } // namespace rig
