@@ -311,6 +311,38 @@ TEST_CASE("HDMI: the NES makes a frame in at most 98% of a display frame, leavin
     CHECK(shown <= 0.98 * frames + 0.05);  // + the last frame's part, read late
 }
 
+TEST_CASE("HDMI: with CHR ROM in the 20K's SDRAM, memory waits take at most a quarter of a frame's spare time") {
+    // Keeping pace with a 60 Hz display, the 20K's NES has a display frame's
+    // 773,437.5 system clocks (46.40625 MHz / 60) for an NES frame's 755,966.5
+    // (89,341.5 dots at 110/13 clocks a dot): 17,471 to spare, which the
+    // memory waits come out of. A frame that needs more misses its display
+    // frame: the game slows, the sound runs dry and the picture stutters, as
+    // Super Mario Bros. 3 did scrolling up in World 1-1 (Nov 12: about 17,500
+    // waits a frame on the board, 15,800 standing still in the sim, nearly all
+    // of them CHR reads from the SDRAM landing after the dot that needs them).
+    // An MMC3 test ROM with 256 KB of CHR reads the same: the PPU fetches CHR
+    // for every tile and sprite slot while it renders, whatever the picture.
+    constexpr double kSpare = 46'406'250.0 / 60 - 89'341.5 * 110 / 13;
+    auto link = rig::make_nes_hdmi_sim();
+    rig::shell::Client client(*link);
+    rig::nes::Console nes(client);
+    auto [g, rom] = golden_rom("mapperel-mmc3-c256k");
+    nes.hold_reset();
+    REQUIRE(!nes.load(rom));
+    nes.set_vector(std::nullopt);
+    nes.pace(true);
+    nes.run();
+    while (nes.frames() < 30) {  // past the ROM's start, rendering
+    }
+    uint32_t f0 = nes.frames(), w0 = nes.mem_waits();
+    while (nes.frames() < f0 + 6) {
+    }
+    uint32_t f1 = nes.frames(), w1 = nes.mem_waits();
+    double per_frame = static_cast<double>(w1 - w0) / (f1 - f0);
+    INFO(per_frame << " clocks of memory waits a frame, against " << kSpare << " to spare");
+    CHECK(per_frame <= kSpare / 4);
+}
+
 TEST_CASE("HDMI: the Tang Console 138K's system runs two ROMs in a row, keeping pace, with the 20K's video CRCs") {
     // As rig-run's hdmi test runs them on the board: one link, one ROM after another.
     auto golden = golden_video();
