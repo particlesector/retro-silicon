@@ -6,6 +6,7 @@ All notable changes to this project are listed here. The format follows [Keep a 
 
 ### Added
 
+- `common/clock-enable`: a `held` output, high on each clock a due pulse waits on `hold`, for counting the clocks `hold` costs.
 - `common/crc32`: CRC-32 (IEEE 802.3, as zlib), one byte per enabled clock.
 - `common/uart`: 8N1 receiver and transmitter; back-to-back bytes take exactly 10 bit times.
 - `common/fifo`: synchronous FIFO with a registered read port, inferred as block RAM.
@@ -137,6 +138,7 @@ All notable changes to this project are listed here. The format follows [Keep a 
 
 ### Fixed
 
+- `systems/nes`: with CHR ROM in the board's memory (`CHR_EXT`), a dot now waits for its CHR word only when the word still isn't there as the dot must end (`clock_enable`'s `hold`), not from the moment it's missing. On the Tang Nano 20K a 256 KB CHR ROM's waits fall from about 13,800 clocks a frame to 1,100 (of 17,471 to spare keeping pace with 720p), and Super Mario Bros. 3's in World 1-1 from 15,800 to 2,400: it no longer slows down and loses its sound when the screen scrolls up. `mem_waits` (register 78) counts the clocks actually lost. Nothing the system does changes. `harness`: a test that the 20K's waits with CHR ROM in its SDRAM take at most a quarter of its spare time.
 - `systems/atari-2600`: `a2600_video`'s sound comes at 48 kHz, 800 samples in every display frame, whatever length the cartridge's frames are: each frame's sound is resampled to 800 samples for each display frame the frame before took (its CPU cycles and the requests it missed), steered by the level of a 4,096-sample FIFO from which it goes to HDMI at exactly 48 kHz, starting with 2,048 waiting (the sound 43 ms behind the picture). At 800 samples per 262 lines, `tia_playfield`'s 263-line frames made 803 a display frame and `tia_audio`'s longer ones too many or too few, so the receiver's buffer filled or ran dry and it muted (heard on the 20K through the capture dongle). Register `46` counts the times it ran dry or dropped a sample while playing; `rig::a2600::hdmi_test` fails a run with any but the drain at its end.
 - `systems/atari-2600`'s frame test checked a frame only when it ended at VSYNC: one Stella's frame manager ends by its line count, with VSYNC overdue, gave a CRC of 0. `tia_rsync`'s 351-line frames found it.
 - `testroms`: Concentration Room rebuilds to its pinned SHA-256 from a fresh fetch: its title screen shows the build time (ca65's `.time`), so its build now fixes that at the time of the pinned build.

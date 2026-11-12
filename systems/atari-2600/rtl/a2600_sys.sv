@@ -94,7 +94,10 @@ module a2600_sys #(
 
     // ---- Colour clocks ----
     logic cc, step;
-    clock_enable #(.NUM(CC_NUM), .DEN(CC_DEN)) u_cc (.clk, .rst, .en(running), .hold(cart_wait), .ce(cc));
+    /* verilator lint_off UNUSEDSIGNAL */
+    logic cc_held;  // a colour clock waiting on the cartridge's ROM (not counted yet)
+    /* verilator lint_on UNUSEDSIGNAL */
+    clock_enable #(.NUM(CC_NUM), .DEN(CC_DEN)) u_cc (.clk, .rst, .en(running), .hold(cart_wait), .ce(cc), .held(cc_held));
     always_ff @(posedge clk) step <= cc && !rst;
 
     // ---- The system ----

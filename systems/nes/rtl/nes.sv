@@ -249,14 +249,20 @@ module nes #(
     assign cyc_start = cs == C_START && go;
     assign ce        = cs == C_END;
 
-    // The dots wait while memory is behind (mem_wait, below): a dot's CHR
-    // word or a cycle's PRG byte that isn't back yet holds the dot that
-    // needs it before it starts, which changes nothing but how long the
-    // system takes.
-    logic mem_wait;
+    // The dots wait while memory is behind (below), which changes nothing
+    // but how long the system takes. A cycle's PRG byte that isn't back yet
+    // (cpu_wait) stops the dots, as `en`. A dot's CHR word from the board's
+    // memory (chr_wait) is needed only on the dot's own dot_slot, the clock
+    // its next dot is due, so it holds back only that pulse (`hold`): a word
+    // that lands a clock or two into the dot that reads it costs nothing.
+    // (Stopping the dots until it landed made the 20K's NES wait about 13,800
+    // clocks a frame with 256 KB of CHR, 79% of its spare time keeping pace
+    // with the display.) mem_waits counts the clocks lost either way.
+    logic cpu_wait, chr_wait, dot_held;
 
     clock_enable #(.NUM(DOT_NUM), .DEN(DOT_DEN)) u_dot (
-        .clk, .rst(boot), .en((cs == C_RUN || cs == C_END || go) && !mem_wait), .hold(1'b0), .ce(dot_slot));
+        .clk, .rst(boot), .en((cs == C_RUN || cs == C_END || go) && !cpu_wait), .hold(chr_wait), .ce(dot_slot),
+        .held(dot_held));
 
     logic        st_we_cpu, st_we_ppu, st_we_sys, st_we_apu, st_we_cart;  // save-state writes, below
     logic [3:0]  st_sys_w;
@@ -833,7 +839,8 @@ module nes #(
 
     // A CPU cycle's third dot waits for its PRG read; a dot reading CHR from
     // the board's memory waits for its word.
-    assign mem_wait = (cs == C_RUN && dn == 2'd2 && cpu_sd_pend) || (chr_x && cur_need && !cur_hit);
+    assign cpu_wait = cs == C_RUN && dn == 2'd2 && cpu_sd_pend;
+    assign chr_wait = chr_x && cur_need && !cur_hit;
 
     always_ff @(posedge clk) begin
         sh_sd_ack <= a_ack[2];
@@ -1148,7 +1155,7 @@ module nes #(
         end
         if (sreset)
             sreset_pend <= 1'b0;
-        if (mem_wait && (cs == C_RUN || cs == C_END || go))
+        if ((cpu_wait && (cs == C_RUN || cs == C_END || go)) || dot_held)
             mem_waits <= mem_waits + 1'b1;
         if (st_we_sys)
             case (st_sys_w)
