@@ -73,7 +73,7 @@ TEST_CASE("clock_enable handles the edge ratios 1/2 and 1/1") {
     for (bool x : run(all, 10)) CHECK(x);
 }
 
-TEST_CASE("clock_enable's hold holds back only a pulse that's due") {
+TEST_CASE("clock_enable's hold holds back only a pulse that's due, and held says when") {
     // Bursts of hold, as a system waiting on memory raises it: a pulse due during one waits for it
     // to fall, and clocks with no pulse due advance as usual. Checked against the rule itself, and
     // the clocks lost are only the ones a pulse waited.
@@ -99,6 +99,7 @@ TEST_CASE("clock_enable's hold holds back only a pulse that's due") {
         const bool due = acc + 35 >= 176;
         const bool want = due && !m.hold;
         REQUIRE((m.ce != 0) == want);
+        REQUIRE((m.held != 0) == (due && m.hold));  // held: a due pulse waiting, this clock
         if (due && m.hold) held++;
         else acc = due ? acc + 35 - 176 : acc + 35;
         pulses += want;

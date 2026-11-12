@@ -16,6 +16,7 @@ Module `clock_enable`.
 | `en` | in | 1 | Advance this clock |
 | `hold` | in | 1 | Keep a pulse that's due this clock waiting (the accumulator holds); 0 when unused |
 | `ce` | out | 1 | One-clock pulse, NUM per DEN enabled clocks |
+| `held` | out | 1 | A pulse is due and `hold` is keeping it waiting this clock: counting it counts the clocks `hold` costs |
 
 ## Parameters
 
@@ -37,6 +38,6 @@ Each top module placed alone by `tools/timing/report.py` (see `docs/timing.md` f
 
 ## Status
 
-Sim tests: 35/176 gives exactly 35 pulses every 176 clocks, 5 or 6 clocks apart; a randomly gated `en` gives the same pulse sequence over the enabled clocks as a steady one; bursts of `hold` hold back only the pulses due in them, clock for clock as the rule above, losing only those clocks; 1/2 and 7/7 behave at the edges.
+Sim tests: 35/176 gives exactly 35 pulses every 176 clocks, 5 or 6 clocks apart; a randomly gated `en` gives the same pulse sequence over the enabled clocks as a steady one; bursts of `hold` hold back only the pulses due in them, clock for clock as the rule above, losing only those clocks, and `held` is high on exactly those clocks; 1/2 and 7/7 behave at the edges.
 
 In `systems/nes` on a Tang Nano 20K, as the PPU's dot clock, and in `systems/atari-2600` as the colour clock.

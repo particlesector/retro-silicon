@@ -17,7 +17,8 @@ module clock_enable #(
     input  logic rst,  // synchronous; restarts the phase from 0
     input  logic en,   // advance this clock
     input  logic hold, // keep a pulse that's due this clock waiting
-    output logic ce    // one-clock pulse, NUM per DEN enabled clocks
+    output logic ce,   // one-clock pulse, NUM per DEN enabled clocks
+    output logic held  // a pulse is due and waiting on hold this clock: the clocks hold costs
 );
     localparam int W = $clog2(DEN + NUM + 1);
 
@@ -26,6 +27,7 @@ module clock_enable #(
     wire          fire = sum >= W'(DEN);
 
     assign ce = en && fire && !hold;
+    assign held = en && fire && hold;
 
     always_ff @(posedge clk)
         if (rst)
