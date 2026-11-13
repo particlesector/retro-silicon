@@ -225,7 +225,7 @@ def main():
         comps = json.loads(args.components.read_text())
         jobs = [(c, t, f) for c in comps for t in c["tops"] for f in fams
                 if not args.only or c["name"] in args.only or t in args.only]
-        base = args.work
+        base = args.work.resolve()  # tools run inside it, so relative paths break
         with concurrent.futures.ThreadPoolExecutor(args.jobs) as pool:
             futs = {pool.submit(measure, c, t, f, base): (c, t, f) for c, t, f in jobs}
             for fut in concurrent.futures.as_completed(futs):

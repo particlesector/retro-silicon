@@ -6,7 +6,12 @@
 // One colour clock per `cc`; a CPU cycle is 3 of them. `cc` must come at least 6 clocks apart: the
 // paddles step their four capacitors in turn between colour clocks (and the RIOT's registered read
 // needs 2). The cartridge sees the CPU's address on `cart_addr` while `cart_sel` is
-// high (A12) and must have `cart_data` there by the clock that ends the cycle.
+// high (A12) and must have `cart_data` there a clock before the one that ends the cycle: the CPU
+// takes its read data registered (`cpu/6502`'s DIN_REG), which keeps the read mux out of the
+// CPU's paths into its registers. The TIA, the RIOT and the paddles change only on colour clocks,
+// and a cycle ends on one, so they hold still for that clock. A cartridge that holds `cc` while
+// it fetches (a2600_sys's ROM in SDRAM) holds the cycle's first colour clock, as the address
+// changes when a cycle ends, so its byte is there two colour clocks (12 clocks) early.
 //
 // The bus: A12 high selects the cartridge; A12 low with A7 low the TIA (writes by A5-A0, reads by
 // A3-A0, which drive only bits 7-6: the rest keep the bus's last value, as on the console); A12 low
@@ -70,7 +75,7 @@ module atari2600 #(
     logic        halted;
     logic [31:0] cpu_st;
 
-    cpu_6502 #(.DECIMAL(1'b1), .SAVE_STATE(1'b0)) u_cpu (
+    cpu_6502 #(.DECIMAL(1'b1), .SAVE_STATE(1'b0), .DIN_REG(1'b1)) u_cpu (
         .clk, .rst, .soft_rst(1'b0), .ce,
         .addr, .we, .dout(cpu_dout), .din(cpu_din), .rdy,
         .irq_n(1'b1), .nmi_n(1'b1),

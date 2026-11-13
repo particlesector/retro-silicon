@@ -2,7 +2,8 @@
 // systems/atari-2600's a2600_sys through its test shell, in the sim: every cartridge in
 // harness/golden/a2600_frames_crc32.txt to its golden frame, whose CRC the system computes itself,
 // and the sound's CRC where a2600_audio_crc32.txt has one; and the bank-switching cartridges again as
-// the Tang Nano 20K runs them, their ROM in the SDRAM (make_a2600_ext_sim); and every cartridge again
+// the Tang Nano 20K runs them, their ROM in the SDRAM (make_a2600_ext_sim), and again with a colour
+// clock every 6 clocks, so the SDRAM's reads hold the CPU (make_a2600_ext_wait_sim); and every cartridge again
 // as the Tang Console 138K runs it (make_a2600_console_sim). Skipped when the
 // cartridges aren't fetched (testroms/fetch.py).
 #include <catch2/catch_test_macros.hpp>
@@ -65,6 +66,10 @@ const std::vector<std::string> kCarts = {
     TEST_CASE(id " passes in the sim and its frame matches Stella's") { matches_stella(id); }
 #define MATCHES_STELLA_SDRAM(id) \
     TEST_CASE(id " passes from the SDRAM as the Tang Nano 20K runs it") { matches_stella(id, rig::make_a2600_ext_sim); }
+#define MATCHES_STELLA_SDRAM_WAIT(id)                                                  \
+    TEST_CASE(id " passes from the SDRAM with its reads holding the CPU") {            \
+        matches_stella(id, rig::make_a2600_ext_wait_sim);                              \
+    }
 #define MATCHES_STELLA_CONSOLE(id)                                                     \
     TEST_CASE(id " passes as the Tang Console 138K runs it") {                         \
         matches_stella(id, [] { return rig::make_a2600_console_sim(); });              \
@@ -111,6 +116,19 @@ MATCHES_STELLA_SDRAM("bank_fe")
 MATCHES_STELLA_SDRAM("bank_e0")
 MATCHES_STELLA_SDRAM("bank_3f")
 MATCHES_STELLA_SDRAM("bank_e7")
+
+MATCHES_STELLA_SDRAM_WAIT("bank_f8")
+MATCHES_STELLA_SDRAM_WAIT("bank_f6")
+MATCHES_STELLA_SDRAM_WAIT("bank_f4")
+MATCHES_STELLA_SDRAM_WAIT("bank_f8sc")
+MATCHES_STELLA_SDRAM_WAIT("bank_f6sc")
+MATCHES_STELLA_SDRAM_WAIT("bank_f4sc")
+MATCHES_STELLA_SDRAM_WAIT("bank_fa")
+MATCHES_STELLA_SDRAM_WAIT("bank_f0")
+MATCHES_STELLA_SDRAM_WAIT("bank_fe")
+MATCHES_STELLA_SDRAM_WAIT("bank_e0")
+MATCHES_STELLA_SDRAM_WAIT("bank_3f")
+MATCHES_STELLA_SDRAM_WAIT("bank_e7")
 
 MATCHES_STELLA_CONSOLE("tia_colours")
 MATCHES_STELLA_CONSOLE("riot_ram")
