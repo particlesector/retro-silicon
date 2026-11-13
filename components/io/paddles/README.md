@@ -18,7 +18,7 @@ The rates are a block RAM ROM (256 positions, 28 bits each: a 24-bit mantissa, w
 
 ## Timing
 
-After each colour clock edge the four capacitors take that colour clock's step, with `dump` as it stands after the edge (the TIA's VBLANK bit 7, which a write changes on its own edge), over the next 5 clocks. So by the next edge `hi` is the capacitor at the end of the colour clock being read, and a read `3n` colour clocks after a dump ends sees `3n` steps of charging, as Stella's timestamps count them. `cc` must come at least 6 clocks apart.
+After each colour clock edge the four capacitors take that colour clock's step, with `dump` as it stands after the edge (the TIA's VBLANK bit 7, which a write changes on its own edge), over the next 5 clocks. So by the next edge `hi` is the capacitor at the end of the colour clock being read, and a read `3n` colour clocks after a dump ends sees `3n` steps of charging, as Stella's timestamps count them. `cc` must come at least 6 clocks apart. Each capacitor's operands (its voltage, its distance to 5 V and its rate) are registered a clock before its multiply, on the colour clock for the first and then one a clock, so the multiplier's inputs start at registers; `dump` picks between them at the multiply.
 
 ## Ports
 

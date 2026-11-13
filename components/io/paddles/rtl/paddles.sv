@@ -12,7 +12,7 @@
 //
 // One multiplier steps the four capacitors in turn after each colour clock edge, with `dump` as it
 // stands after that edge, in two stages: a capacitor's product on one clock, and its scaling and sum
-// on the next (so the four take 5 clocks). Each colour clock's step, with the dump that colour clock
+// on the next (so the four take 5 clocks), each capacitor's operands registered a clock before. Each colour clock's step, with the dump that colour clock
 // sees, is done before the next edge, so `hi` there is the capacitor at the end of the colour clock
 // being read: a read `3n` colour clocks after a dump ends sees `3n` steps of charging, as Stella's
 // timestamps count. So `cc` must come at least 6 clocks apart. A position change takes effect
@@ -60,10 +60,25 @@ module paddles #(
     wire  [1:0]  ch = 2'(step - 3'd1);
 
 
+    // Each capacitor's operands, taken a clock before its multiply (on the colour clock for the
+    // first, then on steps 1-3), so the multiplier's inputs start at registers: the capacitor's
+    // voltage, its distance to 5 V, and its rate. Every capacitor's last step lands before the
+    // colour clock (at most step 5, and `cc` is at least 6 clocks apart), and each is taken
+    // before its own step lands. `dump` is chosen at the multiply, as a write on the colour clock
+    // changes it then.
+    wire  [1:0]  och = cc ? 2'd0 : 2'(step);  // the capacitor the next clock multiplies
+    logic [40:0] o_u, o_up;                   // its distance to 0, and to 5 V
+    logic [28:0] o_rate;
+    always_ff @(posedge clk) begin
+        o_u    <= {1'b0, u[och]};
+        o_up   <= 41'h100_0000_0000 - {1'b0, u[och]};
+        o_rate <= rate[och];
+    end
+
     // Stage 1, the one multiplier: x * m, x the distance to 0 while dumped, else to 5 V; a rate
     // c = {s, m} is m * 2^-(24 + s).
-    wire  [28:0] c = dump ? dump_rate : rate[ch];
-    wire  [40:0] x = dump ? {1'b0, u[ch]} : 41'h100_0000_0000 - {1'b0, u[ch]};
+    wire  [28:0] c = dump ? dump_rate : o_rate;
+    wire  [40:0] x = dump ? o_u : o_up;
     logic [64:0] p;                 // the product, waiting for stage 2
     logic [4:0]  p_s;
     logic [1:0]  p_ch;
