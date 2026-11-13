@@ -66,10 +66,10 @@ rs_verilate(rs_sim_link COMPONENT a2600_sys PREFIX Va2600_sim PARAMS CLKS_PER_BI
 set(a2600_20k_params CLKS_PER_BIT=31 IDLE_CLKS=464063 CC_NUM=7 CC_DEN=89 FREQ_MHZ=47 BUILD_ID=${a2600_id})
 rs_verilate(rs_sim_link COMPONENT a2600_sdram PREFIX Va2600_hdmi_sim PARAMS ${a2600_20k_params} VIDEO=1)
 rs_verilate(rs_sim_link COMPONENT a2600_sdram PREFIX Va2600_ext_sim PARAMS ${a2600_20k_params})
-# ...and the same with a colour clock every 6 clocks, the closest the system allows: a CPU cycle
-# (18 clocks) is then about as long as an SDRAM read, so ROM reads often make the CPU wait.
+# ...and the same with a colour clock every 7 clocks, the closest the system allows: a CPU cycle
+# (21 clocks) is then about as long as an SDRAM read, so ROM reads often make the CPU wait.
 rs_verilate(rs_sim_link COMPONENT a2600_sdram PREFIX Va2600_ext_wait_sim
-            PARAMS CLKS_PER_BIT=31 IDLE_CLKS=464063 CC_NUM=1 CC_DEN=6 FREQ_MHZ=47 BUILD_ID=${a2600_id})
+            PARAMS CLKS_PER_BIT=31 IDLE_CLKS=464063 CC_NUM=1 CC_DEN=7 FREQ_MHZ=47 BUILD_ID=${a2600_id})
 # ...and as the Tang Console 138K runs it (boards/tang-console-138k/rtl/a2600_top.sv's parameters):
 # 37.1875 MHz, half its 74.375 MHz pixel clock, colour clocks at 35/356 (the 20K's ratio to the
 # pixel clock), 512 KB of cartridge ROM in block RAM.

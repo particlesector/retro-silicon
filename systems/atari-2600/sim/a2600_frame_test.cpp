@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 // a2600_frame against the frame manager's model (frame_cutter.hpp, Stella 7.0's): random pictures,
 // lines cut short as RSYNC cuts them, VSYNC on time, early, mid-line and overdue, a colour clock every
-// 6 clocks (the least the system gives it). Every frame's CRC must be the model's, and the frame buffer
+// 6 clocks (fewer than the system's least, 7). Every frame's CRC must be the model's, and the frame buffer
 // the model's at the end.
 #include <catch2/catch_test_macros.hpp>
 #include <zlib.h>

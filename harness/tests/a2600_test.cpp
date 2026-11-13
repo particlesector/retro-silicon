@@ -3,7 +3,7 @@
 // harness/golden/a2600_frames_crc32.txt to its golden frame, whose CRC the system computes itself,
 // and the sound's CRC where a2600_audio_crc32.txt has one; and the bank-switching cartridges again as
 // the Tang Nano 20K runs them, their ROM in the SDRAM (make_a2600_ext_sim), and again with a colour
-// clock every 6 clocks, so the SDRAM's reads hold the CPU (make_a2600_ext_wait_sim); and every cartridge again
+// clock every 7 clocks, so the SDRAM's reads hold the CPU (make_a2600_ext_wait_sim); and every cartridge again
 // as the Tang Console 138K runs it (make_a2600_console_sim). Skipped when the
 // cartridges aren't fetched (testroms/fetch.py).
 #include <catch2/catch_test_macros.hpp>

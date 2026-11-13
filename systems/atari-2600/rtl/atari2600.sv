@@ -3,13 +3,16 @@
 // (`video/tia`, picture and sound) and the RIOT (`io/riot-6532`) on one bus, with the cartridge outside,
 // and the paddles' inputs (`io/paddles`).
 //
-// One colour clock per `cc`; a CPU cycle is 3 of them. `cc` must come at least 6 clocks apart: the
-// paddles step their four capacitors in turn between colour clocks (and the RIOT's registered read
-// needs 2). The cartridge sees the CPU's address on `cart_addr` while `cart_sel` is
-// high (A12) and must have `cart_data` there a clock before the one that ends the cycle: the CPU
+// One colour clock per `cc`; a CPU cycle is 3 of them. `cc` must come at least 7 clocks apart: the
+// paddles step their four capacitors in turn in the 5 clocks after a colour clock, and the CPU takes
+// a read's data a clock before the cycle ends (and the RIOT's registered read needs 2). The cartridge sees the CPU's address on `cart_addr` while `cart_sel` is
+// high (A12), from the second clock of the cycle (the system registers the CPU's access, so its
+// paths into the TIA's and RIOT's registers start at a register), and must have `cart_data` there a
+// clock before the one that ends the cycle: the CPU
 // takes its read data registered (`cpu/6502`'s DIN_REG), which keeps the read mux out of the
-// CPU's paths into its registers. The TIA, the RIOT and the paddles change only on colour clocks,
-// and a cycle ends on one, so they hold still for that clock. A cartridge that holds `cc` while
+// CPU's paths into its registers. The TIA and the RIOT change only on colour clocks, and a cycle
+// ends on one, so they hold still for that clock; the paddles' last step lands 5 clocks after a
+// colour clock, so 2 clocks before the next. A cartridge that holds `cc` while
 // it fetches (a2600_sys's ROM in SDRAM) holds the cycle's first colour clock, as the address
 // changes when a cycle ends, so its byte is there two colour clocks (12 clocks) early.
 //
@@ -68,21 +71,31 @@ module atari2600 #(
     wire ce = cc && ph == 2'd2;
 
     // ---- CPU ----
-    logic [15:0] addr;
-    logic        we, rdy;
-    logic [7:0]  cpu_dout, cpu_din;
+    logic [15:0] cpu_addr, addr;
+    logic        cpu_we, we, rdy;
+    logic [7:0]  cpu_q, cpu_dout, cpu_din;
     logic [7:0]  dbg_a, dbg_x, dbg_y, dbg_s, dbg_p;
     logic        halted;
     logic [31:0] cpu_st;
 
     cpu_6502 #(.DECIMAL(1'b1), .SAVE_STATE(1'b0), .DIN_REG(1'b1)) u_cpu (
         .clk, .rst, .soft_rst(1'b0), .ce,
-        .addr, .we, .dout(cpu_dout), .din(cpu_din), .rdy,
+        .addr(cpu_addr), .we(cpu_we), .dout(cpu_q), .din(cpu_din), .rdy,
         .irq_n(1'b1), .nmi_n(1'b1),
         .sync(cpu_sync), .halted,
         .dbg_pc(cpu_pc), .dbg_a, .dbg_x, .dbg_y, .dbg_s, .dbg_p,
         .st_addr(2'd0), .st_rdata(cpu_st), .st_we(1'b0), .st_wdata(32'd0)
     );
+
+    // The CPU's access, registered: the system decodes it a clock after the CPU's state changes,
+    // so the CPU's paths into the TIA's and the RIOT's registers start at a register. The CPU's
+    // state changes only as a cycle ends, so these hold the cycle's access from its first clock
+    // to its last, where the access happens.
+    always_ff @(posedge clk) begin
+        addr     <= cpu_addr;
+        we       <= cpu_we;
+        cpu_dout <= cpu_q;
+    end
 
     wire sel_cart = addr[12];
     wire sel_tia  = !addr[12] && !addr[7];

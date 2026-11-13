@@ -66,7 +66,7 @@ std::unique_ptr<SimLink> make_a2600_sim();
 std::unique_ptr<SimLink> make_a2600_hdmi_sim(std::function<void(uint32_t)> on_symbol = {});
 // The same without the display: no pacing, and no pixel clock.
 std::unique_ptr<SimLink> make_a2600_ext_sim();
-// The same with a colour clock every 6 clocks (the closest a2600_sys allows), so that the
+// The same with a colour clock every 7 clocks (the closest a2600_sys allows), so that the
 // cartridge's SDRAM reads often hold the CPU: the 2600's frames and sound are the same, sooner.
 std::unique_ptr<SimLink> make_a2600_ext_wait_sim();
 // The 2600 as the Tang Console 138K runs it with HDMI (boards/tang-console-138k/rtl/a2600_top.sv):
