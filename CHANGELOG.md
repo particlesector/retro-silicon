@@ -118,6 +118,8 @@ All notable changes to this project are listed here. The format follows [Keep a 
 ### Changed
 
 - `video/tia`: a player's NUSIZ checks decode the counter's last two values from the counter's register instead of from the count after this colour clock's tick (the PYNQ-Z2's slowest path, the counter into the render count).
+- `video/line-scaler`: each display line is checked on its second clock, from the count registered as it started, so `X0` must be at least 2 (was 1); the count's Gray decode and the two subtractions into `line_ok` were the slowest pixel-clock path of the NES on the Tang Console 138K and the PYNQ-Z2.
+- `video/hdmi`: `tmds_encoder`'s first stage counts the ones of the parity bits q_m is made from (even and odd apart, beside the XNOR choice), so its second stage only adds two small counts instead of counting q_m's ones; the symbols and the latency are unchanged.
 - `video/tia`: the movement step and each object's tick are worked out a clock ahead and registered, so `cc` must come at least 2 clocks apart and not on the clock after a reset or a save-state load; HMOVE's movement count through a player's whole tick was the Tang Console 138K's slowest path.
 - `io/paddles`: each capacitor's operands are registered a clock before its multiply, so the multiplier's inputs start at registers (the PYNQ-Z2's slowest path); the schedule and `hi` are unchanged.
 - `systems/atari-2600`: `a2600_video` keeps each frame's sound rate ready for each count of display frames, from the FIFO's level, and the frame's end picks one (the level's arithmetic and its product into `a_add` were the Tang Console 138K's slowest path).

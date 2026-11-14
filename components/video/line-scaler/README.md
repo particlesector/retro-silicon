@@ -41,7 +41,7 @@ The source tells the display how many lines it has finished as a Gray-coded coun
 | `SRC_W`, `SRC_H` | 256, 240 | Source frame, in pixels; `SRC_W` a power of 2 |
 | `PW` | 9 | Pixel bits |
 | `SCALE` | 3 | Display pixels per source pixel, each way |
-| `X0`, `Y0` | 256, 0 | The picture's top-left on the display; `X0` at least 1 |
+| `X0`, `Y0` | 256, 0 | The picture's top-left on the display; `X0` at least 2 (each line is checked on its second clock) |
 | `REQ_Y` | 680 | The display line whose start asks for the next frame |
 | `LINES_LOG2` | 5 | Source lines in the ring, log 2 |
 
