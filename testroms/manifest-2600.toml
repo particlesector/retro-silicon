@@ -18,6 +18,9 @@
 # must match Stella's first N samples too (harness/golden/a2600_audio_crc32.txt).
 # paddles: INPT0-3's knobs (0-255, a pot of n / 256 Mohm) or "-" for none, as Stella plugs them
 # in (harness/golden/a2600_paddles.txt); a cartridge without has none.
+# input: the input script played in Stella and on the core, "F:JJCC,...": from frame F on, SWCHA's
+# pins JJ and SWCHB's CC, with player 0's fire button in CC's bit 4 and player 1's in bit 5, in hex
+# (0 pressed; FF3F, nothing pressed, difficulty B and colour, before the first entry).
 
 [sources.a2600-carts]
 dir = "a2600"
@@ -168,6 +171,18 @@ check = "frame"
 frames = 134
 paddles = [128, 128, 128, 128]
 stella = "Bytes 0-15 each 00110011 (each group of 4 reads: 0, 0, 1, 1); bytes 16-31 all 1s but the first frame's (charged before the dump, 0 in it)"
+
+[[rom]]
+id = "riot_inputs"
+source = "a2600-carts"
+path = "riot_inputs.bin"
+sha256 = "105a9330aa9c22b71f1f244b0777a7968501a34ad8567bcd910a9b0b7042d7e7"
+needs = "cpu, riot, tia"
+covers = "The joysticks (SWCHA), the console's switches (SWCHB) and the fire buttons (INPT4, INPT5) from an input script, a change each frame for 16 frames: each direction, diagonals, both players' fire, reset, select, both difficulty switches and colour; the fire buttons' latch (VBLANK bit 6) holding a press; SWCHA read with its high nibble driven as an output"
+check = "frame"
+frames = 20
+input = "2:ff3f,3:ef3f,4:df3f,5:bf3f,6:7f2f,7:fe1f,8:f53e,9:663d,10:ff7f,11:ffaf,12:fff7,13:ff3f,14:aa1f,15:553f,16:ff3f,17:773f"
+stella = "Bytes 2k and 2k + 1 for frame k + 2: SWCHA, and SWCHB & $CB with INPT4 and INPT5 in bits 4 and 5: ff 3b, ef 3b, df 3b, bf 3b, 7f 2b, fe 1b, f5 3a, 66 39, ff 7b, ff ab, ff e3, ff 2b, 0a 0b, 55 0b, 5f 0b, 57 0b"
 
 [[rom]]
 id = "bank_f8"

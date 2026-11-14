@@ -15,6 +15,7 @@ tia_rsync 30 0x40c6ee03 frame - a2600-carts/tia_rsync.bin
 tia_resmp 30 0x0f5e4ecd frame - a2600-carts/tia_resmp.bin
 tia_audio 108 0x0091e4e4 frame - a2600-carts/tia_audio.bin
 tia_paddles 134 0x6c018a61 frame - a2600-carts/tia_paddles.bin
+riot_inputs 20 0x64c4b373 frame - a2600-carts/riot_inputs.bin input=2:ff3f,3:ef3f,4:df3f,5:bf3f,6:7f2f,7:fe1f,8:f53e,9:663d,10:ff7f,11:ffaf,12:fff7,13:ff3f,14:aa1f,15:553f,16:ff3f,17:773f
 bank_f8 10 0x53cdfd05 frame - a2600-carts/bank_f8.F8
 bank_f6 10 0xae19aa54 frame - a2600-carts/bank_f6.F6
 bank_f4 10 0xfb19af4d frame - a2600-carts/bank_f4.F4

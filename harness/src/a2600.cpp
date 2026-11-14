@@ -6,6 +6,7 @@
 #include <cstdio>
 #include <fstream>
 #include <sstream>
+#include <stdexcept>
 
 #include "rig/crc32.hpp"
 
@@ -106,6 +107,51 @@ void Console::set_paddles(const Paddles& p) {
     put32(kPaddlePos, pos);
 }
 
+void Console::set_pins(uint16_t pins) {
+    put32(kInputOn, 0, 1);
+    put32(kJoy, static_cast<uint32_t>(pins >> 8), 1);
+    put32(kSwitches, (pins & 0xCFu) | 0x30u, 1);  // bits 5-4 aren't switches: they read as 1
+    put32(kFire, (pins >> 4) & 3u, 1);
+}
+
+void Console::set_input_script(const std::vector<InputEntry>& script) {
+    if (script.size() > static_cast<size_t>(kInputMax))
+        throw RigError("an input script holds " + std::to_string(kInputMax) + " entries at most");
+    put32(kInputOn, 0, 1);
+    std::vector<uint8_t> bytes;
+    for (const auto& e : script)
+        for (uint32_t v : {e.pins & 0xFFu, static_cast<uint32_t>(e.pins >> 8), e.frame & 0xFFu,
+                           static_cast<uint32_t>(e.frame >> 8)})
+            bytes.push_back(static_cast<uint8_t>(v));
+    if (!bytes.empty()) c_.write(kInputScript, bytes);
+    put32(kInputLen, static_cast<uint32_t>(script.size()), 1);
+    put32(kInputOn, script.empty() ? 0 : 1, 1);
+}
+
+std::vector<InputEntry> parse_input(const std::string& text) {
+    std::vector<InputEntry> out;
+    std::istringstream s(text);
+    std::string e;
+    while (std::getline(s, e, ',')) {
+        auto colon = e.find(':');
+        size_t n1 = 0, n2 = 0;
+        unsigned long f = 0, pins = 0;
+        try {
+            if (colon == std::string::npos || e.size() - colon - 1 != 4) throw std::invalid_argument(e);
+            f = std::stoul(e.substr(0, colon), &n1, 10);
+            pins = std::stoul(e.substr(colon + 1), &n2, 16);
+        } catch (const std::exception&) {
+            throw RigError("bad input entry " + e + " (F:JJCC, frame then the pins in hex)");
+        }
+        if (n1 != colon || n2 != 4 || f == 0 || f > 0xFFFF)
+            throw RigError("bad input entry " + e + " (F:JJCC, frame then the pins in hex)");
+        if (!out.empty() && f <= out.back().frame)
+            throw RigError("input entry " + e + " isn't after the one before it");
+        out.push_back({static_cast<uint16_t>(f), static_cast<uint16_t>(pins)});
+    }
+    return out;
+}
+
 void Console::stop_frame(uint32_t n) { put32(kStopFrame, n); }
 void Console::audio_limit(uint32_t samples) { put32(kAudioLimit, samples); }
 void Console::run() { put32(kCtrl, 1, 1); }
@@ -177,6 +223,11 @@ std::vector<Golden> load_golden(const std::string& file) {
         s >> g.id >> g.frames >> crc >> check >> result >> g.path;
         if (!s) throw RigError(file + ": bad line: " + line);
         g.crc = static_cast<uint32_t>(std::stoul(crc, nullptr, 16));
+        std::string opt;
+        while (s >> opt) {
+            if (opt.rfind("input=", 0) != 0) throw RigError(file + ": unknown option " + opt + " in: " + line);
+            g.input = parse_input(opt.substr(6));
+        }
         out.push_back(g);
     }
     return out;
@@ -214,7 +265,7 @@ std::map<std::string, AudioGolden> load_audio(const std::string& file) {
 
 TestResult cart_test(Link& link, const std::string& name, const std::vector<uint8_t>& rom, uint32_t frames,
                      uint32_t crc, const Paddles& paddles, std::optional<AudioGolden> audio,
-                     std::optional<uint32_t> build_id, Cart cart) {
+                     std::optional<uint32_t> build_id, Cart cart, const std::vector<InputEntry>& input) {
     TestResult r;
     r.name = name;
     auto t0 = std::chrono::steady_clock::now();
@@ -243,6 +294,8 @@ TestResult cart_test(Link& link, const std::string& name, const std::vector<uint
         if (auto e = vcs.load(rom, cart)) return finish(*e);
         r.bytes = rom.size();
         vcs.set_paddles(paddles);
+        vcs.set_pins(kNoInput);
+        vcs.set_input_script(input);
         vcs.stop_frame(frames);
         vcs.audio_limit(audio ? audio->samples : 0);
         vcs.run();
@@ -271,7 +324,8 @@ TestResult cart_test(Link& link, const std::string& name, const std::vector<uint
 }
 
 TestResult hdmi_test(Link& link, const std::string& name, const std::vector<uint8_t>& rom, uint32_t frames,
-                     uint32_t crc, const Paddles& paddles, std::optional<uint32_t> build_id, Cart cart) {
+                     uint32_t crc, const Paddles& paddles, std::optional<uint32_t> build_id, Cart cart,
+                     const std::vector<InputEntry>& input) {
     TestResult r;
     r.name = name;
     auto t0 = std::chrono::steady_clock::now();
@@ -300,6 +354,8 @@ TestResult hdmi_test(Link& link, const std::string& name, const std::vector<uint
         if (auto e = vcs.load(rom, cart)) return finish(*e);
         r.bytes = rom.size();
         vcs.set_paddles(paddles);
+        vcs.set_pins(kNoInput);
+        vcs.set_input_script(input);
         vcs.audio_limit(0);
         Video before = vcs.video();
         vcs.arm_video_crc(frames - 1);

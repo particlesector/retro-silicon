@@ -27,6 +27,10 @@ none) gets a line in harness/golden/a2600_paddles.txt (--paddles-out), which the
 in. Stella plugs paddles into a joystick port when the cartridge reads INPT0-3 as paddle games do
 (its ControllerDetector), each knob in the middle (128), so that's what `paddles` must say.
 
+A cartridge with `input` (an input script, "F:JJCC,...": from frame F on, SWCHA's pins JJ and
+SWCHB's CC, with the fire buttons in CC's bits 4 and 5, in hex; stella-frames has the format) runs
+it in Stella, and its line ends with input=<the script>, which the core's test plays.
+
 It also writes harness/golden/a2600_score_glitch_crc32.txt (--glitch-out), the frames with
 video/tia's SCORE_GLITCH on: the same, but for a cartridge with `score_glitch_crc` (from
 `score_glitch_from`), that frame.
@@ -87,6 +91,10 @@ def main():
             continue
         path = f"{rom['source']}/{rom['path']}"
         cmd = [args.stella_frames, "--rom", str(args.roms / path), "--frames", str(rom["frames"])]
+        script = ""
+        if "input" in rom:
+            cmd += ["--input", rom["input"]]
+            script = f" input={rom['input']}"
         if args.dump:
             (args.dump / rom["id"]).mkdir(parents=True, exist_ok=True)
             cmd += ["--dump", str(args.dump / rom["id"])]
@@ -104,12 +112,12 @@ def main():
                 sys.exit(f"frames: {rom['id']}: Stella gives 0x{crc}, not its stella_crc {rom['stella_crc']}")
             crc = f"{int(rom['golden_crc'], 16):08x}"
             lines.append(f"# {rom['id']}: not Stella's frame ({rom['stella_crc']}): {rom['golden_from']}")
-        lines.append(f"{rom['id']} {rom['frames']} 0x{crc} frame - {path}")
+        lines.append(f"{rom['id']} {rom['frames']} 0x{crc} frame - {path}{script}")
         print(lines[-1])
         if "score_glitch_crc" in rom:
             crc = f"{int(rom['score_glitch_crc'], 16):08x}"
             glitch.append(f"# {rom['id']}: {rom['score_glitch_from']}")
-        glitch.append(f"{rom['id']} {rom['frames']} 0x{crc} frame - {path}")
+        glitch.append(f"{rom['id']} {rom['frames']} 0x{crc} frame - {path}{script}")
         if "paddles" in rom:
             pads = [str(p) for p in rom["paddles"]]
             if len(pads) != 4 or any(p != "-" and not 0 <= int(p) <= 255 for p in pads):

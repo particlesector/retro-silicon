@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 // systems/atari-2600's a2600_sys through its test shell, in the sim: every cartridge in
 // harness/golden/a2600_frames_crc32.txt to its golden frame, whose CRC the system computes itself,
-// and the sound's CRC where a2600_audio_crc32.txt has one; and the bank-switching cartridges again as
+// and the sound's CRC where a2600_audio_crc32.txt has one, with its input script where it has one; and the bank-switching cartridges again as
 // the Tang Nano 20K runs them, their ROM in the SDRAM (make_a2600_ext_sim), and again with a colour
 // clock every 7 clocks, so the SDRAM's reads hold the CPU (make_a2600_ext_wait_sim); and every cartridge again
 // as the Tang Console 138K runs it (make_a2600_console_sim). Skipped when the
@@ -45,7 +45,7 @@ void matches_stella(const std::string& id,
         auto r = rig::a2600::cart_test(*link, g.id, rom, g.frames, g.crc,
                                        p == paddles.end() ? rig::a2600::kNoPaddles : p->second,
                                        s == sounds.end() ? std::nullopt : std::make_optional(s->second),
-                                       RS_A2600_BUILD_ID, *cart);
+                                       RS_A2600_BUILD_ID, *cart, g.input);
         INFO(r.detail << " (" << r.notes << ")");
         CHECK(r.passed);
         return;
@@ -55,7 +55,7 @@ void matches_stella(const std::string& id,
 
 const std::vector<std::string> kCarts = {
     "tia_colours", "riot_ram", "riot_timer", "tia_playfield", "tia_players", "tia_missiles_ball",
-    "tia_hmove", "tia_collisions", "tia_rsync", "tia_resmp", "tia_audio", "tia_paddles",
+    "tia_hmove", "tia_collisions", "tia_rsync", "tia_resmp", "tia_audio", "tia_paddles", "riot_inputs",
     "bank_f8", "bank_f6", "bank_f4", "bank_f8sc", "bank_f6sc", "bank_f4sc", "bank_fa", "bank_f0",
     "bank_fe", "bank_e0", "bank_3f", "bank_e7",
 };
@@ -91,6 +91,7 @@ MATCHES_STELLA("tia_rsync")
 MATCHES_STELLA("tia_resmp")
 MATCHES_STELLA("tia_audio")
 MATCHES_STELLA("tia_paddles")
+MATCHES_STELLA("riot_inputs")
 MATCHES_STELLA("bank_f8")
 MATCHES_STELLA("bank_f6")
 MATCHES_STELLA("bank_f4")
@@ -142,6 +143,7 @@ MATCHES_STELLA_CONSOLE("tia_rsync")
 MATCHES_STELLA_CONSOLE("tia_resmp")
 MATCHES_STELLA_CONSOLE("tia_audio")
 MATCHES_STELLA_CONSOLE("tia_paddles")
+MATCHES_STELLA_CONSOLE("riot_inputs")
 MATCHES_STELLA_CONSOLE("bank_f8")
 MATCHES_STELLA_CONSOLE("bank_f6")
 MATCHES_STELLA_CONSOLE("bank_f4")
@@ -167,6 +169,7 @@ MATCHES_STELLA_PYNQ("tia_rsync")
 MATCHES_STELLA_PYNQ("tia_resmp")
 MATCHES_STELLA_PYNQ("tia_audio")
 MATCHES_STELLA_PYNQ("tia_paddles")
+MATCHES_STELLA_PYNQ("riot_inputs")
 MATCHES_STELLA_PYNQ("bank_f8")
 MATCHES_STELLA_PYNQ("bank_f6")
 MATCHES_STELLA_PYNQ("bank_f4")

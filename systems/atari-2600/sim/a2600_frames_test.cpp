@@ -5,7 +5,9 @@
 // match Stella's sound: each sample's two channel sums (each channel's level summed over the colour
 // clocks since the last sample, a sample at each of the TIA's phase 1 clocks, as Stella takes them),
 // as two little-endian 16-bit words, and the CRC of the first N samples from power-up. Skipped when
-// the cartridges aren't fetched (testroms/fetch.py).
+// the cartridges aren't fetched (testroms/fetch.py). A cartridge with an input script (input=F:JJCC,...)
+// gets each entry's pins once frame F - 1 has ended, as a2600_sys's input player sets them; the pins
+// are FF3F (nothing pressed, both difficulties B, colour) until then.
 #include <catch2/catch_test_macros.hpp>
 #include <zlib.h>
 
@@ -17,6 +19,7 @@
 #include <map>
 #include <sstream>
 #include <string>
+#include <utility>
 #include <vector>
 
 #include "Va2600.h"
@@ -28,11 +31,28 @@ using a2600_sim::FrameCutter;
 using a2600_sim::kHeight;
 using a2600_sim::kWidth;
 
+// An input script's entries: from frame F on, the pins JJCC (SWCHA's; SWCHB's with the fire buttons
+// in bits 4 and 5), as harness/include/rig/a2600.hpp takes them.
+using Script = std::vector<std::pair<int, uint16_t>>;
+
 struct Golden {
     std::string id, path;
     int frames;
     uint32_t crc;
+    Script input;
 };
+
+Script parse_input(const std::string& s) {
+    Script out;
+    std::istringstream in(s);
+    std::string e;
+    while (std::getline(in, e, ',')) {
+        const size_t colon = e.find(':');
+        REQUIRE(colon != std::string::npos);
+        out.emplace_back(std::stoi(e.substr(0, colon)), static_cast<uint16_t>(std::stoul(e.substr(colon + 1), nullptr, 16)));
+    }
+    return out;
+}
 
 struct AudioGolden {
     std::string id;
@@ -90,6 +110,8 @@ std::vector<Golden> golden() {
         std::string crc, check, result;
         s >> g.id >> g.frames >> crc >> check >> result >> g.path;
         g.crc = static_cast<uint32_t>(std::stoul(crc, nullptr, 16));
+        for (std::string tok; s >> tok;)
+            if (tok.rfind("input=", 0) == 0) g.input = parse_input(tok.substr(6));
         out.push_back(g);
     }
     return out;
@@ -101,12 +123,21 @@ std::vector<Golden> golden() {
 // colour clock's levels as <dump_name>.lvl (a byte each: aud0 | aud1 << 4) and VSYNC as <dump_name>.vs
 // (a byte each), to compare with a transistor-level TIA's pins.
 uint32_t run(const std::vector<uint8_t>& rom, int frames, std::vector<uint8_t>& sound,
-             const Paddles& paddles, const std::string& dump_name = "") {
+             const Paddles& paddles, const Script& input = {}, const std::string& dump_name = "") {
     Va2600 m;
     FrameCutter cut;
-    m.joy = 0xFF;
-    m.switches = 0xFF;
-    m.fire_n = 3;
+    const auto set_pins = [&m](uint16_t pins) {
+        m.joy = static_cast<uint8_t>(pins >> 8);
+        m.switches = static_cast<uint8_t>((pins & 0xCF) | 0x30);
+        m.fire_n = (pins >> 4) & 3;
+    };
+    set_pins(0xFF3F);
+    size_t next = 0;
+    // The entries due once `cut.frames` frames have ended.
+    const auto play = [&] {
+        for (; next < input.size() && input[next].first <= cut.frames + 1; next++) set_pins(input[next].second);
+    };
+    play();
     m.paddle_on = 0;
     m.paddle_pos = 0;
     for (int i = 0; i < 4; i++)
@@ -164,6 +195,7 @@ uint32_t run(const std::vector<uint8_t>& rom, int frames, std::vector<uint8_t>& 
         if (m.pix_on) cut.pixel(m.pix_x, m.pix);
         if (m.line_end) cut.line_end();
         cut.vsync(m.vsync);
+        if (cut.frames != before) play();
         if (cut.frames != before && cut.frames == frames) {
             crc = static_cast<uint32_t>(crc32(crc32(0, nullptr, 0), cut.buffer.data(), cut.buffer.size()));
             if (const char* dir = std::getenv("RS_A2600_DUMP"); dir && !dump_name.empty()) {
@@ -203,7 +235,7 @@ TEST_CASE("atari2600 test cartridges match Stella's frames and sound") {
         REQUIRE((rom.size() == 2048 || rom.size() == 4096));
         std::vector<uint8_t> sound;
         const auto pad = pads.find(g.id);
-        CHECK(run(rom, g.frames, sound, pad == pads.end() ? Paddles{-1, -1, -1, -1} : pad->second, g.id) == g.crc);
+        CHECK(run(rom, g.frames, sound, pad == pads.end() ? Paddles{-1, -1, -1, -1} : pad->second, g.input, g.id) == g.crc);
         for (const AudioGolden& a : sounds) {
             if (a.id != g.id) continue;
             INFO("sound, " << sound.size() / 4 << " samples");

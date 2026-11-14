@@ -23,6 +23,7 @@
 //   0x00000000-...         the cartridge's ROM, 2^ROM_LOG2 bytes (a 2 KB one written twice)
 //   0x01000000-0x0100007F  control and status registers
 //   0x05000000-0x05008E7F  the frame buffer: y x 160 + x, the last frame as Stella would show it
+//   0x07000000-0x070000FF  the input script: 64 entries of 4 bytes, written only
 // LEDs (active low): led[0] a corrupt command frame, led[1] a stalled one, led[3] running, led[4]
 // stopped at a limit, led[5] heartbeat.
 
@@ -83,6 +84,8 @@ module a2600_sys #(
     logic [3:0]  cart_scheme;     // 50: a2600_cart's scheme
     logic        cart_sc;         //     bit 4: the Superchip's RAM
     logic [4:0]  cart_size;       // 51: the ROM's size, log2
+    logic        in_on;           // 54: bit 0, the input player sets the pins (2C-2E)
+    logic [6:0]  in_len;          // 55: entries in the input script
 
     wire rst = por_rst || ctrl[1];
 
@@ -257,6 +260,36 @@ module a2600_sys #(
         wire unused_video = &{1'b0, pclk, vw_we, vw_y, vw_w, vw_d, row_done, v_waiting, v_cap_t};
     end
 
+    // ---- The input player ----
+    // With the player on, the pins (registers 2C-2E) come from the input script, entries
+    // {frame[15:0], SWCHA's pins, SWCHB's pins with the fire buttons' (INPT4, INPT5) in bits 4-5} in
+    // frame order, played from reset: an entry applies once frame - 1 frames have ended, so its pins
+    // hold from the start of the frame it names, as Stella takes its input before running a frame.
+    // `frames` changes only at a frame's end, and an entry applies on the clock after, before the next
+    // colour clock (at least 7 clocks on), so a run's input is the same on any board and in the sim.
+    // The script is in logic, read without a clock: the GW2AR-18's block RAM wants its address held
+    // longer than a register's short path gives (systems/nes's script takes it on the falling edge).
+    logic [31:0] script[64];
+    logic [23:0] in_stage;
+    logic [5:0]  in_idx;
+    wire  [31:0] in_ent = script[in_idx];
+    wire         in_due = in_on && {1'b0, in_idx} < in_len && {16'd0, in_ent[31:16]} <= frames + 32'd1;
+    wire         sh_in  = s_req && !s_ack && s_we && s_addr[31:24] == 8'h07 && s_addr[23:8] == '0;
+
+    always_ff @(posedge clk) begin
+        if (sh_in)
+            case (s_addr[1:0])
+                2'd0: in_stage[7:0]   <= s_wdata;
+                2'd1: in_stage[15:8]  <= s_wdata;
+                2'd2: in_stage[23:16] <= s_wdata;
+                2'd3: script[s_addr[7:2]] <= {s_wdata, in_stage};
+            endcase
+        if (rst)
+            in_idx <= '0;
+        else if (in_due)
+            in_idx <= in_idx + 1'b1;
+    end
+
     // ---- The shell's bus ----
     wire       sh_reg = s_req && s_addr[31:24] == 8'h01 && s_addr[23:7] == '0;
     wire [6:0] r = s_addr[6:0];
@@ -290,6 +323,7 @@ module a2600_sys #(
             5'h12: reg_q = byte_of(pcm_crc, r[1:0]);
             5'h13: reg_q = byte_of(pcm_n, r[1:0]);
             5'h14: reg_q = byte_of({7'd0, ROM_EXT, 8'(ROM_LOG2), 3'd0, cart_size, 3'd0, cart_sc, cart_scheme}, r[1:0]);
+            5'h15: reg_q = byte_of({16'd0, 1'b0, in_len, 7'd0, in_on}, r[1:0]);
             default: ;
         endcase
     end
@@ -316,6 +350,13 @@ module a2600_sys #(
             cart_scheme <= '0;
             cart_sc     <= 1'b0;
             cart_size   <= 5'd12;
+            in_on       <= 1'b0;
+            in_len      <= '0;
+        end else if (in_due) begin
+            // Between shell commands' bytes: the shell's next write to the pins waits a clock.
+            joy      <= in_ent[15:8];
+            switches <= {in_ent[7:6], 2'b11, in_ent[3:0]};
+            fire_n   <= in_ent[5:4];
         end else if (s_req && !s_ack) begin
             if (sh_fb) begin
                 if (fb_ack) begin
@@ -348,6 +389,11 @@ module a2600_sys #(
                         5'h14: case (r[1:0])
                                   2'd0: {cart_sc, cart_scheme} <= s_wdata[4:0];
                                   2'd1: cart_size <= s_wdata[4:0];
+                                  default: ;
+                              endcase
+                        5'h15: case (r[1:0])
+                                  2'd0: in_on  <= s_wdata[0];
+                                  2'd1: in_len <= s_wdata[6:0];
                                   default: ;
                               endcase
                         default: ;
