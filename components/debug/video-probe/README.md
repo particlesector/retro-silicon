@@ -10,7 +10,7 @@ Each pixel goes into the CRCs as 2 bytes, low byte first, in raster order; pixel
 
 ## Capture
 
-With `cap_en` high, line `cap_line` of frame `cap_frame` goes into the line buffer as it passes, and `cap_held` stays high from its last pixel until `cap_line`, `cap_frame` or `cap_en` change. The system stops its clock enables while `cap_held` is high. The host reads the buffer, sets `cap_line` to the next line, and so on: each step is an absolute write, safe for the test shell to repeat.
+With `cap_en` high, line `cap_line` of frame `cap_frame` goes into the line buffer as it passes, and `cap_held` stays high from the clock after its last pixel until `cap_line`, `cap_frame` or `cap_en` change (a clock after, for the first two: the compare is registered). The system stops its clock enables while `cap_held` is high. The host reads the buffer, sets `cap_line` to the next line, and so on: each step is an absolute write, safe for the test shell to repeat.
 
 The capture must be armed before its line passes: stop the system at the end of the frame before, then arm it.
 

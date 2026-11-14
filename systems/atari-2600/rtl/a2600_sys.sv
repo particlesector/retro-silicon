@@ -6,7 +6,7 @@
 // (a2600_frame) and the sound's CRC as Stella samples it, so the host compares them with the golden
 // lists without taking the picture over the link.
 //
-// Colour clocks come at CC_NUM/CC_DEN of the clock (clock_enable), at least 6 clocks apart, while the
+// Colour clocks come at CC_NUM/CC_DEN of the clock (clock_enable), at least 7 clocks apart, while the
 // system runs. The system stops between colour clocks, so stopping and starting leave it exactly as
 // if it had run on: the same on any board and in the sim. With ROM_EXT a colour clock also waits
 // while the cartridge is fetching the byte its access reads (clock_enable's hold), so only a fetch
@@ -118,7 +118,7 @@ module a2600_sys #(
         .pix, .pix_on, .pix_x, .line_end, .vsync, .vblank, .aud0, .aud1, .aud_tick,
         .cpu_sync, .cpu_pc, .bus_ce, .bus_addr, .bus_we, .bus_data, .bus_stall);
 
-    // The cartridge, read every clock (a CPU cycle is at least 18) and written by the shell. It
+    // The cartridge, read every clock (a CPU cycle is at least 21) and written by the shell. It
     // watches every access (bus_*), as a cartridge's bank switching does.
     logic [7:0]          cart_sh;
     logic                cart_sh_ack;

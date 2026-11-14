@@ -43,7 +43,7 @@ As Stella 7.0 runs it:
 | Port | Dir | Width | Meaning |
 | --- | --- | --- | --- |
 | `clk`, `rst` | in | 1 | Clock; synchronous reset: the line at colour clock 0, registers 0 |
-| `cc` | in | 1 | One colour clock |
+| `cc` | in | 1 | One colour clock: at least 2 clocks apart, and not on the clock after `rst` or a save-state load (the objects' ticks are worked out a clock ahead) |
 | `ce` | in | 1 | This colour clock ends a CPU cycle (with `cc`) |
 | `cs`, `addr`, `we`, `din` | in | 1, 6, 1, 8 | The cycle's access: writes by A5-A0 |
 | `dout` | out | 8 | Read data by A3-A0 (below), in bits 7-6; a system keeps its bus's last value in bits 5-0 |

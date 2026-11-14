@@ -133,9 +133,9 @@ uint32_t run(const std::vector<uint8_t>& rom, int frames, std::vector<uint8_t>& 
     uint32_t sum0 = 0, sum1 = 0;
     std::vector<uint8_t> levels, vsyncs;
     const char* dump_dir = std::getenv("RS_A2600_DUMP");
-    // A colour clock every 6 clocks, the least io/paddles takes.
+    // A colour clock every 7 clocks, the least the system takes (atari2600.sv).
     for (uint64_t clock = 0; cut.frames < frames; clock++) {
-        const bool cc = clock % 6 == 5;
+        const bool cc = clock % 7 == 6;
         m.cc = cc;
         m.clk = 0;
         m.eval();

@@ -5,7 +5,9 @@
 // zero; in the blanking period the two control bits become one of four
 // fixed symbols, and the disparity restarts from zero. Bit 0 goes out first.
 // It's two register stages, one per step of the spec's algorithm, so the
-// symbol is for the inputs of two clocks before.
+// symbol is for the inputs of two clocks before. Stage 1 also counts the
+// ones of the parity bits q_m is made from, even and odd apart, beside the
+// XNOR choice, so stage 2 doesn't count q_m's ones itself.
 module tmds_encoder (
     input  logic       clk,
     input  logic       rst,
@@ -18,7 +20,9 @@ module tmds_encoder (
     // XOR chaining makes bit i the parity of d[i:0]; XNOR chaining inverts
     // the odd bits of that.
     logic [3:0] n1d;
+    logic [2:0] n_even, n_odd;
     logic       use_xnor, par;
+    logic [7:0] p;
     logic [8:0] qm;
 
     always_comb begin
@@ -28,23 +32,32 @@ module tmds_encoder (
         use_xnor = n1d > 4'd4 || (n1d == 4'd4 && !d[0]);
         par = 1'b0;
         for (int i = 0; i < 8; i++) begin
-            par   = par ^ d[i];
-            qm[i] = par ^ (use_xnor && i % 2 == 1);
+            par  = par ^ d[i];
+            p[i] = par;
         end
+        n_even = 3'(p[0]) + 3'(p[2]) + 3'(p[4]) + 3'(p[6]);
+        n_odd  = 3'(p[1]) + 3'(p[3]) + 3'(p[5]) + 3'(p[7]);
+        for (int i = 0; i < 8; i++)
+            qm[i] = p[i] ^ (use_xnor && i % 2 == 1);
         qm[8] = !use_xnor;
     end
 
     logic [8:0] qm_q;
+    logic [2:0] n_even_q, n_odd_q;
     logic       de_q;
     logic [1:0] c_q;
 
     always_ff @(posedge clk) begin
-        qm_q <= qm;
-        de_q <= !rst && de;
-        c_q  <= c;
+        qm_q     <= qm;
+        n_even_q <= n_even;
+        n_odd_q  <= n_odd;
+        de_q     <= !rst && de;
+        c_q      <= c;
     end
 
-    // Stage 2: invert q_m[7:0] or not, by the running disparity.
+    // Stage 2: invert q_m[7:0] or not, by the running disparity. q_m's ones
+    // are the even parity bits' and the odd ones', or 4 less the odd ones'
+    // with XNOR chaining (q_m[8] clear), which inverts them.
     logic [3:0]        n1q;
     logic signed [5:0] diff;  // ones minus zeros in q_m[7:0]
     logic signed [5:0] cnt;
@@ -52,9 +65,7 @@ module tmds_encoder (
     logic [9:0]        q_next;
 
     always_comb begin
-        n1q = '0;
-        for (int i = 0; i < 8; i++)
-            n1q = n1q + {3'd0, qm_q[i]};
+        n1q  = {1'b0, n_even_q} + (qm_q[8] ? {1'b0, n_odd_q} : 4'd4 - {1'b0, n_odd_q});
         diff = $signed({1'b0, n1q, 1'b0}) - 6'sd8;  // 2*n1q - 8
         if (cnt == 6'sd0 || diff == 6'sd0) begin
             q_next   = {!qm_q[8], qm_q[8], qm_q[8] ? qm_q[7:0] : ~qm_q[7:0]};

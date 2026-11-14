@@ -4,6 +4,7 @@
 #include "Va2600_console_sim.h"
 #include "Va2600_pynq_sim.h"
 #include "Va2600_ext_sim.h"
+#include "Va2600_ext_wait_sim.h"
 #include "Va2600_hdmi_sim.h"
 #include "Va2600_sim.h"
 #include "Vshell_ram_sim.h"
@@ -286,6 +287,11 @@ std::unique_ptr<SimLink> make_a2600_pynq_sim(std::function<void(uint32_t)> on_sy
 
 std::unique_ptr<SimLink> make_a2600_ext_sim() {
     return std::make_unique<SimLink>(std::make_unique<WithSdram<Va2600_ext_sim>>(kNesHdmiClockHz / 1e6),
+                                     kNesHdmiClksPerBit, 64, kNesHdmiClockHz);
+}
+
+std::unique_ptr<SimLink> make_a2600_ext_wait_sim() {
+    return std::make_unique<SimLink>(std::make_unique<WithSdram<Va2600_ext_wait_sim>>(kNesHdmiClockHz / 1e6),
                                      kNesHdmiClksPerBit, 64, kNesHdmiClockHz);
 }
 

@@ -31,7 +31,8 @@ module video_probe #(
     output logic [31:0] line_rdata,
 
     // Capture: line cap_line of frame cap_frame goes into the buffer, and
-    // cap_held stays high from then until cap_line, cap_frame or cap_en change.
+    // cap_held stays high from the clock after until cap_line, cap_frame or
+    // cap_en change (a clock after for the first two).
     input  logic        cap_en,
     input  logic [31:0] cap_frame,
     input  logic [7:0]  cap_line,
@@ -99,7 +100,14 @@ module video_probe #(
         end
     end
 
-    assign cap_held = cap_en && done && done_frame == cap_frame && done_line == cap_line;
+    // The line and frame compare is registered, so cap_held rises the clock
+    // after the line's last pixel and falls the clock after cap_line or
+    // cap_frame changes (at once with cap_en): its 32-bit compare isn't one
+    // path with the system's clock enables.
+    logic cap_same;
+    always_ff @(posedge clk)
+        cap_same <= done_frame == cap_frame && done_line == cap_line;
+    assign cap_held = cap_en && done && cap_same;
 
     always_ff @(posedge clk) begin
         line_rdata <= line_raddr < YW'(H) ? line_crc[line_raddr] : '0;

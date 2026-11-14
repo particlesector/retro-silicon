@@ -274,13 +274,25 @@ module a2600_video #(
     wire         a_missed = req && !waiting && a_ran;
     wire  [2:0]  a_n = 3'(a_miss) + 3'(a_missed && a_miss != '1) + 3'd1;
     wire  [16:0] a_c = a_cyc < 17'd16384 ? 17'd16384 : a_cyc > 17'(4 * K) ? 17'(4 * K) : a_cyc;
-    wire  signed [13:0] a_tgt = $signed(14'(a_n)) * 14'sd800 + ((14'sd2048 - 14'($signed({1'b0, a_qlv}))) >>> 1);
-    wire  [11:0] a_tc = a_tgt < 0 ? '0 : a_tgt > 14'sd4000 ? 12'd4000 : 12'(a_tgt);
+    // T x 2,489 for each N (1-4), kept ready in registers from the FIFO's level (which crosses
+    // from the pixel clock, so a clock or two more on its way changes nothing a run can count on),
+    // so `frame_done` only picks one by N: the level's arithmetic and the product were the
+    // 138K's slowest path into a_add.
+    logic [11:0] a_tcn  [4];
+    logic [23:0] a_addn [4];
+    wire  signed [13:0] a_half = (14'sd2048 - 14'($signed({1'b0, a_qlv}))) >>> 1;
+    for (genvar n = 0; n < 4; n++) begin : g_tc
+        wire signed [13:0] t = $signed(14'(n + 1)) * 14'sd800 + a_half;
+        always_ff @(posedge clk) begin
+            a_tcn[n]  <= t < 0 ? '0 : t > 14'sd4000 ? 12'd4000 : 12'(t);
+            a_addn[n] <= 24'(a_tcn[n]) * 24'd2489;
+        end
+    end
 
     always_ff @(posedge clk) begin
         if (frame_done) begin
             a_thr  <= 24'(a_c) * 24'd100;
-            a_add  <= 24'(a_tc) * 24'd2489;
+            a_add  <= a_addn[2'(a_n - 3'd1)];
             a_cyc  <= 17'(a_ce);
             a_miss <= '0;
         end else begin
@@ -357,7 +369,7 @@ module a2600_video #(
     assign aq_ren = a_tick && a_play && !aq_empty;
 
     cdc_sync #(.W(13)) u_aqn (.clk, .d(aq_g), .q(aq_s));
-    assign a_qlv = 13'(from_gray({3'b0, aq_s}));
+    always_ff @(posedge clk) a_qlv <= 13'(from_gray({3'b0, aq_s}));
 
     always_ff @(posedge pclk) begin
         aq_g   <= aq_n ^ (aq_n >> 1);

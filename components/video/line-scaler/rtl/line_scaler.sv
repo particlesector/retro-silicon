@@ -21,8 +21,8 @@
 // Source lines come in order, each SRC_W pixels from x = 0. The picture must
 // fit the display's 4096 positions a line and lines a frame. Display
 // positions advance by one each clock along a line, and the picture's
-// top-left is at (X0, Y0), X0 at least 1. d_pix is for the position of the
-// clock before.
+// top-left is at (X0, Y0), X0 at least 2 (each line is checked on its second
+// clock). d_pix is for the position of the clock before.
 module line_scaler #(
     parameter int SRC_W      = 256,
     parameter int SRC_H      = 240,
@@ -164,28 +164,32 @@ module line_scaler #(
         end
     end
 
-    // Check the line as it starts: arrived, and not overwritten before this
+    // Check the line: arrived as it starts, and not overwritten before this
     // display line ends (the source finishes at most one more meanwhile).
-    wire [CW-1:0] fbase = top_now ? base_next : base;
-    wire          fok   = top_now ? ok_next : d_frame_ok;
-    wire [CW-1:0] done  = d_cnt - fbase;
-    wire [CW-1:0] ahead = done - CW'(sy);
-    wire          here  = done > CW'(sy);
-    wire          safe  = ahead <= CW'(2**L - SLACK);
-    logic         line_ok;
+    // The check is on the line's second clock, from registers: the count as
+    // the line started, and the frame's base, its flag and the source line,
+    // all as the first clock left them.
+    logic [CW-1:0] cnt_q;
+    wire           line1 = d_x == 12'd1;
+    wire  [CW-1:0] done  = cnt_q - base;
+    wire  [CW-1:0] ahead = done - CW'(sy_q);
+    wire           here  = done > CW'(sy_q);
+    wire           safe  = ahead <= CW'(2**L - SLACK);
+    logic          line_ok;
 
     always_ff @(posedge d_clk) begin
         sy_q  <= sy;
         syr_q <= syr;
+        cnt_q <= d_cnt;
         if (d_rst) begin
             line_ok   <= 1'b0;
             d_late    <= 1'b0;
             d_overrun <= 1'b0;
         end else begin
-            d_late    <= line0 && row && fok && !here;
-            d_overrun <= line0 && row && fok && here && !safe;
-            if (line0)
-                line_ok <= row && fok && here && safe;
+            d_late    <= line1 && row && d_frame_ok && !here;
+            d_overrun <= line1 && row && d_frame_ok && here && !safe;
+            if (line1)
+                line_ok <= row && d_frame_ok && here && safe;
         end
     end
 
@@ -216,8 +220,8 @@ module line_scaler #(
     end
 
     initial begin
-        if (X0 < 1)
-            $error("line_scaler: X0 must be 1 or more");
+        if (X0 < 2)
+            $error("line_scaler: X0 must be 2 or more");
         if (SCALE < 1 || SCALE > 255)
             $error("line_scaler: SCALE must be 1 to 255");
         if (2**L <= SLACK + 1 || L > YW)

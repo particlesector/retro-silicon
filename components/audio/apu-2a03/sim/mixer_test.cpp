@@ -14,7 +14,7 @@ TEST_CASE("apu_mixer gives the NESdev wiki's nonlinear mix for every level") {
         m.triangle = t;
         m.noise = n;
         m.dmc = d;
-        for (int i = 0; i < 2; i++) {  // the address on a falling edge, the read on the rising one
+        for (int i = 0; i < 3; i++) {  // the sum, its copy on a falling edge, the read on the next rising one
             m.clk = 0;
             m.eval();
             m.clk = 1;

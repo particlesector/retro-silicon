@@ -84,15 +84,18 @@ module save_state_ctrl #(
     assign h_rdata = bq;
 
     // ---- The walk ----
-    wire [31:0] base = BASES[r*32 +: 32];
     wire [31:0] len  = LENS[r*32 +: 32];
+    // b_addr is kept as a register, base + i, stepped with i: the next
+    // region's base comes from a copy of BASES with a word past the end.
+    localparam logic [(NREG+1)*32-1:0] BASES_X = {32'd0, BASES};
+    wire [RW:0]  r_next    = {1'b0, r} + 1'b1;
+    wire [31:0]  base_next = BASES_X[r_next*32 +: 32];
 
     assign busy       = st != S_IDLE;
     assign hold       = busy;
     assign hold_frame = !is_load;
     assign b_req      = st == S_BUS;
     assign b_we       = is_load;
-    assign b_addr     = base + i;
 
     always_ff @(posedge clk) begin
         case (st)
@@ -103,6 +106,7 @@ module save_state_ctrl #(
                     is_load <= cmd[7:6] == OP_LOAD;
                     r       <= '0;
                     i       <= '0;
+                    b_addr  <= BASES[31:0];
                     p       <= '0;
                 end else
                     done <= cmd;  // anything else is acknowledged as it is
@@ -122,11 +126,13 @@ module save_state_ctrl #(
                         st   <= S_IDLE;
                         done <= cur;
                     end else begin
-                        r  <= r + 1'b1;
-                        st <= is_load ? S_FETCH : S_BUS;
+                        r      <= r + 1'b1;
+                        b_addr <= base_next;
+                        st     <= is_load ? S_FETCH : S_BUS;
                     end
                 end else begin
-                    i  <= i + 1;
+                    i      <= i + 1;
+                    b_addr <= b_addr + 1;
                     st <= is_load ? S_FETCH : S_BUS;
                 end
             end
