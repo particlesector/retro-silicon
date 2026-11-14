@@ -10,8 +10,9 @@
 //
 // The next dot is computed every clock and registered, and `ce` commits it, so
 // `ce` must come at least 2 clocks apart, and the PPU's inputs must be
-// settled the clock before each `ce`: no `reg_ce` or `st_we` then or on it,
-// and `vrdata` as it will be on the `ce` clock.
+// settled the clock before each `ce`: no `reg_ce` then or on it, no `st_we`
+// in the two clocks before it or on it, and `vrdata` as it will be on the
+// `ce` clock.
 //
 // CPU port: one register access per strobe of `reg_ce`, between dots. A
 // read's data is on `reg_rdata` from the clock after the strobe until the
@@ -211,6 +212,12 @@ module ppu_2c02 #(
     logic        n_p1_v;
     logic [7:0]  n_p1_x, n_p1_y;
     logic [13:0] n_vaddr;
+    // The secondary OAM's Y, tile and attributes for the sprite fetch at the
+    // dot after next (nd below), registered so the next address doesn't
+    // wait on the dot's arithmetic and the 32-byte mux both: loaded on `ce`
+    // for the dot `ce` commits, and between dots for the dot as it stands.
+    // The secondary OAM isn't written in dots 257-320, where they're used.
+    logic [7:0]  fs_y, fs_tile, fs_attr;
     logic        n_vread;  // the next dot's read is one the PPU may use: a pattern fetch or a $2007 read
     logic        n_vwe;
     logic [7:0]  n_vwdata;
@@ -316,14 +323,15 @@ module ppu_2c02 #(
             if (cd <= 9'd256) begin
                 // ---- Dots 1-256 ----
                 if (vis) begin
-                    // Draw pixel cd-1.
-                    x8 = 8'(cd - 9'd1);
-                    if (mask[3] && (mask[1] || cd > 9'd8))
+                    // Draw pixel cd-1, which here is dot (cd is dot + 1 on dots 1-256):
+                    // the pixel's checks below take dot itself, not cd's mux and adds.
+                    x8 = dot[7:0];
+                    if (mask[3] && (mask[1] || dot >= 9'd8))
                         sbg = {6'b0, sh_hi[4'd15 - {1'b0, fx}], sh_lo[4'd15 - {1'b0, fx}]};
                     bgc = sbg;
                     if (ren_prev && sl_valid != '0) begin
                         for (int i = 7; i >= 0; i--) begin
-                            so = cd - {1'b0, sl_x[i]} - 9'd1;
+                            so = dot - {1'b0, sl_x[i]};
                             // The pixel is taken by shifting whole bytes, not as the
                             // pair of bit-selects {sl_hi[i][7-so], sl_lo[i][7-so]}:
                             // GowinSynthesis (1.9.11.03) merges sl_lo and sl_hi into
@@ -337,8 +345,8 @@ module ppu_2c02 #(
                                 spi = 4'(i);
                             end
                         end
-                        if (mask[4] && (mask[2] || cd > 9'd8) && spc != '0) begin
-                            if (s0_vis && spi == 4'd0 && sbg != '0 && cd != 9'd256 && mask[3] && !s0hit)
+                        if (mask[4] && (mask[2] || dot >= 9'd8) && spc != '0) begin
+                            if (s0_vis && spi == 4'd0 && sbg != '0 && dot != 9'd255 && mask[3] && !s0hit)
                                 n_s0hit = 1'b1;
                             if (bgc == '0 || !sl_pri[spi[2:0]]) begin
                                 spf   = 1'b1;
@@ -650,13 +658,12 @@ module ppu_2c02 #(
                     default: ;
                 endcase
             end else if (nd >= 9'd257 && nd <= 9'd320) begin
-                slot = 3'((nd - 9'd257) >> 3);
                 case (3'(nd - 9'd257))
                     3'd4: begin
                         n_vread = 1'b1;
-                        sy    = sec[{slot, 2'd0}];
-                        stile = sec[{slot, 2'd1}];
-                        sattr = sec[{slot, 2'd2}];
+                        sy    = fs_y;
+                        stile = fs_tile;
+                        sattr = fs_attr;
                         diff  = {1'b0, nl == 9'd261 ? 8'd5 : nl[7:0]} - {1'b0, sy};
                         rr    = diff[3:0] ^ (sattr[7] ? (ctrl[5] ? 4'd15 : 4'd7) : 4'd0);
                         if (ctrl[5])
@@ -730,6 +737,16 @@ module ppu_2c02 #(
     next_t nq;
 
     assign vaddr_next = nq.vaddr;
+
+    // nd is the dot after next: the committed dot plus 2 on `ce`, else dot + 2.
+    wire [8:0] fs_d = (ce ? nq.dot : dot) - 9'd255;  // nd - 257
+    wire [4:0] fs_a = {fs_d[5:3], 2'd0};
+    wire       unused_fs = &{1'b0, fs_d[8:6], fs_d[2:0]};
+    always_ff @(posedge clk) begin
+        fs_y    <= sec[fs_a];
+        fs_tile <= sec[fs_a | 5'd1];
+        fs_attr <= sec[fs_a | 5'd2];
+    end
     assign vread_next = nq.vread;
 
     always_ff @(posedge clk)

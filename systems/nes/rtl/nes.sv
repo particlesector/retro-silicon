@@ -205,6 +205,7 @@ module nes #(
     logic [15:0] vec;
     logic        vec_en;
     logic [31:0] stop_at, stop_frame, cycles, frames;
+    logic        frame_end;   // the PPU's, below
     logic        stopped, late;
     logic [31:0] mem_waits;  // clocks the dots waited for memory since reset
     logic [31:0] trace_crc;
@@ -231,7 +232,20 @@ module nes #(
     logic [2:0] lead_dots;  // register 8F: the lead after a reset, the CPU/PPU alignment
 
     // Stops are levels, so raising a limit runs on from where it stopped.
-    assign stopped   = DEBUG && ((stop_at != '0 && cycles >= stop_at) || (stop_frame != '0 && frames >= stop_frame));
+    // The checks are registered: each count against its limit as it stood a
+    // clock before, and as it stands if it stepped on that clock (cycles on
+    // ce, frames on frame_end). Otherwise the counts and limits change only
+    // from the shell, at a reset or by a load, while the system isn't running.
+    logic cyc_ge, cyc_ge1, frm_ge, frm_ge1, ce_p, fe_p;
+    always_ff @(posedge clk) begin
+        cyc_ge  <= stop_at != '0 && cycles >= stop_at;
+        cyc_ge1 <= stop_at != '0 && 33'(cycles) + 33'd1 >= 33'(stop_at);
+        frm_ge  <= stop_frame != '0 && frames >= stop_frame;
+        frm_ge1 <= stop_frame != '0 && 33'(frames) + 33'd1 >= 33'(stop_frame);
+        ce_p    <= ce;
+        fe_p    <= frame_end;
+    end
+    assign stopped   = DEBUG && ((ce_p ? cyc_ge1 : cyc_ge) || (fe_p ? frm_ge1 : frm_ge));
     assign sys_rst   = rst || ctrl_reset;
     // The reset button (registers 90-97): pressed at the end of a chosen frame,
     // at the next boundary between CPU cycles. As in MesenCE, it restarts the
@@ -267,6 +281,8 @@ module nes #(
     logic        st_we_cpu, st_we_ppu, st_we_sys, st_we_apu, st_we_cart;  // save-state writes, below
     logic [3:0]  st_sys_w;
     logic [31:0] st_wdata;
+    logic [13:2] st_a;     // the state port's word address and write strobe, registered (below)
+    logic        st_c;
 
     always_ff @(posedge clk) begin
         v_hold <= dot_slot;
@@ -331,7 +347,7 @@ module nes #(
         .rdy(cpu_rdy), .irq_n, .nmi_n,
         .sync(cpu_sync), .halted,
         .dbg_pc, .dbg_a, .dbg_x, .dbg_y, .dbg_s, .dbg_p,
-        .st_addr(s_addr[3:2]), .st_rdata(cpu_st_rdata), .st_we(st_we_cpu), .st_wdata);
+        .st_addr(st_a[3:2]), .st_rdata(cpu_st_rdata), .st_we(st_we_cpu), .st_wdata);
 
     // ---- DMA: the DMC's and OAM's ----
     // As the 2A03 runs them and MesenCE models it. A request (the DMC's, or a
@@ -512,6 +528,26 @@ module nes #(
     wire c_prg  = bus_addr[15];               // $8000-$FFFF
     wire c_vec  = DEBUG && vec_en && bus_addr[15:1] == 15'h7FFE;
 
+    // The access again, registered, for the PPU's and the APU's register
+    // ports: they take it on reg_ce and ce, clocks into the cycle, and the bus
+    // holds from the cycle's first clock to its end (the CPU's outputs change
+    // only on ce, and DMA's choice is dkind_q from C_RUN). Reads start on the
+    // first clock, from the bus itself. The DMC's byte is the read data a
+    // clock before ce, where the CPU's registered read takes it too.
+    logic [4:0] w_addr;
+    logic [7:0] w_wdata, dma_din;
+    logic       w_we, w_ppu, w_apu, w_4015;
+
+    always_ff @(posedge clk) begin
+        w_addr  <= bus_addr[4:0];
+        w_wdata <= bus_wdata;
+        w_we    <= bus_we;
+        w_ppu   <= c_ppu;
+        w_apu   <= c_apu;
+        w_4015  <= c_4015;
+        dma_din <= cpu_din;
+    end
+
     // ---- The cartridge's mapper ----
     logic [22:0] cart_prg_a;
     logic [17:0] cart_chr_a, cart_chr_n;  // vaddr's and vaddr_next's
@@ -530,7 +566,7 @@ module nes #(
         .prg_addr(cart_prg_a), .wram_rd(cart_wram_rd), .wram_wr(cart_wram_wr), .wram_addr(cart_wram_a), .irq_n(cart_irq_n),
         .va({vaddr_next[12:0], vaddr[12:0]}), .va13({vaddr_next[13], vaddr[13]}), .a12(vaddr[12]), .a12_ce(ppu_ce_q),
         .chr_addr({cart_chr_n, cart_chr_a}), .mirror(cart_mirror),
-        .st_addr(s_addr[4:2]), .st_rdata(cart_st_rdata), .st_we(st_we_cart), .st_wdata);
+        .st_addr(st_a[4:2]), .st_rdata(cart_st_rdata), .st_we(st_we_cart), .st_wdata);
 
     assign irq_n = apu_irq_n && cart_irq_n;
     wire wram_rd = wram_on && cart_wram_rd;  // PRG RAM answers; otherwise $6000-$7FFF is open bus
@@ -538,7 +574,6 @@ module nes #(
     // ---- PPU ----
     logic        vwe;
     logic [7:0]  vwdata, vrdata, ppu_rdata;
-    logic        frame_end;
     logic [31:0] ppu_st_rdata;
 
     /* verilator lint_off UNUSEDSIGNAL */
@@ -547,16 +582,17 @@ module nes #(
 
     ppu_2c02 #(.SAVE_STATE(SAVE_STATE)) u_ppu (
         .clk, .rst(sys_rst), .soft_rst(sreset), .ce(ppu_ce),
-        .reg_ce(reg_ce && c_ppu), .reg_we(bus_we), .reg_addr(bus_addr[2:0]), .reg_wdata(bus_wdata),
+        .reg_ce(reg_ce && w_ppu), .reg_we(w_we), .reg_addr(w_addr[2:0]), .reg_wdata(w_wdata),
         .reg_rdata(ppu_rdata), .nmi_n,
         .vaddr, .vaddr_next, .vread_next, .vwe, .vwdata, .vrdata,
         .pix_valid, .pix, .pix_x, .pix_y, .frame_end,
         .dbg_line(ppu_line), .dbg_dot(ppu_dot),
-        .st_addr(s_addr[8:2]), .st_rdata(ppu_st_rdata), .st_we(st_we_ppu), .st_wdata);
+        .st_addr(st_a[8:2]), .st_rdata(ppu_st_rdata), .st_we(st_we_ppu), .st_wdata);
 
     // ---- APU ----
-    // Its access inputs are the cycle's from its start; it acts on them at
-    // the cycle's end, and irq_n follows them for the CPU's sample there.
+    // Its access inputs are the cycle's from its second clock (registered,
+    // above); it acts on them at the cycle's end, and irq_n follows them for
+    // the CPU's sample there.
     //
     // MesenCE runs 8 CPU cycles from reset to the first opcode fetch, where
     // this CPU runs 7, and LEAD_DOTS lines the fetches up: so MesenCE's cycle
@@ -579,13 +615,13 @@ module nes #(
 
     apu_2a03 #(.SAVE_STATE(SAVE_STATE)) u_apu (
         .clk, .rst(sys_rst), .soft_rst(sreset), .ce(ce || apu_extra), .odd(!cycles[0]),
-        .wr(bus_we && c_apu && !apu_extra), .rd_status(!bus_we && c_4015 && !apu_extra),
-        .addr(bus_addr[4:0]), .wdata(bus_wdata),
+        .wr(w_we && w_apu && !apu_extra), .rd_status(!w_we && w_4015 && !apu_extra),
+        .addr(w_addr), .wdata(w_wdata),
         .status(apu_status), .irq_n(apu_irq_n),
         .dma_req(apu_dma_req), .dma_cancel(apu_dma_cancel), .dma_addr(apu_dma_addr),
-        .dma_done(dkind_q == D_DMC && !apu_extra), .dma_data(cpu_din),
+        .dma_done(dkind_q == D_DMC && !apu_extra), .dma_data(dma_din),
         .pulse1(a_pulse1), .pulse2(a_pulse2), .triangle(a_triangle), .noise(a_noise), .dmc(a_dmc),
-        .st_addr(s_addr[6:2]), .st_rdata(apu_st_rdata), .st_we(st_we_apu), .st_wdata);
+        .st_addr(st_a[6:2]), .st_rdata(apu_st_rdata), .st_we(st_we_apu), .st_wdata);
 
     // ---- CHR and nametables, shared with the shell ----
     // The PPU has the port on each dot_slot and v_hold clock, reading on both
@@ -1082,11 +1118,12 @@ module nes #(
     end
 
     // ---- Sound: the mix, at 48 kHz ----
-    // The mixer's sum follows the levels by up to two clocks (its tables
-    // are block RAM), so the resampler takes it two clocks after the ce. The PCM CRC covers every sample since reset, 2
-    // bytes each, low first; pcm_n counts them.
+    // The mixer's sum has the levels from the second clock after the ce
+    // that changed them (`apu_mixer`), so the resampler takes it on the
+    // third. The PCM CRC covers every sample since reset, 2 bytes each, low
+    // first; pcm_n counts them.
     logic [15:0] mix;
-    logic        ce_q, ce_qq, pcm_v, rs_busy;
+    logic        ce_q, ce_qq, ce_q3, pcm_v, rs_busy;
     logic [31:0] rs_st_rdata, pcm_crc, pcm_n;
     logic [15:0] pcm_b;
     logic [1:0]  pcm_bn;
@@ -1094,7 +1131,7 @@ module nes #(
     apu_mixer u_mix (.clk, .pulse1(a_pulse1), .pulse2(a_pulse2), .triangle(a_triangle), .noise(a_noise),
                      .dmc(a_dmc), .out(mix));
 
-    resampler #(.SAVE_STATE(SAVE_STATE)) u_rs (.clk, .rst(sys_rst), .ce(ce_qq), .in(mix), .valid(pcm_v), .busy(rs_busy),
+    resampler #(.SAVE_STATE(SAVE_STATE)) u_rs (.clk, .rst(sys_rst), .ce(ce_q3), .in(mix), .valid(pcm_v), .busy(rs_busy),
                     .out(a_pcm),
                     .st_addr(2'(st_sys_w - 4'd6)), .st_rdata(rs_st_rdata),
                     .st_we(st_we_sys && st_sys_w >= 4'd6 && st_sys_w <= 4'd9), .st_wdata);
@@ -1111,6 +1148,7 @@ module nes #(
     always_ff @(posedge clk) begin
         ce_q  <= ce;
         ce_qq <= ce_q;
+        ce_q3 <= ce_qq;
         if (pcm_bn != '0) begin
             pcm_b  <= pcm_b >> 8;
             pcm_bn <= pcm_bn - 1'b1;
@@ -1125,6 +1163,7 @@ module nes #(
         if (sys_rst) begin
             ce_q   <= 1'b0;
             ce_qq  <= 1'b0;
+            ce_q3  <= 1'b0;
             pcm_bn <= '0;
             pcm_n  <= '0;
         end
@@ -1282,13 +1321,22 @@ module nes #(
     wire  [1:0]  st_sel   = s_addr[13:12];  // CPU, PPU, the system's, APU
     wire         st_commit = DEBUG && sp_issue && sel_state && s_we && paused && s_addr[1:0] == 2'd3;
 
-    assign st_wdata  = {s_wdata, st_stage};
-    assign st_we_cpu = st_commit && st_sel == 2'd0 && s_addr[11:4] == '0;
-    assign st_we_ppu = st_commit && st_sel == 2'd1 && s_addr[11:9] == '0;
-    assign st_we_sys = st_commit && st_sel == 2'd2 && s_addr[11:6] == '0 && s_addr[5:2] <= 4'd13;
-    assign st_we_apu = st_commit && st_sel == 2'd3 && s_addr[11:7] == '0;
-    assign st_we_cart = st_commit && st_sel == 2'd2 && s_addr[11:6] == 6'd1 && s_addr[5:2] <= 4'd4;
-    assign st_sys_w  = s_addr[5:2];
+    // A state word lands the clock after its access, from registered copies
+    // of the address and the strobe, so the bus's address mux and decode
+    // aren't one path with the components' write enables (the word itself
+    // holds, as the bus does until the ack). Reads take st_q two clocks after
+    // the access, by then from the copied address too.
+    always_ff @(posedge clk) begin
+        st_a <= s_addr[13:2];
+        st_c <= st_commit && !rst;
+    end
+    assign st_wdata = {s_wdata, st_stage};
+    assign st_we_cpu = st_c && st_a[13:12] == 2'd0 && st_a[11:4] == '0;
+    assign st_we_ppu = st_c && st_a[13:12] == 2'd1 && st_a[11:9] == '0;
+    assign st_we_sys = st_c && st_a[13:12] == 2'd2 && st_a[11:6] == '0 && st_a[5:2] <= 4'd13;
+    assign st_we_apu = st_c && st_a[13:12] == 2'd3 && st_a[11:7] == '0;
+    assign st_we_cart = st_c && st_a[13:12] == 2'd2 && st_a[11:6] == 6'd1 && st_a[5:2] <= 4'd4;
+    assign st_sys_w  = st_a[5:2];
     assign ss_hwe    = sp_issue && sel_ssbuf && s_we && !ss_busy;
 
     always_comb
@@ -1317,7 +1365,7 @@ module nes #(
             ss_hold <= 1'b1;
 
     assign ss_ready = ss_hold && paused && !ctrl_reset && tr_n == '0 && au_n == '0
-                      && !ce_q && !ce_qq && !rs_busy && !pcm_v && pcm_bn == '0;
+                      && !ce_q && !ce_qq && !ce_q3 && !rs_busy && !pcm_v && pcm_bn == '0;
 
     always_ff @(posedge clk) begin
         sp_ack <= sp_wait == 2'd1 && !rst;
@@ -1358,16 +1406,22 @@ module nes #(
     end
 
     // ---- Register file ----
-    logic       reg_ack;
+    // A read takes two clocks, through 16 bytes, one per high nibble of the
+    // address (reg_g), so its mux isn't one long path from the address.
+    // reg_take is the access's first clock: a write lands then.
+    logic       reg_ack, reg_p;
     logic [7:0] reg_q;
+    logic [7:0] reg_g [16];
     wire  [7:0] r = s_addr[7:0];
     wire        running = go || cs == C_RUN || cs == C_END;
 
-    assign vcap_arm = DEBUG && s_new && sel_reg && s_we && !reg_ack && r == 8'h3C && s_wdata[1];
+    wire        reg_take = s_new && sel_reg && !reg_p && !reg_ack;
+    assign vcap_arm = DEBUG && reg_take && s_we && r == 8'h3C && s_wdata[1];
 
     always_ff @(posedge clk) begin
-        reg_ack <= s_new && sel_reg && !reg_ack;
-        if (s_new && sel_reg && s_we && !reg_ack)
+        reg_p   <= reg_take;
+        reg_ack <= reg_p;
+        if (reg_take && s_we)
             case (r)
                 8'h00: {ctrl_reset, ctrl_run} <= s_wdata[1:0];
                 8'h04: prg_mask[7:0]     <= s_wdata;
@@ -1411,117 +1465,171 @@ module nes #(
                     reset_at[r[2]][8*r[1:0] +: 8] <= s_wdata;
                 default: ;
             endcase
-        case (r)
-            8'h00:   reg_q <= {6'b0, ctrl_reset, ctrl_run};
-            8'h04:   reg_q <= prg_mask[7:0];
-            8'h05:   reg_q <= prg_mask[15:8];
-            8'h06:   reg_q <= {1'b0, prg_mask[22:16]};
-            8'h08:   reg_q <= vec[7:0];
-            8'h09:   reg_q <= vec[15:8];
-            8'h0A:   reg_q <= {7'b0, vec_en};
-            8'h0C:   reg_q <= stop_at[7:0];
-            8'h0D:   reg_q <= stop_at[15:8];
-            8'h0E:   reg_q <= stop_at[23:16];
-            8'h0F:   reg_q <= stop_at[31:24];
-            8'h10:   reg_q <= cycles[7:0];
-            8'h11:   reg_q <= cycles[15:8];
-            8'h12:   reg_q <= cycles[23:16];
-            8'h13:   reg_q <= cycles[31:24];
-            8'h14:   reg_q <= trace_crc[7:0];
-            8'h15:   reg_q <= trace_crc[15:8];
-            8'h16:   reg_q <= trace_crc[23:16];
-            8'h17:   reg_q <= trace_crc[31:24];
-            8'h18:   reg_q <= {vcap_valid, pace_wait, crc_valid, cap_held, running, late, stopped, halted};
-            8'h1C:   reg_q <= stop_frame[7:0];
-            8'h1D:   reg_q <= stop_frame[15:8];
-            8'h1E:   reg_q <= stop_frame[23:16];
-            8'h1F:   reg_q <= stop_frame[31:24];
-            8'h20:   reg_q <= frames[7:0];
-            8'h21:   reg_q <= frames[15:8];
-            8'h22:   reg_q <= frames[23:16];
-            8'h23:   reg_q <= frames[31:24];
-            8'h24:   reg_q <= frame_crc[7:0];
-            8'h25:   reg_q <= frame_crc[15:8];
-            8'h26:   reg_q <= frame_crc[23:16];
-            8'h27:   reg_q <= frame_crc[31:24];
-            8'h28:   reg_q <= crc_frame[7:0];
-            8'h29:   reg_q <= crc_frame[15:8];
-            8'h2A:   reg_q <= crc_frame[23:16];
-            8'h2B:   reg_q <= crc_frame[31:24];
-            8'h2C:   reg_q <= {3'b0, cart_mmc6, chr_ext, wram_on, chr_ram, mirror_v};
-            8'h2D:   reg_q <= mapper;
-            8'h30:   reg_q <= cap_frame[7:0];
-            8'h31:   reg_q <= cap_frame[15:8];
-            8'h32:   reg_q <= cap_frame[23:16];
-            8'h33:   reg_q <= cap_frame[31:24];
-            8'h34:   reg_q <= cap_line;
-            8'h35:   reg_q <= {7'b0, cap_en};
-            8'h38:   reg_q <= ss_cmd;
-            8'h39:   reg_q <= ss_done;
-            8'h3A:   reg_q <= {7'b0, SAVE_STATE};
-            8'h3C:   reg_q <= {6'b0, vcap_armed, vid_pace};
-            8'h3D:   reg_q <= {7'b0, vcap_ok};
-            8'h40:   reg_q <= vcap_frame[7:0];
-            8'h41:   reg_q <= vcap_frame[15:8];
-            8'h42:   reg_q <= vcap_frame[23:16];
-            8'h43:   reg_q <= vcap_frame[31:24];
-            8'h44:   reg_q <= vcrc[7:0];
-            8'h45:   reg_q <= vcrc[15:8];
-            8'h46:   reg_q <= vcrc[23:16];
-            8'h47:   reg_q <= vcrc[31:24];
-            8'h48:   reg_q <= v_shown[7:0];
-            8'h49:   reg_q <= v_shown[15:8];
-            8'h4A:   reg_q <= v_late[7:0];
-            8'h4B:   reg_q <= v_late[15:8];
-            8'h4C:   reg_q <= v_overrun[7:0];
-            8'h4D:   reg_q <= v_overrun[15:8];
-            8'h50:   reg_q <= audio_crc[7:0];
-            8'h51:   reg_q <= audio_crc[15:8];
-            8'h52:   reg_q <= audio_crc[23:16];
-            8'h53:   reg_q <= audio_crc[31:24];
-            8'h54:   reg_q <= pcm_crc[7:0];
-            8'h55:   reg_q <= pcm_crc[15:8];
-            8'h56:   reg_q <= pcm_crc[23:16];
-            8'h57:   reg_q <= pcm_crc[31:24];
-            8'h58:   reg_q <= pcm_n[7:0];
-            8'h59:   reg_q <= pcm_n[15:8];
-            8'h5A:   reg_q <= pcm_n[23:16];
-            8'h5B:   reg_q <= pcm_n[31:24];
-            8'h60:   reg_q <= {7'b0, in_on};
-            8'h61:   reg_q <= in_len[7:0];
-            8'h62:   reg_q <= {6'b0, in_len[9:8]};
-            8'h64:   reg_q <= live1;
-            8'h65:   reg_q <= live2;
-            8'h66:   reg_q <= in_idx[7:0];
-            8'h67:   reg_q <= {7'b0, in_idx[8]};
-            8'h68:   reg_q <= pads[7:0];
-            8'h69:   reg_q <= pads[15:8];
-            8'h70:   reg_q <= chr_mask[7:0];
-            8'h71:   reg_q <= chr_mask[15:8];
-            8'h72:   reg_q <= {6'b0, chr_mask[17:16]};
-            8'h74:   reg_q <= 8'(CHR_AW);
-            8'h75:   reg_q <= 8'(MEM_AW);
-            8'h76:   reg_q <= {7'b0, CHR_EXT};
-            8'h78:   reg_q <= mem_waits[7:0];
-            8'h79:   reg_q <= mem_waits[15:8];
-            8'h7A:   reg_q <= mem_waits[23:16];
-            8'h7B:   reg_q <= mem_waits[31:24];
-            8'h7C, 8'h7D, 8'h7E, 8'h7F, 8'h80, 8'h81, 8'h82, 8'h83, 8'h84, 8'h85, 8'h86, 8'h87:
-                     reg_q <= mem_stats[8*(r - 8'h7C) +: 8];
-            8'h88:   reg_q <= tb_count[7:0];
-            8'h89:   reg_q <= tb_count[15:8];
-            8'h8A:   reg_q <= tb_count[23:16];
-            8'h8B:   reg_q <= tb_count[31:24];
-            8'h8C:   reg_q <= 8'(tb_filled);
-            8'h8D:   reg_q <= 8'(tb_filled >> 8);
-            8'h8E:   reg_q <= 8'(TRACE_AW);
-            8'h8F:   reg_q <= {5'b0, lead_dots};
-            8'h90, 8'h91, 8'h92, 8'h93, 8'h94, 8'h95, 8'h96, 8'h97:
-                     reg_q <= reset_at[r[2]][8*r[1:0] +: 8];
-            default: reg_q <= '0;
+        for (int k = 0; k < 16; k++)
+            reg_g[k] <= '0;
+        // Stage 1: for each high nibble, the register its low nibble picks;
+        // stage 2: the one the high nibble picks.
+        case (r[3:0])
+            4'h0: begin
+                reg_g[0] <= {6'b0, ctrl_reset, ctrl_run};
+                reg_g[1] <= cycles[7:0];
+                reg_g[2] <= frames[7:0];
+                reg_g[3] <= cap_frame[7:0];
+                reg_g[4] <= vcap_frame[7:0];
+                reg_g[5] <= audio_crc[7:0];
+                reg_g[6] <= {7'b0, in_on};
+                reg_g[7] <= chr_mask[7:0];
+                reg_g[8] <= mem_stats[8*(r - 8'h7C) +: 8];
+                reg_g[9] <= reset_at[r[2]][8*r[1:0] +: 8];
+            end
+            4'h1: begin
+                reg_g[1] <= cycles[15:8];
+                reg_g[2] <= frames[15:8];
+                reg_g[3] <= cap_frame[15:8];
+                reg_g[4] <= vcap_frame[15:8];
+                reg_g[5] <= audio_crc[15:8];
+                reg_g[6] <= in_len[7:0];
+                reg_g[7] <= chr_mask[15:8];
+                reg_g[8] <= mem_stats[8*(r - 8'h7C) +: 8];
+                reg_g[9] <= reset_at[r[2]][8*r[1:0] +: 8];
+            end
+            4'h2: begin
+                reg_g[1] <= cycles[23:16];
+                reg_g[2] <= frames[23:16];
+                reg_g[3] <= cap_frame[23:16];
+                reg_g[4] <= vcap_frame[23:16];
+                reg_g[5] <= audio_crc[23:16];
+                reg_g[6] <= {6'b0, in_len[9:8]};
+                reg_g[7] <= {6'b0, chr_mask[17:16]};
+                reg_g[8] <= mem_stats[8*(r - 8'h7C) +: 8];
+                reg_g[9] <= reset_at[r[2]][8*r[1:0] +: 8];
+            end
+            4'h3: begin
+                reg_g[1] <= cycles[31:24];
+                reg_g[2] <= frames[31:24];
+                reg_g[3] <= cap_frame[31:24];
+                reg_g[4] <= vcap_frame[31:24];
+                reg_g[5] <= audio_crc[31:24];
+                reg_g[8] <= mem_stats[8*(r - 8'h7C) +: 8];
+                reg_g[9] <= reset_at[r[2]][8*r[1:0] +: 8];
+            end
+            4'h4: begin
+                reg_g[0] <= prg_mask[7:0];
+                reg_g[1] <= trace_crc[7:0];
+                reg_g[2] <= frame_crc[7:0];
+                reg_g[3] <= cap_line;
+                reg_g[4] <= vcrc[7:0];
+                reg_g[5] <= pcm_crc[7:0];
+                reg_g[6] <= live1;
+                reg_g[7] <= 8'(CHR_AW);
+                reg_g[8] <= mem_stats[8*(r - 8'h7C) +: 8];
+                reg_g[9] <= reset_at[r[2]][8*r[1:0] +: 8];
+            end
+            4'h5: begin
+                reg_g[0] <= prg_mask[15:8];
+                reg_g[1] <= trace_crc[15:8];
+                reg_g[2] <= frame_crc[15:8];
+                reg_g[3] <= {7'b0, cap_en};
+                reg_g[4] <= vcrc[15:8];
+                reg_g[5] <= pcm_crc[15:8];
+                reg_g[6] <= live2;
+                reg_g[7] <= 8'(MEM_AW);
+                reg_g[8] <= mem_stats[8*(r - 8'h7C) +: 8];
+                reg_g[9] <= reset_at[r[2]][8*r[1:0] +: 8];
+            end
+            4'h6: begin
+                reg_g[0] <= {1'b0, prg_mask[22:16]};
+                reg_g[1] <= trace_crc[23:16];
+                reg_g[2] <= frame_crc[23:16];
+                reg_g[4] <= vcrc[23:16];
+                reg_g[5] <= pcm_crc[23:16];
+                reg_g[6] <= in_idx[7:0];
+                reg_g[7] <= {7'b0, CHR_EXT};
+                reg_g[8] <= mem_stats[8*(r - 8'h7C) +: 8];
+                reg_g[9] <= reset_at[r[2]][8*r[1:0] +: 8];
+            end
+            4'h7: begin
+                reg_g[1] <= trace_crc[31:24];
+                reg_g[2] <= frame_crc[31:24];
+                reg_g[4] <= vcrc[31:24];
+                reg_g[5] <= pcm_crc[31:24];
+                reg_g[6] <= {7'b0, in_idx[8]};
+                reg_g[8] <= mem_stats[8*(r - 8'h7C) +: 8];
+                reg_g[9] <= reset_at[r[2]][8*r[1:0] +: 8];
+            end
+            4'h8: begin
+                reg_g[0] <= vec[7:0];
+                reg_g[1] <= {vcap_valid, pace_wait, crc_valid, cap_held, running, late, stopped, halted};
+                reg_g[2] <= crc_frame[7:0];
+                reg_g[3] <= ss_cmd;
+                reg_g[4] <= v_shown[7:0];
+                reg_g[5] <= pcm_n[7:0];
+                reg_g[6] <= pads[7:0];
+                reg_g[7] <= mem_waits[7:0];
+                reg_g[8] <= tb_count[7:0];
+            end
+            4'h9: begin
+                reg_g[0] <= vec[15:8];
+                reg_g[2] <= crc_frame[15:8];
+                reg_g[3] <= ss_done;
+                reg_g[4] <= v_shown[15:8];
+                reg_g[5] <= pcm_n[15:8];
+                reg_g[6] <= pads[15:8];
+                reg_g[7] <= mem_waits[15:8];
+                reg_g[8] <= tb_count[15:8];
+            end
+            4'hA: begin
+                reg_g[0] <= {7'b0, vec_en};
+                reg_g[2] <= crc_frame[23:16];
+                reg_g[3] <= {7'b0, SAVE_STATE};
+                reg_g[4] <= v_late[7:0];
+                reg_g[5] <= pcm_n[23:16];
+                reg_g[7] <= mem_waits[23:16];
+                reg_g[8] <= tb_count[23:16];
+            end
+            4'hB: begin
+                reg_g[2] <= crc_frame[31:24];
+                reg_g[4] <= v_late[15:8];
+                reg_g[5] <= pcm_n[31:24];
+                reg_g[7] <= mem_waits[31:24];
+                reg_g[8] <= tb_count[31:24];
+            end
+            4'hC: begin
+                reg_g[0] <= stop_at[7:0];
+                reg_g[1] <= stop_frame[7:0];
+                reg_g[2] <= {3'b0, cart_mmc6, chr_ext, wram_on, chr_ram, mirror_v};
+                reg_g[3] <= {6'b0, vcap_armed, vid_pace};
+                reg_g[4] <= v_overrun[7:0];
+                reg_g[7] <= mem_stats[8*(r - 8'h7C) +: 8];
+                reg_g[8] <= 8'(tb_filled);
+            end
+            4'hD: begin
+                reg_g[0] <= stop_at[15:8];
+                reg_g[1] <= stop_frame[15:8];
+                reg_g[2] <= mapper;
+                reg_g[3] <= {7'b0, vcap_ok};
+                reg_g[4] <= v_overrun[15:8];
+                reg_g[7] <= mem_stats[8*(r - 8'h7C) +: 8];
+                reg_g[8] <= 8'(tb_filled >> 8);
+            end
+            4'hE: begin
+                reg_g[0] <= stop_at[23:16];
+                reg_g[1] <= stop_frame[23:16];
+                reg_g[7] <= mem_stats[8*(r - 8'h7C) +: 8];
+                reg_g[8] <= 8'(TRACE_AW);
+            end
+            4'hF: begin
+                reg_g[0] <= stop_at[31:24];
+                reg_g[1] <= stop_frame[31:24];
+                reg_g[7] <= mem_stats[8*(r - 8'h7C) +: 8];
+                reg_g[8] <= {5'b0, lead_dots};
+            end
+            default: ;
         endcase
+        reg_q <= reg_g[r[7:4]];
         if (rst) begin
             reg_ack    <= 1'b0;
+            reg_p      <= 1'b0;
             ctrl_reset <= 1'b1;
             ctrl_run   <= 1'b0;
             prg_mask   <= 23'h7FFF;
