@@ -176,6 +176,8 @@ std::vector<uint8_t> golden_frame(const Cart& c) {
     vcs.hold_reset();
     REQUIRE_FALSE(vcs.load(c.rom));
     vcs.set_paddles(c.paddles);
+    vcs.set_pins(rig::a2600::kNoInput);
+    vcs.set_input_script(c.g.input);
     vcs.stop_frame(c.g.frames);
     vcs.run();
     vcs.wait_stopped();
@@ -202,7 +204,7 @@ std::optional<uint32_t> on_hdmi(const std::string& id, const MakeHdmi& make) {
     rx.expect = &frame;
     rx.pal = palette();
     auto link = make([&rx](uint32_t s) { rx(s); });
-    auto r = rig::a2600::hdmi_test(*link, id, c->rom, c->g.frames, c->g.crc, c->paddles, RS_A2600_BUILD_ID);
+    auto r = rig::a2600::hdmi_test(*link, id, c->rom, c->g.frames, c->g.crc, c->paddles, RS_A2600_BUILD_ID, {}, c->g.input);
     INFO(r.detail << " / " << r.notes);
     REQUIRE(r.passed);
     rig::shell::Client client(*link);

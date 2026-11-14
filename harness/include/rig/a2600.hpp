@@ -19,6 +19,8 @@ namespace rig::a2600 {
 constexpr uint32_t kCart = 0x00000000;   // the cartridge's ROM, up to the board's (kCartRom)
 constexpr uint32_t kRegs = 0x01000000;
 constexpr uint32_t kFrameBuffer = 0x05000000;  // y x 160 + x
+constexpr uint32_t kInputScript = 0x07000000;  // the input player's script, kInputMax entries of 4 bytes
+constexpr int kInputMax = 64;
 constexpr int kWidth = 160, kHeight = 228;
 
 enum Reg : uint32_t {
@@ -52,6 +54,8 @@ enum Reg : uint32_t {
     kCartScheme = 0x50,  // bits 3-0 the bank-switching scheme (Scheme), bit 4 the Superchip's RAM
     kCartSize = 0x51,    // the ROM's size, log2
     kCartRom = 0x52,     // read-only: the board's room for ROM, log2
+    kInputOn = 0x54,     // bit 0: the input player sets the pins (2C-2E) from its script
+    kInputLen = 0x55,    // entries in the script
 };
 
 enum Status : uint8_t { kStopped = 1, kRunning = 2, kCrcValid = 4, kBusy = 8, kVideoCrcValid = 16 };
@@ -70,6 +74,20 @@ using Paddles = std::array<int, 4>;
 inline constexpr Paddles kNoPaddles{-1, -1, -1, -1};
 
 // a2600_sys through its test shell. Every call is an absolute register write or read.
+// The console's input pins as one word, as an input script gives them: SWCHA's pins in bits 15-8,
+// SWCHB's in 7-0, with player 0's fire button (INPT4) in bit 4 and player 1's (INPT5) in bit 5; 0
+// pressed. kNoInput is nothing pressed, both difficulty switches on B and colour, as Stella starts.
+constexpr uint16_t kNoInput = 0xFF3F;
+
+// An input script entry: from frame `frame` on (the frame run after frame - 1 have ended), the
+// pins are `pins`.
+struct InputEntry {
+    uint16_t frame;
+    uint16_t pins;
+};
+// "F:JJCC,..." (decimal frame, hex pins), as the golden lists and stella-frames take it.
+std::vector<InputEntry> parse_input(const std::string& text);
+
 // The bank-switching schemes a2600_cart has (its README), as register 50 takes them.
 enum class Scheme : uint8_t { k4K = 0, F8, F6, F4, FE, E0, F3F, FA, E7, F0 };
 
@@ -94,6 +112,11 @@ public:
     std::optional<std::string> load(const std::vector<uint8_t>& rom, Cart cart = {});
     static constexpr const char* kNoRoom = "the board has no room for this cartridge";
     void set_paddles(const Paddles& p);
+    // The pins, set now (kNoInput's layout), with the input player off.
+    void set_pins(uint16_t pins);
+    // The input player: plays `script` from reset (frames in order, one entry a frame at most), or
+    // turns it off for an empty one. Set it while the system is held in reset.
+    void set_input_script(const std::vector<InputEntry>& script);
     void stop_frame(uint32_t n);
     void audio_limit(uint32_t samples);
     void run();  // out of reset, running
@@ -128,6 +151,7 @@ struct Golden {
     uint32_t frames = 0;
     uint32_t crc = 0;
     std::string path;  // under the test-ROM directory
+    std::vector<InputEntry> input;  // played from reset, if any (input=)
 };
 std::vector<Golden> load_golden(const std::string& file);
 // harness/golden/a2600_paddles.txt: the paddles Stella plugs in for each cartridge listed.
@@ -141,11 +165,13 @@ std::map<std::string, AudioGolden> load_audio(const std::string& file);
 
 // A cartridge run from power-up until `frames` frames have ended. Passes when frame `frames`'s CRC
 // is `crc`, and, given `audio`, the CRC of its first samples is audio->crc. The result's CRC32 is
-// the frame's, its audio CRC32 the sound's.
+// the frame's, its audio CRC32 the sound's. `input` is played from reset; without one, nothing is
+// pressed (kNoInput).
 TestResult cart_test(Link& link, const std::string& name, const std::vector<uint8_t>& rom, uint32_t frames,
                      uint32_t crc, const Paddles& paddles = kNoPaddles,
                      std::optional<AudioGolden> audio = std::nullopt,
-                     std::optional<uint32_t> build_id = std::nullopt, Cart cart = {});
+                     std::optional<uint32_t> build_id = std::nullopt, Cart cart = {},
+                     const std::vector<InputEntry>& input = {});
 
 // The cartridge on HDMI: runs it, keeping pace with the display, to frame `frames` and returns the
 // video CRC of the display frame that shows it (the frame a2600_frames_crc32.txt's CRC is of).
@@ -153,6 +179,7 @@ TestResult cart_test(Link& link, const std::string& name, const std::vector<uint
 // or was overwritten. Needs a system with a display: the board, or make_a2600_hdmi_sim().
 TestResult hdmi_test(Link& link, const std::string& name, const std::vector<uint8_t>& rom, uint32_t frames,
                      uint32_t crc, const Paddles& paddles = kNoPaddles,
-                     std::optional<uint32_t> build_id = std::nullopt, Cart cart = {});
+                     std::optional<uint32_t> build_id = std::nullopt, Cart cart = {},
+                     const std::vector<InputEntry>& input = {});
 
 } // namespace rig::a2600

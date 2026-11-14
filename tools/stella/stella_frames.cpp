@@ -1,7 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 // stella-frames: golden frame CRCs for the Atari 2600 from Stella, headless.
 //
-// usage: stella-frames --rom FILE --frames N[,N...] [--core SO] [--seed S] [--dump DIR] [--out FILE]
+// usage: stella-frames --rom FILE --frames N[,N...] [--core SO] [--seed S] [--input F:JJCC,...] [--dump DIR]
+//                     [--out FILE]
 //
 // Runs the cartridge from power-up in Stella's libretro core (Stella 7.0's src/os/libretro, built with
 // make; --core, default the one CMake's RS_STELLA_DIR names), and for each frame N (N frames run, the
@@ -18,6 +19,17 @@
 // cartridges never read any of them before setting them, so their frames are the same from any start.
 // A core patched to start them at 0 can take a seed for the rest: --seed sets RS_STELLA_SEED for it
 // (default 1); an unpatched core ignores it.
+//
+// --input plays an input script, as the harness's a2600 input player does: from frame F on (the
+// frame run after F - 1 have ended), the console's pins are JJCC, in hex: JJ SWCHA's pins (player 0's
+// right, left, down, up in bits 7-4, player 1's in 3-0) and CC SWCHB's (bit 0 reset, 1 select, 3
+// colour, 6 player 0's difficulty A, 7 player 1's), with player 0's fire button in bit 4 and player
+// 1's in bit 5; a pin is 0 when pressed. Before the first entry they're FF3F: nothing pressed,
+// difficulty B, colour, as Stella starts. The core takes input once a frame, before it runs it, as
+// the libretro joypads: player 0's joystick on port 0 and player 1's on port 1, fire on B, and the
+// switches on port 0 (Start reset, Select select, L3 and R3 colour and black and white, L and L2
+// player 0's A and B, R and R2 player 1's). Stella's joystick can't press opposite directions at
+// once, so a script shouldn't.
 
 #include <dlfcn.h>
 #include <sys/wait.h>
@@ -98,8 +110,46 @@ void video(const void* data, unsigned width, unsigned height, size_t pitch) {
 
 size_t audio_batch(const int16_t*, size_t frames) { return frames; }
 void audio_sample(int16_t, int16_t) {}
+// The input script, and the pins it gives the frame being run.
+std::map<unsigned, uint16_t> g_script;
+uint16_t g_pins = 0xff3f;
+
 void input_poll() {}
-int16_t input_state(unsigned, unsigned, unsigned, unsigned) { return 0; }
+
+int16_t input_state(unsigned port, unsigned device, unsigned, unsigned id) {
+    if (g_script.empty() || device != RETRO_DEVICE_JOYPAD || port > 1) return 0;
+    const unsigned joy = g_pins >> 8, ctl = g_pins & 0xff;
+    const unsigned dirs = port == 0 ? joy >> 4 : joy & 15;  // right, left, down, up; 0 pressed
+    auto pressed = [&](unsigned i) -> bool {
+        switch (i) {
+        case RETRO_DEVICE_ID_JOYPAD_UP: return !(dirs & 1);
+        case RETRO_DEVICE_ID_JOYPAD_DOWN: return !(dirs & 2);
+        case RETRO_DEVICE_ID_JOYPAD_LEFT: return !(dirs & 4);
+        case RETRO_DEVICE_ID_JOYPAD_RIGHT: return !(dirs & 8);
+        case RETRO_DEVICE_ID_JOYPAD_B: return !(ctl & (port == 0 ? 0x10 : 0x20));
+        default: break;
+        }
+        if (port != 0) return false;
+        switch (i) {
+        case RETRO_DEVICE_ID_JOYPAD_START: return !(ctl & 0x01);
+        case RETRO_DEVICE_ID_JOYPAD_SELECT: return !(ctl & 0x02);
+        case RETRO_DEVICE_ID_JOYPAD_L3: return ctl & 0x08;
+        case RETRO_DEVICE_ID_JOYPAD_R3: return !(ctl & 0x08);
+        case RETRO_DEVICE_ID_JOYPAD_L: return ctl & 0x40;
+        case RETRO_DEVICE_ID_JOYPAD_L2: return !(ctl & 0x40);
+        case RETRO_DEVICE_ID_JOYPAD_R: return ctl & 0x80;
+        case RETRO_DEVICE_ID_JOYPAD_R2: return !(ctl & 0x80);
+        default: return false;
+        }
+    };
+    if (id == RETRO_DEVICE_ID_JOYPAD_MASK) {
+        int16_t mask = 0;
+        for (unsigned i = 0; i <= RETRO_DEVICE_ID_JOYPAD_R3; i++)
+            if (pressed(i)) mask = static_cast<int16_t>(mask | 1 << i);
+        return mask;
+    }
+    return pressed(id) ? 1 : 0;
+}
 
 struct Core {
     void* lib = nullptr;
@@ -226,8 +276,8 @@ std::vector<uint8_t> read_file(const std::string& path) {
 
 [[noreturn]] void usage() {
     std::fprintf(stderr,
-                 "usage: stella-frames --rom FILE --frames N[,N...] [--core SO] [--seed S] [--dump DIR] "
-                 "[--out FILE]\n");
+                 "usage: stella-frames --rom FILE --frames N[,N...] [--core SO] [--seed S] [--input F:JJCC,...] "
+                 "[--dump DIR] [--out FILE]\n");
     std::exit(2);
 }
 
@@ -246,6 +296,22 @@ int main(int argc, char** argv) {
         else if (arg == "--seed") seed = val;
         else if (arg == "--dump") dump_dir = val;
         else if (arg == "--out") out_path = val;
+        else if (arg == "--input") {
+            for (size_t p = 0; p < val.size();) {
+                size_t q = val.find(',', p);
+                if (q == std::string::npos) q = val.size();
+                const std::string e = val.substr(p, q - p);
+                const size_t colon = e.find(':');
+                if (colon == std::string::npos || e.size() - colon - 1 != 4) usage();
+                char* end = nullptr;
+                const unsigned long f = std::strtoul(e.substr(0, colon).c_str(), &end, 10);
+                if (*end || f == 0) usage();
+                const unsigned long pins = std::strtoul(e.substr(colon + 1).c_str(), &end, 16);
+                if (*end) usage();
+                g_script[static_cast<unsigned>(f)] = static_cast<uint16_t>(pins);
+                p = q + 1;
+            }
+        }
         else if (arg == "--frames") {
             for (size_t p = 0; p < val.size();) {
                 size_t q = val.find(',', p);
@@ -272,6 +338,7 @@ int main(int argc, char** argv) {
     }
     std::vector<uint8_t> tia(kWidth * kHeight);
     for (unsigned n = 1; n <= *frames.rbegin(); n++) {
+        if (auto it = g_script.find(n); it != g_script.end()) g_pins = it->second;
         core.frame();
         if (!frames.count(n)) continue;
         for (size_t i = 0; i < tia.size(); i++) {
