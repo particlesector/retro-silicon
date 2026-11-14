@@ -8,6 +8,8 @@
 // each of the two channels).
 //
 // Timing, as Stella 7.0 runs it:
+// - `cc` comes at least 2 clocks apart, and not on the clock after a reset or a save-state load: the
+//   objects' ticks are worked out a clock ahead.
 // - Each CPU cycle is 3 colour clocks; `ce` marks the colour clock that ends one, and the cycle's access
 //   (`cs`, `addr`, `we`, `din`) is taken then. A write lands after that clock, so the next colour clock
 //   sees it, except those the chip delays: VBLANK, GRP0, GRP1 (with the vertical-delay shuffles),
@@ -161,16 +163,25 @@ module tia #(
     logic [4:0] mclk;                    // the movement clock, 16 once past 15
 
     wire        regular  = !hblank;
-    wire        mstep    = mactive && hctr[1:0] == 2'd0;
+    // The movement step, which objects still move after it, and each object's tick, worked out a clock
+    // ahead and registered: all they depend on changes only on `cc` (or a reset or a save-state load), so
+    // from the second clock after a colour clock they're this colour clock's.
+    wire        mstep_d  = mactive && hctr[1:0] == 2'd0;
     wire  [3:0] mcount   = mclk[4] ? 4'd0 : mclk[3:0];
-    logic [4:0] mstop, extra, moving_now;
+    logic [4:0] mstop, extra, moving_d;
     always_comb
         for (int i = 0; i < 5; i++) begin
-            mstop[i]      = mstep && moving[i] && mcount == hm[i];
-            moving_now[i] = moving[i] && !mstop[i];
-            extra[i]      = mstep && moving[i] && !mstop[i] && hblank;
+            mstop[i]    = mstep_d && moving[i] && mcount == hm[i];
+            moving_d[i] = moving[i] && !mstop[i];
+            extra[i]    = mstep_d && moving[i] && !mstop[i] && hblank;
         end
-    wire  [4:0] obj_tick = {5{regular}} | extra;
+    logic       mstep;
+    logic [4:0] moving_now, obj_tick;
+    always_ff @(posedge clk) begin
+        mstep      <= mstep_d;
+        moving_now <= moving_d;
+        obj_tick   <= {5{!hblank}} | extra;
+    end
     wire        hblank_next = last ? 1'b1 : ((hctr == 8'd67 && !ext) || hctr == 8'd75) ? 1'b0 : hblank;
     assign      pf_tick     = in_pic && (!hblank || hctr < 8'd76);
 

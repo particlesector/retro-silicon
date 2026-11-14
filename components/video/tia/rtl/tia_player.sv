@@ -76,10 +76,6 @@ module tia_player (
         endcase
     endfunction
 
-    function automatic logic [7:0] wrap160(input logic [8:0] v);  // v in 0-319
-        wrap160 = v >= 9'd160 ? 8'(v - 9'd160) : v[7:0];
-    endfunction
-
     // Whether the player draws, with its graphics, reflection and delay as given.
     function automatic logic drawn(input logic r, input logic signed [7:0] rc, input logic [3:0] s,
                                    input logic [2:0] d, input logic [7:0] gn, input logic [7:0] go,
@@ -89,6 +85,12 @@ module tia_player (
         p = rf ? g : {g[0], g[1], g[2], g[3], g[4], g[5], g[6], g[7]};
         drawn = r && rc >= (d == 3'd1 ? 8'sd0 : 8'sd1) && s <= 4'd7 && p[s[2:0]];
     endfunction
+
+    // The counter's neighbours (mod 160), for the tick and the NUSIZ decodes below: from the register,
+    // so those decodes don't wait for the tick.
+    wire [7:0] c_p1 = counter == 8'd159 ? 8'd0 : counter + 8'd1;
+    wire [7:0] c_m1 = counter == 8'd0 ? 8'd159 : counter - 8'd1;
+    wire [7:0] c_m2 = counter < 8'd2 ? counter + 8'd158 : counter - 8'd2;
 
     assign pos   = counter;
     assign div_o = div;
@@ -127,6 +129,7 @@ module tia_player (
             logic [7:0]        gn2, go2;
             logic              rf2, vd2;
             logic              mn;
+            logic [7:0]        cl1, cl2;
             mn = main;
             c = counter; r = rendering; rc = render; s = sample; d = div; dp = div_pend; dc = dcc;
             ds = dec_sel;
@@ -159,8 +162,11 @@ module tia_player (
                     end
                     if (s > 4'd7) r = 1'b0;
                 end
-                c = c == 8'd159 ? 8'd0 : c + 8'd1;
+                c = c_p1;
             end
+            // The counter's last value, and the one before: c less 1 and 2.
+            cl1 = tick ? counter : c_m1;
+            cl2 = tick ? c_m1 : c_m2;
 
             // Collisions: the tick's, then the line's end, before this edge's writes.
             cvn = tick ? on : cv_r;
@@ -171,15 +177,15 @@ module tia_player (
                 nds = (nusiz == 3'd5 || nusiz == 3'd7) ? 3'd0 : nusiz;
                 dp  = nusiz == 3'd5 ? 3'd2 : nusiz == 3'd7 ? 3'd4 : 3'd1;
                 // A decode on the counter's last value starts a copy now.
-                if (!r && decode(nds, wrap160({1'b0, c} + 9'd159))) begin
+                if (!r && decode(nds, cl1)) begin
                     r  = 1'b1;
                     s  = 4'd0;
                     rc = -8'sd5;
-                    mn = wrap160({1'b0, c} + 9'd159) == 8'd156;
+                    mn = cl1 == 8'd156;
                 end
                 // Changing the copies early in a copy's start can cancel it.
                 if (nds != ds && r && (rc + 8'sd5) < 8'sd2 &&
-                    !decode(nds, wrap160(9'(c) + 9'd159 - 9'(rc + 8'sd5))))  // rc + 5 is 0 or 1 here
+                    !decode(nds, rc == -8'sd5 ? cl1 : cl2))  // c less (rc + 5), 0 or 1 here
                     r = 1'b0;
                 ds = nds;
                 if (dp != d) begin
