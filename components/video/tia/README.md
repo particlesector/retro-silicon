@@ -113,7 +113,13 @@ Reads, by A3-A0, in bits 7 and 6:
 
 ## Colours: `tia_rgb`
 
-`tia_rgb` turns the TIA's colour value into 24-bit RGB for a display (a block RAM of 128 colours, registered), as `video/ppu-2c02`'s `ppu_2c02_rgb` does the 2C02's. `tools/gen_rgb.py` writes it from a model of the NTSC TIA's signal, decoded as a TV would (`--png` also draws the palette): the luma is one of 8 evenly spaced levels; hue 0 has no chroma, hue 1's is in phase with the colour burst, and each hue after lags the one before by the same angle, 360/14 degrees, so hue 15 comes back round near hue 1. The step, the chroma's amplitude and the luma's range are the model's settings, chosen so the hues land where a TV shows them (gold, orange, red, purple, blue, cyan, green), not measurements: a console's colour pot moves the step. A test checks the RTL is what the script writes.
+`tia_rgb` turns the TIA's colour value into 24-bit RGB for a display (a block RAM of 128 colours, registered), as `video/ppu-2c02`'s `ppu_2c02_rgb` does the 2C02's. `tools/gen_rgb.py` writes it from a model of the NTSC TIA's signal as a TV decodes it, in the gamma-encoded YUV an NTSC signal carries (`--png` also draws the palette):
+
+- the brightness follows a curve on the luma's 8 levels (separate ones for the greys, whose level 0 is black, and for the colours, whose darkest are still dim colours, not black);
+- each hue has its own phase angle, chroma amplitude and brightness offset: the TIA's delay taps aren't evenly spaced, and its hues don't come out equally bright (gold and green lighter, blue darker);
+- the chroma fades as the brightness rises, so the lightest colours are pastel.
+
+The model's settings were fitted to Stella 7.0's NTSC palette, measured from real consoles and the one most players know (the settings, not its table): the greys come within a step of it, the colours about 12 apart on average out of 441, the largest RGB distance. Before November 2026 the model had evenly spaced lumas and hues and no TV curve, which made dark colours darker and light ones washed out. A console's colour pot turns every hue's angle. A test checks the RTL is what the script writes.
 
 ## Save state
 
