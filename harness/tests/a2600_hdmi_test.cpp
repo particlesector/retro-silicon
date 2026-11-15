@@ -150,18 +150,21 @@ struct Cart {
     rig::a2600::Golden g;
     std::vector<uint8_t> rom;
     rig::a2600::Paddles paddles = rig::a2600::kNoPaddles;
+    unsigned keypads = 0;
 };
 
 // A cartridge of a2600_frames_crc32.txt, or nothing if it isn't fetched.
 std::optional<Cart> cart(const std::string& id) {
     const char* roms = std::getenv("RS_TESTROMS");
     const auto paddles = rig::a2600::load_paddles(RS_A2600_PADDLES);
+    const auto keypads = rig::a2600::load_keypads(RS_A2600_KEYPADS);
     for (const auto& g : rig::a2600::load_golden(RS_A2600_GOLDEN)) {
         if (g.id != id) continue;
         std::ifstream f(std::string(roms ? roms : RS_TESTROMS) + "/" + g.path, std::ios::binary);
         if (!f) return std::nullopt;
         Cart c{g, std::vector<uint8_t>((std::istreambuf_iterator<char>(f)), {})};
         if (auto p = paddles.find(id); p != paddles.end()) c.paddles = p->second;
+        if (auto k = keypads.find(id); k != keypads.end()) c.keypads = k->second;
         return c;
     }
     FAIL(id << " isn't in a2600_frames_crc32.txt");
@@ -204,7 +207,8 @@ std::optional<uint32_t> on_hdmi(const std::string& id, const MakeHdmi& make) {
     rx.expect = &frame;
     rx.pal = palette();
     auto link = make([&rx](uint32_t s) { rx(s); });
-    auto r = rig::a2600::hdmi_test(*link, id, c->rom, c->g.frames, c->g.crc, c->paddles, RS_A2600_BUILD_ID, {}, c->g.input);
+    auto r = rig::a2600::hdmi_test(*link, id, c->rom, c->g.frames, c->g.crc, c->paddles, RS_A2600_BUILD_ID, {}, c->g.input,
+                                   c->keypads);
     INFO(r.detail << " / " << r.notes);
     REQUIRE(r.passed);
     rig::shell::Client client(*link);

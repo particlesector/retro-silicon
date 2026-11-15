@@ -24,6 +24,14 @@
 // Paddles: a pair plugs into each joystick port, paddle 0 and 1 into player 0's (INPT0, INPT1), 2 and 3
 // into player 1's (INPT2, INPT3). Their fire buttons are joystick lines: paddle 0's is P0 right (`joy`
 // bit 7), paddle 1's P0 left (bit 6), paddle 2's P1 right (bit 3), paddle 3's P1 left (bit 2).
+//
+// Keypads (Stella's Keyboard; `keypad_on`): 12 keys in 4 rows of 3 (1 2 3, 4 5 6, 7 8 9, * 0 #). A
+// keypad's rows are its port's pins of port A, as the RIOT drives them (high when an input): the
+// left's 4-7, the right's 0-3, the first row on the lowest. Each column is wired to 5 V through the
+// keypad's 4.7 kohm; a key down connects its column to its row: to ground if the row is driven low
+// (before any key in a high row), else to 5 V. The first two columns are the port's INPT inputs
+// (the left's INPT0 and INPT1, the right's INPT2 and INPT3), charged as a paddle's are; the third is
+// its fire button's line (INPT4, INPT5), low only when grounded.
 
 module atari2600 #(
     parameter bit TIA_SCORE_GLITCH = 1'b0  // video/tia's SCORE_GLITCH
@@ -43,6 +51,8 @@ module atari2600 #(
     input  logic [1:0]  fire_n,      // INPT4, INPT5: P0's and P1's fire buttons
     input  logic [3:0]  paddle_on,   // paddle i is plugged in (INPT0-3); unplugged, an input reads 0
     input  logic [31:0] paddle_pos,  // paddle i's knob in bits 8i+7:8i: a pot of pos / 256 Mohm
+    input  logic [1:0]  keypad_on,   // a keypad is in the left (bit 0) or right (bit 1) port
+    input  logic [23:0] keys,        // its keys down, the left's in 11:0, key 3 * row + column
 
     output logic [7:0]  pix,         // the TIA's picture (video/tia's README)
     output logic        pix_on,
@@ -113,13 +123,41 @@ module atari2600 #(
     wire sel_tia  = !addr[12] && !addr[7];
     wire sel_riot = !addr[12] && addr[7];
 
+    // ---- Keypads ----
+    // A column's connection, as the paddles' `kp` takes it: 1 no key down, 2 to 5 V, 3 to ground.
+    function automatic logic [1:0] column(input logic [11:0] k, input logic [3:0] row, input int c);
+        logic g, v;
+        g = 1'b0;
+        v = 1'b0;
+        for (int r = 0; r < 4; r++)
+            if (k[3 * r + c]) begin
+                if (row[r]) v = 1'b1;
+                else g = 1'b1;
+            end
+        column = g ? 2'd3 : v ? 2'd2 : 2'd1;
+    endfunction
+
+    // The paddles take the first two columns with each capacitor's operands, and the first
+    // capacitor's on the colour clock, so they're from port A as it'll be after this clock (a write
+    // to SWCHA or SWACNT changes them from its own colour clock, as Stella's keypad does).
+    logic [7:0] pa_out, pa_ddr, pa_out_d, pa_ddr_d;  // the RIOT's port A, now and after this clock
+    wire  [7:0] pa_pin   = pa_out | ~pa_ddr;
+    wire  [7:0] pa_pin_d = pa_out_d | ~pa_ddr_d;
+    wire  [1:0] kl0 = column(keys[11:0], pa_pin_d[7:4], 0), kl1 = column(keys[11:0], pa_pin_d[7:4], 1),
+                kl2 = column(keys[11:0], pa_pin[7:4], 2);
+    wire  [1:0] kr0 = column(keys[23:12], pa_pin_d[3:0], 0), kr1 = column(keys[23:12], pa_pin_d[3:0], 1),
+                kr2 = column(keys[23:12], pa_pin[3:0], 2);
+    wire  [7:0] kp = {keypad_on[1] ? kr1 : 2'd0, keypad_on[1] ? kr0 : 2'd0,
+                      keypad_on[0] ? kl1 : 2'd0, keypad_on[0] ? kl0 : 2'd0};
+    wire  [1:0] kp_fire_n = {!(keypad_on[1] && kr2 == 2'd3), !(keypad_on[0] && kl2 == 2'd3)};
+
     // ---- TIA ----
     logic [7:0]  tia_dout;
     logic [31:0] tia_st;
     tia #(.SAVE_STATE(1'b0), .SCORE_GLITCH(TIA_SCORE_GLITCH)) u_tia (
         .clk, .rst(chip_rst), .cc, .ce,
         .cs(sel_tia), .addr(we ? addr[5:0] : {2'b00, addr[3:0]}), .we, .din(cpu_dout),
-        .dout(tia_dout), .rdy, .fire_n, .pot_hi, .dump,
+        .dout(tia_dout), .rdy, .fire_n(fire_n & kp_fire_n), .pot_hi, .dump,
         .pix, .pix_on, .x(pix_x), .line_end, .vsync, .vblank, .aud0, .aud1, .aud_tick,
         .st_addr(5'd0), .st_rdata(tia_st), .st_we(1'b0), .st_wdata(32'd0)
     );
@@ -129,18 +167,18 @@ module atari2600 #(
     logic        dump;
     logic [31:0] pot_st;
     paddles #(.SAVE_STATE(1'b0)) u_paddles (
-        .clk, .rst(chip_rst), .cc, .dump, .on(paddle_on), .pos(paddle_pos), .hi(pot_hi),
+        .clk, .rst(chip_rst), .cc, .dump, .on(paddle_on), .pos(paddle_pos), .kp, .hi(pot_hi),
         .st_addr(3'd0), .st_rdata(pot_st), .st_we(1'b0), .st_wdata(32'd0)
     );
 
     // ---- RIOT ----
-    logic [7:0]  riot_dout, pa_out, pa_ddr, pb_out, pb_ddr;
+    logic [7:0]  riot_dout, pb_out, pb_ddr;
     logic        riot_irq_n;
     logic [31:0] riot_st;
     riot_6532 #(.SAVE_STATE(1'b0)) u_riot (
         .clk, .rst(chip_rst), .ce,
         .cs(sel_riot), .rs_n(addr[9]), .addr(addr[6:0]), .we, .din(cpu_dout), .dout(riot_dout),
-        .pa_in(joy & (pa_out | ~pa_ddr)), .pa_out, .pa_ddr,
+        .pa_in(joy & pa_pin), .pa_out, .pa_ddr, .pa_out_d, .pa_ddr_d,
         .pb_in(switches), .pb_out, .pb_ddr,
         .irq_n(riot_irq_n),
         .st_addr(6'd0), .st_rdata(riot_st), .st_we(1'b0), .st_wdata(32'd0)

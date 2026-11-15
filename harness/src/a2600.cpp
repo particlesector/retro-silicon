@@ -99,15 +99,16 @@ std::optional<std::string> Console::load(const std::vector<uint8_t>& rom, Cart c
     return std::nullopt;
 }
 
-void Console::set_paddles(const Paddles& p) {
+void Console::set_paddles(const Paddles& p, unsigned keypads) {
     uint32_t on = 0, pos = 0;
     for (int i = 0; i < 4; i++)
         if (p[i] >= 0) {
             on |= 1u << i;
             pos |= static_cast<uint32_t>(p[i] & 0xFF) << (8 * i);
         }
-    put32(kPaddleOn, on, 1);
+    put32(kPaddleOn, on | (keypads & 3u) << 4, 1);
     put32(kPaddlePos, pos);
+    put32(kKeys, 0, 3);
 }
 
 void Console::set_pins(uint16_t pins) {
@@ -252,6 +253,18 @@ std::map<std::string, Paddles> load_paddles(const std::string& file) {
     return out;
 }
 
+std::map<std::string, unsigned> load_keypads(const std::string& file) {
+    std::map<std::string, unsigned> out;
+    for (const std::string& line : lines(file)) {
+        std::istringstream s(line);
+        std::string id, l, r;
+        if (!(s >> id >> l >> r) || (l != "keypad" && l != "-") || (r != "keypad" && r != "-"))
+            throw RigError(file + ": bad line: " + line);
+        out[id] = (l == "keypad" ? kLeftKeypad : 0u) | (r == "keypad" ? kRightKeypad : 0u);
+    }
+    return out;
+}
+
 std::map<std::string, AudioGolden> load_audio(const std::string& file) {
     std::map<std::string, AudioGolden> out;
     for (const std::string& line : lines(file)) {
@@ -268,7 +281,8 @@ std::map<std::string, AudioGolden> load_audio(const std::string& file) {
 
 TestResult cart_test(Link& link, const std::string& name, const std::vector<uint8_t>& rom, uint32_t frames,
                      uint32_t crc, const Paddles& paddles, std::optional<AudioGolden> audio,
-                     std::optional<uint32_t> build_id, Cart cart, const std::vector<InputEntry>& input) {
+                     std::optional<uint32_t> build_id, Cart cart, const std::vector<InputEntry>& input,
+                     unsigned keypads) {
     TestResult r;
     r.name = name;
     auto t0 = std::chrono::steady_clock::now();
@@ -296,7 +310,7 @@ TestResult cart_test(Link& link, const std::string& name, const std::vector<uint
         vcs.hold_reset();
         if (auto e = vcs.load(rom, cart)) return finish(*e);
         r.bytes = rom.size();
-        vcs.set_paddles(paddles);
+        vcs.set_paddles(paddles, keypads);
         vcs.set_pins(kNoInput);
         vcs.set_input_script(input);
         vcs.stop_frame(frames);
@@ -328,7 +342,7 @@ TestResult cart_test(Link& link, const std::string& name, const std::vector<uint
 
 TestResult hdmi_test(Link& link, const std::string& name, const std::vector<uint8_t>& rom, uint32_t frames,
                      uint32_t crc, const Paddles& paddles, std::optional<uint32_t> build_id, Cart cart,
-                     const std::vector<InputEntry>& input) {
+                     const std::vector<InputEntry>& input, unsigned keypads) {
     TestResult r;
     r.name = name;
     auto t0 = std::chrono::steady_clock::now();
@@ -356,7 +370,7 @@ TestResult hdmi_test(Link& link, const std::string& name, const std::vector<uint
         vcs.hold_reset();
         if (auto e = vcs.load(rom, cart)) return finish(*e);
         r.bytes = rom.size();
-        vcs.set_paddles(paddles);
+        vcs.set_paddles(paddles, keypads);
         vcs.set_pins(kNoInput);
         vcs.set_input_script(input);
         vcs.audio_limit(0);

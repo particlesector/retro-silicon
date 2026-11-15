@@ -18,6 +18,8 @@
 # must match Stella's first N samples too (harness/golden/a2600_audio_crc32.txt).
 # paddles: INPT0-3's knobs (0-255, a pot of n / 256 Mohm) or "-" for none, as Stella plugs them
 # in (harness/golden/a2600_paddles.txt); a cartridge without has none.
+# keypads: [left, right], true for a keypad (Stella's Keyboard) in that joystick port, as Stella plugs
+# them in (harness/golden/a2600_keypads.txt); a cartridge without has none.
 # input: the input script played in Stella and on the core, "F:JJCC,...": from frame F on, SWCHA's
 # pins JJ and SWCHB's CC, with player 0's fire button in CC's bit 4 and player 1's in bit 5, in hex
 # (0 pressed; FF3F, nothing pressed, difficulty B and colour, before the first entry).
@@ -183,6 +185,18 @@ check = "frame"
 frames = 134
 paddles = [128, 128, 128, 128]
 stella = "Bytes 0-15 each 00110011 (each group of 4 reads: 0, 0, 1, 1); bytes 16-31 all 1s but the first frame's (charged before the dump, 0 in it)"
+
+[[rom]]
+id = "tia_keypad"
+source = "a2600-carts"
+path = "tia_keypad.bin"
+sha256 = "ca28f9f09ff590b2b6a347b51a2895f817b086a16918dce02617a8763402029b"
+needs = "cpu, tia, riot, paddles"
+covers = "Keypads in both joystick ports with no key down: each column's 4.7 kohm to 5 V charging INPT0-3 after a dump, read a cycle apart across Stella's crossing, with the keypads' rows (port A) as inputs and driven low; SWCHA read back; the third columns on INPT4 and INPT5"
+check = "frame"
+frames = 140
+keypads = [true, true]
+stella = "Bytes 0-15 alternate 00001111 and 11111111 (each input reads 1 from the 5th of its 16 reads, in both halves); byte 16 is 0, 17 is $FF, 18 is $C0, 19 is 0"
 
 [[rom]]
 id = "riot_inputs"

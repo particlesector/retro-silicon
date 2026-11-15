@@ -4,10 +4,14 @@
 // 50 ohm while VBLANK bit 7 is set. The TIA reads 1 once a capacitor passes its threshold, the
 // voltage a 1 Mohm pot reaches 379 lines after a dump.
 //
+// An input can instead be a keypad's column (Stella's Keyboard; `kp`): to 5 V through the keypad's
+// 4.7 kohm with no key down, and with one, to 5 V or to ground directly, each through the 1.8 kohm.
+//
 // Each capacitor's voltage `u` is a 40-bit fraction of 5 V, stepped once a colour clock:
 //   dumped:           u -= u * dump_rate
-//   charging:         u += (1 - u) * rate(pos)
-//   with no paddle:   u holds (Stella's unconnected pin; only a dump changes it)
+//   charging:         u += (1 - u) * rate(pos), or the keypad's rate
+//   to ground:        u -= u * rate(0)  (a keypad's key down in a row driven low)
+//   with neither:     u holds (Stella's unconnected pin; only a dump changes it)
 // each step rounded to the nearest. `paddles_rate` (generated) has each position's rate.
 //
 // One multiplier steps the four capacitors in turn after each colour clock edge, with `dump` as it
@@ -16,7 +20,9 @@
 // sees, is done before the next edge, so `hi` there is the capacitor at the end of the colour clock
 // being read: a read `3n` colour clocks after a dump ends sees `3n` steps of charging, as Stella's
 // timestamps count. So `cc` must come at least 6 clocks apart. A position change takes effect
-// within 6 clocks.
+// within 6 clocks. `kp` is taken with each capacitor's operands, the first's on the colour clock, so
+// on that clock it must already be what it is after the edge: a change then takes effect from that
+// colour clock, as a change of `dump` does.
 
 module paddles #(
     parameter bit SAVE_STATE = 1'b1  // 0 leaves out the save-state port's logic
@@ -27,6 +33,9 @@ module paddles #(
     input  logic        dump,     // VBLANK bit 7 (video/tia's `dump`)
     input  logic [3:0]  on,       // a paddle is plugged into input i
     input  logic [31:0] pos,      // paddle i's position in bits 8i+7:8i: a pot of pos / 256 Mohm
+    input  logic [7:0]  kp,       // input i in bits 2i+1:2i, as it is after this clock's edge: 0 the
+                                  // paddle (or none, `on`), else a keypad's column: 1 no key down
+                                  // (4.7 kohm to 5 V), 2 to 5 V, 3 to ground
 
     output logic [3:0]  hi,       // input i is above the TIA's threshold
 
@@ -40,11 +49,11 @@ module paddles #(
 
     // ---- Rates: one position looked up each clock, in turn ----
     logic [1:0]  rr, rr_d, rr_q;           // the position being looked up, and where its rate goes
-    logic [28:0] rate_q, dump_rate;
+    logic [28:0] rate_q, dump_rate, kp_rate, r0_rate;
     logic [39:0] uth;
     logic [28:0] rate [4];
 
-    paddles_rate u_rate (.clk, .pos(pos[8*rr +: 8]), .rate(rate_q), .dump_rate, .uth);
+    paddles_rate u_rate (.clk, .pos(pos[8*rr +: 8]), .rate(rate_q), .dump_rate, .kp_rate, .r0_rate, .uth);
 
     // The ROM takes rr's position on the falling edge and has its rate on the rising edge after.
     always_ff @(negedge clk) rr_d <= rr;
@@ -62,27 +71,34 @@ module paddles #(
 
     // Each capacitor's operands, taken a clock before its multiply (on the colour clock for the
     // first, then on steps 1-3), so the multiplier's inputs start at registers: the capacitor's
-    // voltage, its distance to 5 V, and its rate. Every capacitor's last step lands before the
+    // voltage, its distance to its target when not dumped (to 0 if a keypad's key grounds it, else
+    // to 5 V), and its rate (a keypad column's in place of the paddle's). Every capacitor's last
+    // step lands before the
     // colour clock (at most step 5, and `cc` is at least 6 clocks apart), and each is taken
     // before its own step lands. `dump` is chosen at the multiply, as a write on the colour clock
     // changes it then.
     wire  [1:0]  och = cc ? 2'd0 : 2'(step);  // the capacitor the next clock multiplies
-    logic [40:0] o_u, o_up;                   // its distance to 0, and to 5 V
+    wire  [1:0]  okm = kp[2*och +: 2];        // its keypad column, if any
+    logic [40:0] o_u, o_v;                    // its distance to 0, and to its target
     logic [28:0] o_rate;
+    logic        o_gnd, o_kp;                 // a column to ground; a column at all
     always_ff @(posedge clk) begin
         o_u    <= {1'b0, u[och]};
-        o_up   <= 41'h100_0000_0000 - {1'b0, u[och]};
-        o_rate <= rate[och];
+        o_v    <= okm == 2'd3 ? {1'b0, u[och]} : 41'h100_0000_0000 - {1'b0, u[och]};
+        o_rate <= okm == 2'd1 ? kp_rate : okm[1] ? r0_rate : rate[och];
+        o_gnd  <= okm == 2'd3;
+        o_kp   <= okm != 2'd0;
     end
 
-    // Stage 1, the one multiplier: x * m, x the distance to 0 while dumped, else to 5 V; a rate
-    // c = {s, m} is m * 2^-(24 + s).
+    // Stage 1, the one multiplier: x * m, x the distance to 0 while dumped or to ground, else to
+    // 5 V; a rate c = {s, m} is m * 2^-(24 + s).
+    wire         down = dump || o_gnd;
     wire  [28:0] c = dump ? dump_rate : o_rate;
-    wire  [40:0] x = dump ? o_u : o_up;
+    wire  [40:0] x = dump ? o_u : o_v;
     logic [64:0] p;                 // the product, waiting for stage 2
     logic [4:0]  p_s;
     logic [1:0]  p_ch;
-    logic        p_down, p_go;      // dumped; the capacitor moves (dumped or plugged in)
+    logic        p_down, p_go;      // dumped or to ground; the capacitor moves (dumped or connected)
 
     // Stage 2: the product scaled by 2^-(24 + s), rounded to the nearest.
     wire  [64:0] r = p >> (6'd23 + 6'(p_s));
@@ -103,8 +119,8 @@ module paddles #(
                 p      <= x * {41'd0, c[23:0]};
                 p_s    <= c[28:24];
                 p_ch   <= ch;
-                p_down <= dump;
-                p_go   <= dump || on[ch];
+                p_down <= down;
+                p_go   <= dump || on[ch] || o_kp;
             end
             if (p_go) u[p_ch] <= p_down ? u[p_ch] - delta : u[p_ch] + delta;
         end else if (SAVE_STATE && st_we) begin

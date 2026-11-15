@@ -8,8 +8,9 @@
 // the cartridges aren't fetched (testroms/fetch.py). A cartridge with an input script (input=F:JJCC,...)
 // gets each entry's pins at the first opcode fetch once frame F - 1 has ended, as a2600_sys's input
 // player sets them; the pins are FF3F (nothing pressed, both difficulties B, colour) until then.
-// RS_A2600_GOLDEN, RS_A2600_AUDIO_GOLDEN and RS_A2600_PADDLES, set, are other lists to run (with
-// RS_TESTROMS their folder).
+// A cartridge in harness/golden/a2600_keypads.txt has its keypads plugged in, no key down.
+// RS_A2600_GOLDEN, RS_A2600_AUDIO_GOLDEN, RS_A2600_PADDLES and RS_A2600_KEYPADS, set, are other
+// lists to run (with RS_TESTROMS their folder).
 #include <catch2/catch_test_macros.hpp>
 #include <zlib.h>
 
@@ -125,13 +126,30 @@ std::vector<Golden> golden() {
     return out;
 }
 
+// harness/golden/a2600_keypads.txt: id, then the left and right ports, each keypad or -: bit 0 a
+// keypad in the left, bit 1 in the right. A cartridge not listed has none.
+std::map<std::string, unsigned> keypads_golden() {
+    std::ifstream f = list("RS_A2600_KEYPADS", RS_A2600_KEYPADS);
+    std::map<std::string, unsigned> out;
+    std::string line;
+    while (std::getline(f, line)) {
+        if (line.empty() || line[0] == '#') continue;
+        std::istringstream s(line);
+        std::string id, l, r;
+        s >> id >> l >> r;
+        out[id] = (l == "keypad" ? 1u : 0u) | (r == "keypad" ? 2u : 0u);
+    }
+    return out;
+}
+
 // Runs the cartridge to frame `frames` and returns that frame's CRC, and in `sound` the samples'
 // sums. With RS_A2600_DUMP set to a folder, also writes the frame there as <dump_name>.tia (160 x 228
 // colour values, as stella-frames --dump writes them) and the sound as <dump_name>.aud, and every
 // colour clock's levels as <dump_name>.lvl (a byte each: aud0 | aud1 << 4) and VSYNC as <dump_name>.vs
 // (a byte each), to compare with a transistor-level TIA's pins.
 uint32_t run(const std::vector<uint8_t>& rom, int frames, std::vector<uint8_t>& sound,
-             const Paddles& paddles, const Script& input = {}, const std::string& dump_name = "") {
+             const Paddles& paddles, const Script& input = {}, const std::string& dump_name = "",
+             unsigned keypads = 0) {
     Va2600 m;
     FrameCutter cut;
     const auto set_pins = [&m](uint16_t pins) {
@@ -147,6 +165,8 @@ uint32_t run(const std::vector<uint8_t>& rom, int frames, std::vector<uint8_t>& 
         for (; next < input.size() && input[next].first <= cut.frames + 1; next++) set_pins(input[next].second);
     };
     play();
+    m.keypad_on = keypads;
+    m.keys = 0;
     m.paddle_on = 0;
     m.paddle_pos = 0;
     for (int i = 0; i < 4; i++)
@@ -239,6 +259,7 @@ uint32_t run(const std::vector<uint8_t>& rom, int frames, std::vector<uint8_t>& 
 TEST_CASE("atari2600 test cartridges match Stella's frames and sound") {
     const std::vector<AudioGolden> sounds = audio_golden();
     const std::map<std::string, Paddles> pads = paddles_golden();
+    const std::map<std::string, unsigned> kps = keypads_golden();
     for (const Golden& g : golden()) {
         // A banked cartridge (named for its scheme, bank_f8.F8) needs a2600_cart, which
         // harness/tests/a2600_test.cpp runs through a2600_sys; this test's cartridge is 2 or 4 KB.
@@ -255,7 +276,9 @@ TEST_CASE("atari2600 test cartridges match Stella's frames and sound") {
         REQUIRE((rom.size() == 2048 || rom.size() == 4096));
         std::vector<uint8_t> sound;
         const auto pad = pads.find(g.id);
-        CHECK(run(rom, g.frames, sound, pad == pads.end() ? Paddles{-1, -1, -1, -1} : pad->second, g.input, g.id) == g.crc);
+        const auto kp = kps.find(g.id);
+        CHECK(run(rom, g.frames, sound, pad == pads.end() ? Paddles{-1, -1, -1, -1} : pad->second, g.input, g.id,
+                  kp == kps.end() ? 0u : kp->second) == g.crc);
         for (const AudioGolden& a : sounds) {
             if (a.id != g.id) continue;
             INFO("sound, " << sound.size() / 4 << " samples");

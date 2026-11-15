@@ -38,6 +38,8 @@ module riot_6532 #(
     input  logic [7:0]  pa_in,
     output logic [7:0]  pa_out,
     output logic [7:0]  pa_ddr,  // 1: output
+    output logic [7:0]  pa_out_d,  // pa_out and pa_ddr as they'll be after this clock: a write on
+    output logic [7:0]  pa_ddr_d,  // this clock's `ce` shows here before it lands (a save state's not)
     input  logic [7:0]  pb_in,
     output logic [7:0]  pb_out,
     output logic [7:0]  pb_ddr,
@@ -203,6 +205,9 @@ module riot_6532 #(
 
     assign pa_out = ora;
     assign pa_ddr = ddra;
+    wire wr_pa = ce && io_sel && we;
+    assign pa_out_d = rst ? 8'd0 : wr_pa && addr[1:0] == 2'd0 ? din : ora;
+    assign pa_ddr_d = rst ? 8'd0 : wr_pa && addr[1:0] == 2'd1 ? din : ddra;
     assign pb_out = orb;
     assign pb_ddr = ddrb;
     assign irq_n  = !((flag_t && t_ie) || (flag_pa7 && pa7_ie));

@@ -25,6 +25,7 @@ Module `riot_6532`.
 | `dout` | out | 8 | Data read, registered (above) |
 | `pa_in` | in | 8 | Port A's pins as they stand: the system combines the RIOT's outputs with what drives them |
 | `pa_out`, `pa_ddr` | out | 8 | Port A's output register and direction (1: output) |
+| `pa_out_d`, `pa_ddr_d` | out | 8 | The same as they'll be after this clock: a write on this clock's `ce` shows here before it lands (for logic that must see it from that colour clock, as `systems/atari-2600`'s keypads do) |
 | `pb_in` | in | 8 | Port B's inputs |
 | `pb_out`, `pb_ddr` | out | 8 | Port B's output register and direction |
 | `irq_n` | out | 1 | Interrupt, active low: the timer's flag if enabled, or PA7's if enabled (the 2600 leaves it unconnected) |

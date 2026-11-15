@@ -10,6 +10,10 @@ VBLANK bit 7 is set. The TIA reads it as 1 once it's above the voltage a pot of
 1 Mohm reaches 379 lines after a dump. Time is counted in colour clocks at
 Stella's rate, 60 x 228 x 262 a second.
 
+A keypad (Stella's Keyboard) wires each of its columns to 5 V through 4.7 kohm
+with no key down, to 5 V directly or to ground (each through the console's
+1.8 kohm) with one: `kp_rate` and `r0_rate` are those two rates.
+
 Position p (0-255) is a pot of p / 256 Mohm, as Stella's paddles are at
 multiples of 1/4096 of 1 Mohm (its default, the middle, is p = 128). Over one
 colour clock a capacitor at u (a fraction of 5 V) goes to
@@ -34,6 +38,7 @@ R0 = 1.8e3
 C = 68e-9
 R_POT = 1e6
 R_DUMP = 50
+R_KEYPAD = 4.7e3  # a keypad's column with no key down: to 5 V through its 4.7 kohm (Stella's Keyboard)
 F = 60 * 228 * 262
 TRIP_LINES = 379
 U_BITS = 40
@@ -77,7 +82,9 @@ def rtl():
 // `pos`'s charge rate (a pot of pos / 256 Mohm, 1.8 kohm and 68 nF), a block
 // RAM ROM whose address is taken on the falling edge (on the GW2AR-18 a block
 // RAM's address needs more hold than a short path from a register gives), read
-// on the rising edge after; `dump_rate` is the dump's (50 ohm), and `uth` the
+// on the rising edge after; `dump_rate` is the dump's (50 ohm), `kp_rate` a
+// keypad column's with no key down (4.7 kohm and 1.8 kohm), `r0_rate` the
+// console's 1.8 kohm alone (a key down: to 5 V or to ground), and `uth` the
 // TIA's threshold as a 40-bit fraction of 5 V. A rate is {{s[4:0], m[23:0]}}:
 // m * 2^-(24 + s) of the way to its target each colour clock.
 module paddles_rate (
@@ -85,6 +92,8 @@ module paddles_rate (
     input  logic [7:0]  pos,
     output logic [28:0] rate,
     output logic [28:0] dump_rate,
+    output logic [28:0] kp_rate,
+    output logic [28:0] r0_rate,
     output logic [39:0] uth
 );
     logic [7:0]  ix;
@@ -100,6 +109,8 @@ module paddles_rate (
 
     assign rate      = {{q[27:23], 1'b1, q[22:0]}};
     assign dump_rate = {word(*rate(R_DUMP))};
+    assign kp_rate   = {word(*rate(R_KEYPAD + R0))};
+    assign r0_rate   = {word(*rate(R0))};
     assign uth       = 40'h{threshold():010x};
 endmodule
 """

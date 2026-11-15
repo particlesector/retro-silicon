@@ -12,13 +12,15 @@ Each capacitor's voltage `u`, a 40-bit fraction of 5 V, takes one step a colour 
 - **charging:** `u += (1 - u) * rate(pos)`, through the pot and 1.8 kohm;
 - **no paddle plugged in:** `u` holds, as Stella leaves an unconnected pin (only a dump changes it, and from power-up it stays 0).
 
+An input can instead be a keypad's column (`kp`; Stella's Keyboard, which `systems/atari-2600` plugs into a joystick port): with no key down it charges through the keypad's 4.7 kohm and the 1.8 kohm (`kp_rate`), crossing the threshold 560.7 colour clocks after a full dump; with a key down, through the 1.8 kohm alone (`r0_rate`, position 0's rate), to 5 V if the key's row is high, or to ground (`u -= u * r0_rate`) if it's driven low. A dump overrides each, as on the console.
+
 Each step is the exact solution of the RC circuit over one colour clock, `1 - exp(-1 / (R C f))` of the way to the target, with `f` Stella's colour clock rate (60 x 228 x 262 a second). `hi` (the TIA's input pin reading 1) is `u` above the threshold: the voltage a 1 Mohm pot reaches 379 lines after a dump, 0.298 of 5 V. A knob at position `p` is a pot of `p / 256` Mohm, so each position is one of Stella's (which are at multiples of 1/4096 Mohm), and the middle, 128, is Stella's default: from a full dump its input reads 1 after 43,284 colour clocks, about 190 lines.
 
 The rates are a block RAM ROM (256 positions, 28 bits each: a 24-bit mantissa, whose top bit is always set and isn't stored, and a shift), looked up one paddle a clock in turn, so a new position takes effect within 6 clocks. One multiplier steps the four capacitors in turn, in two stages: a capacitor's product (41 x 24 bits) on one clock, its scaling, rounding and sum on the next. Each mantissa is within 2^-24 of the exact rate, and each step is rounded, so over the longest charge (1 Mohm) the crossing is within about 0.02 of a colour clock of the exact one.
 
 ## Timing
 
-After each colour clock edge the four capacitors take that colour clock's step, with `dump` as it stands after the edge (the TIA's VBLANK bit 7, which a write changes on its own edge), over the next 5 clocks. So by the next edge `hi` is the capacitor at the end of the colour clock being read, and a read `3n` colour clocks after a dump ends sees `3n` steps of charging, as Stella's timestamps count them. `cc` must come at least 6 clocks apart. Each capacitor's operands (its voltage, its distance to 5 V and its rate) are registered a clock before its multiply, on the colour clock for the first and then one a clock, so the multiplier's inputs start at registers; `dump` picks between them at the multiply.
+After each colour clock edge the four capacitors take that colour clock's step, with `dump` as it stands after the edge (the TIA's VBLANK bit 7, which a write changes on its own edge), over the next 5 clocks. So by the next edge `hi` is the capacitor at the end of the colour clock being read, and a read `3n` colour clocks after a dump ends sees `3n` steps of charging, as Stella's timestamps count them. `cc` must come at least 6 clocks apart. Each capacitor's operands (its voltage, its distance to 5 V, its rate and, for a keypad's column, its connection) are registered a clock before its multiply, on the colour clock for the first and then one a clock, so the multiplier's inputs start at registers; `dump` picks between them at the multiply. Since the first capacitor's operands are taken on the colour clock itself, `kp` must show then what it is after that edge: `systems/atari-2600` gives it from the RIOT's port A as it'll be after the clock (`pa_out_d`, `pa_ddr_d`), so a write to SWCHA or SWACNT (which changes a keypad's rows, and so its columns) takes effect from its own colour clock, as Stella updates the inputs at the write.
 
 ## Ports
 
@@ -29,6 +31,7 @@ After each colour clock edge the four capacitors take that colour clock's step, 
 | `dump` | in | 1 | VBLANK bit 7 (`video/tia`'s `dump`) |
 | `on` | in | 4 | Paddle i is plugged in (INPT0-3) |
 | `pos` | in | 32 | Paddle i's knob in bits 8i+7:8i, a pot of `pos / 256` Mohm |
+| `kp` | in | 8 | Input i in bits 2i+1:2i, as it is after this clock's edge: 0 the paddle (or none, `on`); else a keypad's column, 1 no key down (4.7 kohm to 5 V), 2 to 5 V, 3 to ground |
 | `hi` | out | 4 | Input i's capacitor is above the TIA's threshold (`video/tia`'s `pot_hi`) |
 | `st_addr`, `st_rdata`, `st_we`, `st_wdata` | | 3, 32, 1, 32 | Save-state port (below) |
 
