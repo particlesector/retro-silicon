@@ -23,14 +23,23 @@
 
 namespace {
 
-// One cartridge of a2600_frames_crc32.txt through the shell, as rig-run --test a2600 runs it.
+// One cartridge of a2600_frames_crc32.txt through the shell, as rig-run --test a2600 runs it; with
+// `before`, those cartridges first, on the same system, as rig-run runs a list one after another.
 void matches_stella(const std::string& id,
-                    const std::function<std::unique_ptr<rig::SimLink>()>& make = rig::make_a2600_sim) {
+                    const std::function<std::unique_ptr<rig::SimLink>()>& make = rig::make_a2600_sim,
+                    const std::vector<std::string>& before = {}) {
     const auto paddles = rig::a2600::load_paddles(RS_A2600_PADDLES);
     const auto sounds = rig::a2600::load_audio(RS_A2600_AUDIO_GOLDEN);
     const char* roms = std::getenv("RS_TESTROMS");
-    for (const auto& g : rig::a2600::load_golden(RS_A2600_GOLDEN)) {
-        if (g.id != id) continue;
+    const auto golden = rig::a2600::load_golden(RS_A2600_GOLDEN);
+    std::unique_ptr<rig::SimLink> link;
+    std::vector<std::string> ids = before;
+    ids.push_back(id);
+    for (const auto& run : ids) {
+    bool found = false;
+    for (const auto& g : golden) {
+        if (g.id != run) continue;
+        found = true;
         const std::string path = std::string(roms ? roms : RS_TESTROMS) + "/" + g.path;
         std::ifstream f(path, std::ios::binary);
         if (!f) {
@@ -39,23 +48,25 @@ void matches_stella(const std::string& id,
         std::vector<uint8_t> rom((std::istreambuf_iterator<char>(f)), {});
         auto cart = rig::a2600::cart_from_name(g.path);
         REQUIRE(cart);
-        auto link = make();
+        if (!link) link = make();
         const auto p = paddles.find(g.id);
         const auto s = sounds.find(g.id);
         auto r = rig::a2600::cart_test(*link, g.id, rom, g.frames, g.crc,
                                        p == paddles.end() ? rig::a2600::kNoPaddles : p->second,
                                        s == sounds.end() ? std::nullopt : std::make_optional(s->second),
                                        RS_A2600_BUILD_ID, *cart, g.input);
-        INFO(r.detail << " (" << r.notes << ")");
+        INFO(g.id << ": " << r.detail << " (" << r.notes << ")");
         CHECK(r.passed);
-        return;
+        break;
     }
-    FAIL(id << " isn't in a2600_frames_crc32.txt");
+    if (!found) FAIL(run << " isn't in a2600_frames_crc32.txt");
+    }
 }
 
 const std::vector<std::string> kCarts = {
     "tia_colours", "riot_ram", "riot_timer", "tia_playfield", "tia_players", "tia_missiles_ball",
     "tia_hmove", "tia_collisions", "tia_rsync", "tia_resmp", "tia_audio", "tia_paddles", "riot_inputs",
+    "riot_power_up",
     "bank_f8", "bank_f6", "bank_f4", "bank_f8sc", "bank_f6sc", "bank_f4sc", "bank_fa", "bank_f0",
     "bank_fe", "bank_e0", "bank_3f", "bank_e7",
 };
@@ -92,6 +103,13 @@ MATCHES_STELLA("tia_resmp")
 MATCHES_STELLA("tia_audio")
 MATCHES_STELLA("tia_paddles")
 MATCHES_STELLA("riot_inputs")
+MATCHES_STELLA("riot_power_up")
+
+// A power-up (the shell's reset) gives the next cartridge the RAM Stella starts with, all 0, whatever
+// the last one left there: rig-run runs a list's cartridges one after another on the same system.
+TEST_CASE("riot_power_up matches Stella's frame after riot_ram has written the RAM") {
+    matches_stella("riot_power_up", rig::make_a2600_sim, {"riot_ram"});
+}
 MATCHES_STELLA("bank_f8")
 MATCHES_STELLA("bank_f6")
 MATCHES_STELLA("bank_f4")
@@ -144,6 +162,7 @@ MATCHES_STELLA_CONSOLE("tia_resmp")
 MATCHES_STELLA_CONSOLE("tia_audio")
 MATCHES_STELLA_CONSOLE("tia_paddles")
 MATCHES_STELLA_CONSOLE("riot_inputs")
+MATCHES_STELLA_CONSOLE("riot_power_up")
 MATCHES_STELLA_CONSOLE("bank_f8")
 MATCHES_STELLA_CONSOLE("bank_f6")
 MATCHES_STELLA_CONSOLE("bank_f4")
@@ -170,6 +189,7 @@ MATCHES_STELLA_PYNQ("tia_resmp")
 MATCHES_STELLA_PYNQ("tia_audio")
 MATCHES_STELLA_PYNQ("tia_paddles")
 MATCHES_STELLA_PYNQ("riot_inputs")
+MATCHES_STELLA_PYNQ("riot_power_up")
 MATCHES_STELLA_PYNQ("bank_f8")
 MATCHES_STELLA_PYNQ("bank_f6")
 MATCHES_STELLA_PYNQ("bank_f4")

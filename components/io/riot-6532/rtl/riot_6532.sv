@@ -114,8 +114,14 @@ module riot_6532 #(
     assign dout = rs_q ? reg_q : ram_q[8*byte_q +: 8];
 
     // ---- RAM ----
+    // While rst is held, a word a clock is cleared, so 32 clocks of reset clear all 128 bytes: a
+    // power-up's RAM is whatever the chip comes up with, and this one's is 0, as Stella starts it.
+    logic [4:0] clr;
     always_ff @(posedge clk) begin
-        if (ce && cs && !rs_n && we) begin
+        clr <= rst ? clr + 5'd1 : 5'd0;
+        if (rst)
+            ram[clr] <= 32'd0;
+        else if (ce && cs && !rs_n && we) begin
             logic [31:0] wv;
             wv = ram[addr[6:2]];
             wv[8*addr[1:0] +: 8] = din;
