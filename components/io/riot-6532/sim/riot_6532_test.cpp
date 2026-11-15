@@ -92,6 +92,21 @@ TEST_CASE("riot_6532 RAM holds all 128 bytes") {
     REQUIRE(b.read(0, true) == 11);
 }
 
+TEST_CASE("riot_6532 RAM clears to 0 while reset is held for 32 clocks") {
+    Bench<Vriot> b;
+    for (int a = 0; a < 128; a++) b.write(a, uint8_t(a * 37 + 11), true);
+    // 31 clocks leave the last word as it was; the 32nd clears it.
+    b.m.rst = 1;
+    for (int i = 0; i < 31; i++) b.clock();
+    b.m.rst = 0;
+    for (int a = 0; a < 124; a++) REQUIRE(b.read(a, true) == 0);
+    REQUIRE(b.read(124, true) == uint8_t(124 * 37 + 11));
+    b.m.rst = 1;
+    for (int i = 0; i < 32; i++) b.clock();
+    b.m.rst = 0;
+    for (int a = 0; a < 128; a++) REQUIRE(b.read(a, true) == 0);
+}
+
 TEST_CASE("riot_6532 timer counts as Stella runs the riot_timer cartridge") {
     Bench<Vriot> b;
     const std::vector<int> intim8(8, kIntim), intim4(4, kIntim);

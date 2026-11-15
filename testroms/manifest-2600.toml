@@ -185,6 +185,17 @@ input = "2:ff3f,3:ef3f,4:df3f,5:bf3f,6:7f2f,7:fe1f,8:f53e,9:663d,10:ff7f,11:ffaf
 stella = "Bytes 2k and 2k + 1 for frame k + 2: SWCHA, and SWCHB & $CB with INPT4 and INPT5 in bits 4 and 5: ff 3b, ef 3b, df 3b, bf 3b, 7f 2b, fe 1b, f5 3a, 66 39, ff 7b, ff ab, ff e3, ff 2b, 0a 0b, 55 0b, 5f 0b, 57 0b"
 
 [[rom]]
+id = "riot_power_up"
+source = "a2600-carts"
+path = "riot_power_up.bin"
+sha256 = "631b69bcfbcb2dbb851b8bb6121eb34d760e87377fd7aaa2a598ffceae3f9285"
+needs = "cpu, riot, tia"
+covers = "The RIOT's RAM at power-up, never cleared by the cartridge: all 0, as Stella starts it, even after another cartridge (riot_ram) has written it"
+check = "frame"
+frames = 10
+stella = "All 32 results 0: the frame is black"
+
+[[rom]]
 id = "bank_f8"
 source = "a2600-carts"
 path = "bank_f8.F8"

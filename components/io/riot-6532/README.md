@@ -15,7 +15,7 @@ Module `riot_6532`.
 
 | Port | Dir | Width | Meaning |
 | --- | --- | --- | --- |
-| `clk`, `rst` | in | 1 | Clock; synchronous reset: ports as inputs, outputs 0, flags clear, interrupts off, the timer at 0 on its 1024-cycle interval (the chip leaves the timer as it was; nothing should read it before setting it) |
+| `clk`, `rst` | in | 1 | Clock; synchronous reset: ports as inputs, outputs 0, flags clear, interrupts off, the timer at 0 on its 1024-cycle interval (the chip leaves the timer as it was; games seed their random numbers from it, so it starts where the rig's Stella starts it, at 0); held for 32 clocks, it also clears the RAM to 0 (a word a clock; the chip's RAM comes up as it will), as Stella starts it, so a power-up doesn't hand the last program's RAM to the next |
 | `ce` | in | 1 | One CPU cycle per clock with `ce` high |
 | `cs` | in | 1 | The chip is selected this cycle (the 2600: A7 high, A12 low) |
 | `rs_n` | in | 1 | 0 selects RAM, 1 the registers (the 2600: A9) |
