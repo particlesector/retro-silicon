@@ -31,7 +31,7 @@ The bank-switching cartridges are named for their scheme, as Stella takes it fro
 | `bank_f8sc`, `bank_f6sc`, `bank_f4sc` | The same with the Superchip's 128 bytes of RAM: its start as 0s, written and read back, through a switch, and a write to its read port going nowhere |
 | `bank_fa` | CBS's FA: 12 KB, starting in bank 2, and its 256 bytes of RAM as the Superchip's |
 | `bank_f0` | Dynacom's F0: 16 banks, starting in 15, each access to `$1FF0` stepping to the next, round to 15 again |
-| `bank_fe` | Activision's FE: a JSR to `$Dxxx` and an RTS with S = `$FF` switching through `$01FE`, and calls with S lower not |
+| `bank_fe` | Activision's FE: a JSR to `$Dxxx` and an RTS with S = `$FF` switching through `$01FE`, and calls with S lower not; and the reset, whose stack reads touch `$01FE` before the vector's low byte (`$00`), staying in bank 0: a wrong switch would start at bank 1's trap, which marks SWACNT |
 | `bank_e0` | Parker Brothers' E0: every 1 KB slice into each switched slot, starting with 4, 5, 6 |
 | `bank_3f` | Tigervision's 3F (16 KB): writes to `$3F` and `$3E` selecting the bank by their value modulo 8, a write to `$40` and a read of `$3F` not. It draws through the TIA's mirror at `$40`, as Tigervision's games do: Stella's 3F takes `$00`-`$3F` from the TIA |
 | `bank_cv` | CommaVid's CV (2 KB of ROM at $1800): the 1 KB of RAM on the cartridge, read at $1000-$13FF and written at $1400-$17FF, its start as 0s, the whole of it through both ports, and the ROM at $1800 |

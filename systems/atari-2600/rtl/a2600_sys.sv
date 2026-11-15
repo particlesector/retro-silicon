@@ -89,7 +89,7 @@ module a2600_sys #(
     logic [6:0]  in_len;          // 55: entries in the input script
     logic [23:0] keys;            // 58: the keypads' keys down
 
-    wire rst = por_rst || ctrl[1];
+    wire rst /* verilator public_flat_rd */ = por_rst || ctrl[1];
 
     logic [31:0] cycles, samples, audio_crc, frames, frame_crc, crc_frame;
     logic        busy, fb_busy, cart_clearing, cart_wait, pace_wait;
@@ -98,7 +98,7 @@ module a2600_sys #(
     wire running  = ctrl[0] && !rst && !busy && !at_limit && !pace_wait;
 
     // ---- Colour clocks ----
-    logic cc, step;
+    logic cc /* verilator public_flat_rd */, step;
     /* verilator lint_off UNUSEDSIGNAL */
     logic cc_held;  // a colour clock waiting on the cartridge's ROM (not counted yet)
     /* verilator lint_on UNUSEDSIGNAL */
@@ -112,10 +112,13 @@ module a2600_sys #(
     logic [7:0]  pix, pix_x;
     logic        pix_on, line_end, vsync, vblank, aud_tick;
     logic [3:0]  aud0, aud1;
-    logic        cpu_sync, bus_ce, bus_we, bus_stall;
+    // The bus, readable from the sim (harness/src/sim_systems.cpp's RS_A2600_BUS trace).
+    logic        cpu_sync;
+    logic        bus_ce /* verilator public_flat_rd */, bus_we /* verilator public_flat_rd */;
+    logic        bus_stall /* verilator public_flat_rd */;
     logic [15:0] cpu_pc;
-    logic [12:0] bus_addr;
-    logic [7:0]  bus_data;
+    logic [12:0] bus_addr /* verilator public_flat_rd */;
+    logic [7:0]  bus_data /* verilator public_flat_rd */;
     atari2600 #(.TIA_SCORE_GLITCH(TIA_SCORE_GLITCH)) u_sys (
         .clk, .rst, .cc,
         .cart_addr, .cart_sel, .cart_we, .cart_wdata, .cart_data,

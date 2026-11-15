@@ -11,6 +11,11 @@
 ;   4: the ID after it returns ($40)
 ;   5: the ID in a routine bank 1 calls with S = $FD ($41: no switch)
 ;   6: the ID after that returns, still in bank 1 ($41)
+;   7: SWACNT at reset (0). The reset's stack reads touch $01FE too, and its next access is the reset
+;      vector's low byte, $00 here: FE switches only on an address's high byte ($Fx bank 0, $Dx bank 1,
+;      as Activision's patent and Gopher2600 have it), so the reset stays in bank 0. A cartridge that
+;      took $00 as a switch to bank 1 would start at $D000, whose trap writes $EE to SWACNT (the RAM
+;      clear doesn't touch it) and calls bank 0's reset.
 
 .include "vcs.inc"
 
@@ -28,9 +33,11 @@ reset:  sei
         ldx #$FF
         txs
 
+        lda SWACNT
+        sta RESULTS+7
         lda $FE00
         sta RESULTS+0
-        jsr $D000               ; bank 1's sub1
+        jsr $D010               ; bank 1's sub1
         lda $FE00
         sta RESULTS+2
         jsr sub0
@@ -47,7 +54,13 @@ sub0:   lda $FE00
 
 .include "show.inc"
 .else
-sub1:   lda $DE00               ; at $D000
+trap:   lda #$EE                ; at $D000: only a wrong switch at reset gets here
+        sta SWACNT
+        ldx #$FF
+        txs
+        jsr $F000               ; bank 0's reset, its $F0 switching back
+        .res 5, $EA             ; to $D010
+sub1:   lda $DE00               ; at $D010
         sta RESULTS+1
         jsr sub1b
         lda $DE00
