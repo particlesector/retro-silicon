@@ -18,6 +18,9 @@ DEFS_bank_f0.F0     := -D NB=16 -D F0=1
 
 all: $(CARTS) $(BANKED)
 
+# tia_audio_rsync is tia_audio built with EARLY_RSYNC.
+tia_audio_rsync.bin: tia_audio.s
+
 %.bin: %.s vcs.inc show.inc cart4k.cfg
 	ca65 -o $*.o $<
 	ld65 -C cart4k.cfg -o $@ $*.o

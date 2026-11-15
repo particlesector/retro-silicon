@@ -161,6 +161,18 @@ audio_samples = 55000
 stella = "Four bands (brown, purple, violet, blue) with a short black line where RSYNC cuts the last band's first line; the sound changes every frame"
 
 [[rom]]
+id = "tia_audio_rsync"
+source = "a2600-carts"
+path = "tia_audio_rsync.bin"
+sha256 = "d92cc634393b9155d5b0b1db8cca27c6fa12f744785c31d49f28b798bc7c6c95"
+needs = "cpu, tia"
+covers = "tia_audio with RSYNC its first write, before any WSYNC: from power-up the line and audio counters start together at the CPU's first cycle, so where that RSYNC lands sets the sound's two clocks a line against the line for the rest of the run"
+check = "frame"
+frames = 108
+audio_samples = 55000
+stella = "As tia_audio: four bands (brown, purple, violet, blue) with a short black line where RSYNC cuts the last band's first line; the sound changes every frame, its clocks 21 colour clocks from tia_audio's"
+
+[[rom]]
 id = "tia_paddles"
 source = "a2600-carts"
 path = "tia_paddles.bin"

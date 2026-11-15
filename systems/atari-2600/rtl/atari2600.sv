@@ -70,6 +70,18 @@ module atari2600 #(
         else if (cc) ph <= ph == 2'd2 ? 2'd0 : ph + 2'd1;
     wire ce = cc && ph == 2'd2;
 
+    // The CPU spends its first 7 cycles after a reset on its reset sequence; Stella counts none of them,
+    // its TIA, RIOT and paddles starting at 0 on the CPU's first fetch. So those three stay in reset
+    // until then (`chip_rst`): otherwise their counters are 21 colour clocks ahead of Stella's, which
+    // shows wherever a cartridge's timing isn't set by a WSYNC (an RSYNC before the first one leaves the
+    // TIA's audio counter 21 clocks off the line for the rest of the run, and the RIOT's timer runs 7
+    // cycles early). The RIOT's RAM still sees over 32 clocks of reset.
+    logic [2:0] boot;  // the CPU's reset cycles left
+    always_ff @(posedge clk)
+        if (rst) boot <= 3'd7;
+        else if (ce && boot != 3'd0) boot <= boot - 3'd1;
+    wire chip_rst = rst || boot != 3'd0;
+
     // ---- CPU ----
     logic [15:0] cpu_addr, addr;
     logic        cpu_we, we, rdy;
@@ -105,7 +117,7 @@ module atari2600 #(
     logic [7:0]  tia_dout;
     logic [31:0] tia_st;
     tia #(.SAVE_STATE(1'b0), .SCORE_GLITCH(TIA_SCORE_GLITCH)) u_tia (
-        .clk, .rst, .cc, .ce,
+        .clk, .rst(chip_rst), .cc, .ce,
         .cs(sel_tia), .addr(we ? addr[5:0] : {2'b00, addr[3:0]}), .we, .din(cpu_dout),
         .dout(tia_dout), .rdy, .fire_n, .pot_hi, .dump,
         .pix, .pix_on, .x(pix_x), .line_end, .vsync, .vblank, .aud0, .aud1, .aud_tick,
@@ -117,7 +129,7 @@ module atari2600 #(
     logic        dump;
     logic [31:0] pot_st;
     paddles #(.SAVE_STATE(1'b0)) u_paddles (
-        .clk, .rst, .cc, .dump, .on(paddle_on), .pos(paddle_pos), .hi(pot_hi),
+        .clk, .rst(chip_rst), .cc, .dump, .on(paddle_on), .pos(paddle_pos), .hi(pot_hi),
         .st_addr(3'd0), .st_rdata(pot_st), .st_we(1'b0), .st_wdata(32'd0)
     );
 
@@ -126,7 +138,7 @@ module atari2600 #(
     logic        riot_irq_n;
     logic [31:0] riot_st;
     riot_6532 #(.SAVE_STATE(1'b0)) u_riot (
-        .clk, .rst, .ce,
+        .clk, .rst(chip_rst), .ce,
         .cs(sel_riot), .rs_n(addr[9]), .addr(addr[6:0]), .we, .din(cpu_dout), .dout(riot_dout),
         .pa_in(joy & (pa_out | ~pa_ddr)), .pa_out, .pa_ddr,
         .pb_in(switches), .pb_out, .pb_ddr,

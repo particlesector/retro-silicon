@@ -45,6 +45,9 @@ sled:   .res N, $C9             ; CMP #$C9 pairs: entered at N - D, D + 3 cycles
 
 reset:  sei
         cld
+.ifdef EARLY_RSYNC
+        sta RSYNC               ; tia_audio_rsync: before any WSYNC
+.endif
         ldx #$FF
         txs
         ; Clear zero page: RAM and every TIA register (RSYNC included).
