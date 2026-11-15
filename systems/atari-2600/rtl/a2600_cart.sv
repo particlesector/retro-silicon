@@ -28,6 +28,8 @@
 //      $1900-$19FF reads one of four 256-byte RAM banks, which $1FE8-$1FEB select; $1A00-$1FFF is
 //      slice 7's. Starts with slice 0 and RAM bank 0
 //   9  F0: 64 KB (Dynacom Megaboy); $1FF0 steps to the next of 16 4 KB banks. Starts in bank 15
+//  10  CV: 2 KB (CommaVid) at $1800-$1FFF (written twice, as unbanked), with 1 KB of RAM, read at
+//      $1000-$13FF and written at $1400-$17FF
 // `sc` adds the Superchip's 128 bytes of RAM to F8, F6 and F4: written at $1000-$107F, read at
 // $1080-$10FF. `size_log2` is the ROM's size (3F's bank count). The RAM starts as 0s, as Stella's
 // does with its RAM randomising off: after `rst` the cartridge clears it, `clearing` while it does
@@ -81,7 +83,8 @@ module a2600_cart #(
     input  logic [7:0]          mem_rdata
 );
     localparam logic [3:0] S_F8 = 4'd1, S_F6 = 4'd2, S_F4 = 4'd3, S_FE = 4'd4,
-                           S_E0 = 4'd5, S_3F = 4'd6, S_FA = 4'd7, S_E7 = 4'd8, S_F0 = 4'd9;
+                           S_E0 = 4'd5, S_3F = 4'd6, S_FA = 4'd7, S_E7 = 4'd8, S_F0 = 4'd9,
+                           S_CV = 4'd10;
 
     wire        in_cart = addr[12];
     wire [11:0] o       = addr[11:0];
@@ -174,6 +177,11 @@ module a2600_cart #(
                     ram_rd = o[8];
                     ram_a  = {1'b1, e7r_e, o[7:0]};
                 end
+            end
+            S_CV: if (!o[11]) begin                         // 1 KB of RAM below the ROM
+                ram_wr = o[10];
+                ram_rd = !o[10];
+                ram_a  = {1'b0, o[9:0]};
             end
             default: ;
         endcase

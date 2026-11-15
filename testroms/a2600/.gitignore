@@ -2,3 +2,18 @@
 # Built cartridges are never committed.
 *.bin
 *.o
+# The banked ones, named for their scheme.
+*.F8
+*.F6
+*.F4
+*.F8SC
+*.F6SC
+*.F4SC
+*.FA
+*.F0
+*.FE
+*.E0
+*.3F
+*.E7
+*.CV
+*.part*
