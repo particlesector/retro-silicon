@@ -38,7 +38,7 @@ enum Reg : uint32_t {
     kJoy = 0x2C,         // SWCHA's pins (0 pressed)
     kSwitches = 0x2D,    // SWCHB's pins
     kFire = 0x2E,        // bits 1-0: INPT5, INPT4 (0 pressed)
-    kPaddleOn = 0x2F,    // bits 3-0: a paddle in INPT3-0
+    kPaddleOn = 0x2F,    // bits 3-0: a paddle in INPT3-0; bits 5-4: a keypad in the right, left port
     kPaddlePos = 0x30,   // 4 bytes: paddle i's knob in bits 8i+7:8i
     // With a display (a2600_sys's VIDEO):
     kVideo = 0x34,       // bit 0 keep pace with the display; write bit 1 to take the video CRC
@@ -56,6 +56,7 @@ enum Reg : uint32_t {
     kCartRom = 0x52,     // read-only: the board's room for ROM, log2
     kInputOn = 0x54,     // bit 0: the input player sets the pins (2C-2E) from its script
     kInputLen = 0x55,    // entries in the script
+    kKeys = 0x58,        // 3 bytes: the keypads' keys down, the left's in bits 11-0
 };
 
 enum Status : uint8_t { kStopped = 1, kRunning = 2, kCrcValid = 4, kBusy = 8, kVideoCrcValid = 16 };
@@ -111,7 +112,8 @@ public:
     // board has room for gives kNoRoom.
     std::optional<std::string> load(const std::vector<uint8_t>& rom, Cart cart = {});
     static constexpr const char* kNoRoom = "the board has no room for this cartridge";
-    void set_paddles(const Paddles& p);
+    // The paddles, and keypads (Keypads' bits) with no key down.
+    void set_paddles(const Paddles& p, unsigned keypads = 0);
     // The pins, set now (kNoInput's layout), with the input player off.
     void set_pins(uint16_t pins);
     // The input player: plays `script` from reset (frames in order, one entry a frame at most), or
@@ -156,6 +158,10 @@ struct Golden {
 std::vector<Golden> load_golden(const std::string& file);
 // harness/golden/a2600_paddles.txt: the paddles Stella plugs in for each cartridge listed.
 std::map<std::string, Paddles> load_paddles(const std::string& file);
+// harness/golden/a2600_keypads.txt: the keypads Stella plugs in for each cartridge listed, as bits:
+// kLeftKeypad, kRightKeypad.
+inline constexpr unsigned kLeftKeypad = 1, kRightKeypad = 2;
+std::map<std::string, unsigned> load_keypads(const std::string& file);
 // harness/golden/a2600_audio_crc32.txt: each cartridge's samples and their CRC.
 struct AudioGolden {
     uint32_t samples = 0;
@@ -166,12 +172,12 @@ std::map<std::string, AudioGolden> load_audio(const std::string& file);
 // A cartridge run from power-up until `frames` frames have ended. Passes when frame `frames`'s CRC
 // is `crc`, and, given `audio`, the CRC of its first samples is audio->crc. The result's CRC32 is
 // the frame's, its audio CRC32 the sound's. `input` is played from reset; without one, nothing is
-// pressed (kNoInput).
+// pressed (kNoInput). `keypads` (kLeftKeypad, kRightKeypad) are plugged in, no key down.
 TestResult cart_test(Link& link, const std::string& name, const std::vector<uint8_t>& rom, uint32_t frames,
                      uint32_t crc, const Paddles& paddles = kNoPaddles,
                      std::optional<AudioGolden> audio = std::nullopt,
                      std::optional<uint32_t> build_id = std::nullopt, Cart cart = {},
-                     const std::vector<InputEntry>& input = {});
+                     const std::vector<InputEntry>& input = {}, unsigned keypads = 0);
 
 // The cartridge on HDMI: runs it, keeping pace with the display, to frame `frames` and returns the
 // video CRC of the display frame that shows it (the frame a2600_frames_crc32.txt's CRC is of).
@@ -180,6 +186,6 @@ TestResult cart_test(Link& link, const std::string& name, const std::vector<uint
 TestResult hdmi_test(Link& link, const std::string& name, const std::vector<uint8_t>& rom, uint32_t frames,
                      uint32_t crc, const Paddles& paddles = kNoPaddles,
                      std::optional<uint32_t> build_id = std::nullopt, Cart cart = {},
-                     const std::vector<InputEntry>& input = {});
+                     const std::vector<InputEntry>& input = {}, unsigned keypads = 0);
 
 } // namespace rig::a2600

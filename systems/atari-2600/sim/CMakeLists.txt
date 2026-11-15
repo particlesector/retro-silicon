@@ -6,7 +6,8 @@ target_link_libraries(a2600_frames_test PRIVATE ZLIB::ZLIB)
 target_compile_definitions(a2600_frames_test PRIVATE RS_TESTROMS="${RS_TESTROMS}"
     RS_A2600_GOLDEN="${PROJECT_SOURCE_DIR}/harness/golden/a2600_frames_crc32.txt"
     RS_A2600_AUDIO_GOLDEN="${PROJECT_SOURCE_DIR}/harness/golden/a2600_audio_crc32.txt"
-    RS_A2600_PADDLES="${PROJECT_SOURCE_DIR}/harness/golden/a2600_paddles.txt")
+    RS_A2600_PADDLES="${PROJECT_SOURCE_DIR}/harness/golden/a2600_paddles.txt"
+    RS_A2600_KEYPADS="${PROJECT_SOURCE_DIR}/harness/golden/a2600_keypads.txt")
 
 # The same test with the TIA's score-mode glitch on, against harness/golden/a2600_score_glitch_crc32.txt.
 rs_sim_test(a2600_score_glitch_test SOURCES a2600_frames_test.cpp PREFIX "score glitch: ")
@@ -15,7 +16,8 @@ target_link_libraries(a2600_score_glitch_test PRIVATE ZLIB::ZLIB)
 target_compile_definitions(a2600_score_glitch_test PRIVATE RS_TESTROMS="${RS_TESTROMS}"
     RS_A2600_GOLDEN="${PROJECT_SOURCE_DIR}/harness/golden/a2600_score_glitch_crc32.txt"
     RS_A2600_AUDIO_GOLDEN="${PROJECT_SOURCE_DIR}/harness/golden/a2600_audio_crc32.txt"
-    RS_A2600_PADDLES="${PROJECT_SOURCE_DIR}/harness/golden/a2600_paddles.txt")
+    RS_A2600_PADDLES="${PROJECT_SOURCE_DIR}/harness/golden/a2600_paddles.txt"
+    RS_A2600_KEYPADS="${PROJECT_SOURCE_DIR}/harness/golden/a2600_keypads.txt")
 
 # a2600_frame against the frame manager's model (frame_cutter.hpp).
 rs_sim_test(a2600_frame_test SOURCES a2600_frame_test.cpp)

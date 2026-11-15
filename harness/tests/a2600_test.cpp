@@ -29,6 +29,7 @@ void matches_stella(const std::string& id,
                     const std::function<std::unique_ptr<rig::SimLink>()>& make = rig::make_a2600_sim,
                     const std::vector<std::string>& before = {}) {
     const auto paddles = rig::a2600::load_paddles(RS_A2600_PADDLES);
+    const auto keypads = rig::a2600::load_keypads(RS_A2600_KEYPADS);
     const auto sounds = rig::a2600::load_audio(RS_A2600_AUDIO_GOLDEN);
     const char* roms = std::getenv("RS_TESTROMS");
     const auto golden = rig::a2600::load_golden(RS_A2600_GOLDEN);
@@ -51,10 +52,11 @@ void matches_stella(const std::string& id,
         if (!link) link = make();
         const auto p = paddles.find(g.id);
         const auto s = sounds.find(g.id);
+        const auto k = keypads.find(g.id);
         auto r = rig::a2600::cart_test(*link, g.id, rom, g.frames, g.crc,
                                        p == paddles.end() ? rig::a2600::kNoPaddles : p->second,
                                        s == sounds.end() ? std::nullopt : std::make_optional(s->second),
-                                       RS_A2600_BUILD_ID, *cart, g.input);
+                                       RS_A2600_BUILD_ID, *cart, g.input, k == keypads.end() ? 0u : k->second);
         INFO(g.id << ": " << r.detail << " (" << r.notes << ")");
         CHECK(r.passed);
         break;
@@ -65,7 +67,7 @@ void matches_stella(const std::string& id,
 
 const std::vector<std::string> kCarts = {
     "tia_colours", "riot_ram", "riot_timer", "tia_playfield", "tia_players", "tia_missiles_ball",
-    "tia_hmove", "tia_collisions", "tia_rsync", "tia_resmp", "tia_audio", "tia_audio_rsync", "tia_paddles", "riot_inputs",
+    "tia_hmove", "tia_collisions", "tia_rsync", "tia_resmp", "tia_audio", "tia_audio_rsync", "tia_paddles", "tia_keypad", "riot_inputs",
     "riot_power_up",
     "bank_f8", "bank_f6", "bank_f4", "bank_f8sc", "bank_f6sc", "bank_f4sc", "bank_fa", "bank_f0",
     "bank_fe", "bank_e0", "bank_3f", "bank_e7", "bank_cv",
@@ -103,6 +105,7 @@ MATCHES_STELLA("tia_resmp")
 MATCHES_STELLA("tia_audio")
 MATCHES_STELLA("tia_audio_rsync")
 MATCHES_STELLA("tia_paddles")
+MATCHES_STELLA("tia_keypad")
 MATCHES_STELLA("riot_inputs")
 MATCHES_STELLA("riot_power_up")
 
@@ -166,6 +169,7 @@ MATCHES_STELLA_CONSOLE("tia_resmp")
 MATCHES_STELLA_CONSOLE("tia_audio")
 MATCHES_STELLA_CONSOLE("tia_audio_rsync")
 MATCHES_STELLA_CONSOLE("tia_paddles")
+MATCHES_STELLA_CONSOLE("tia_keypad")
 MATCHES_STELLA_CONSOLE("riot_inputs")
 MATCHES_STELLA_CONSOLE("riot_power_up")
 MATCHES_STELLA_CONSOLE("bank_f8")
@@ -195,6 +199,7 @@ MATCHES_STELLA_PYNQ("tia_resmp")
 MATCHES_STELLA_PYNQ("tia_audio")
 MATCHES_STELLA_PYNQ("tia_audio_rsync")
 MATCHES_STELLA_PYNQ("tia_paddles")
+MATCHES_STELLA_PYNQ("tia_keypad")
 MATCHES_STELLA_PYNQ("riot_inputs")
 MATCHES_STELLA_PYNQ("riot_power_up")
 MATCHES_STELLA_PYNQ("bank_f8")

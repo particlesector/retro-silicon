@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 // paddles: each colour clock's `hi` against the paddle circuit's equations as Stella 7.0 has them,
 // computed here in double precision, across positions, full and partial dumps, unplugged paddles,
-// and the save-state port.
+// keypads' columns, and the save-state port.
 #include <catch2/catch_test_macros.hpp>
 
 #include <array>
@@ -14,7 +14,7 @@
 
 namespace {
 
-constexpr double kR0 = 1.8e3, kC = 68e-9, kRPot = 1e6, kRDump = 50;
+constexpr double kR0 = 1.8e3, kC = 68e-9, kRPot = 1e6, kRDump = 50, kRKeypad = 4.7e3;
 constexpr double kF = 60.0 * 228 * 262;
 
 // The fraction of the way to its target a capacitor goes in a colour clock through r ohm.
@@ -25,10 +25,17 @@ struct Model {
     std::array<double, 4> u{};
     std::array<int, 4> pos{};
     std::array<bool, 4> on{};
+    std::array<int, 4> kp{};  // a keypad's column: 1 no key down, 2 to 5 V, 3 to ground
     void cc(bool dump) {
         for (int i = 0; i < 4; i++) {
             if (dump)
                 u[i] -= u[i] * step(kRDump);
+            else if (kp[i] == 1)
+                u[i] += (1 - u[i]) * step(kRKeypad + kR0);
+            else if (kp[i] == 2)
+                u[i] += (1 - u[i]) * step(kR0);
+            else if (kp[i] == 3)
+                u[i] -= u[i] * step(kR0);
             else if (on[i])
                 u[i] += (1 - u[i]) * step(kRPot * pos[i] / 256 + kR0);
         }
@@ -48,6 +55,7 @@ struct Bench {
         m.dump = 0;
         m.on = 0;
         m.pos = 0;
+        m.kp = 0;
         m.st_addr = 0;
         m.st_we = 0;
         m.st_wdata = 0;
@@ -71,11 +79,19 @@ struct Bench {
         m.on = (m.on & ~(1u << i)) | (on ? 1u << i : 0u);
         m.pos = (m.pos & ~(0xFFu << 8 * i)) | uint32_t(pos) << 8 * i;
     }
+    // Input i's keypad column, from the next colour clock run() steps.
+    uint8_t kp_next = 0;
+    void keypad(int i, int mode) {
+        model.kp[i] = mode;
+        kp_next = uint8_t((kp_next & ~(3u << 2 * i)) | unsigned(mode) << 2 * i);
+    }
     // n colour clocks, a colour clock every 6 clocks (the least it takes), checking `hi` after each:
-    // `dump` changes with the colour clock edge, as the TIA's register does.
+    // `dump` changes with the colour clock edge, as the TIA's register does, and the keypads'
+    // columns from it (`kp` shows them on the colour clock, as the RIOT's next port A does).
     void run(long n, bool dump) {
         for (long k = 0; k < n; k++) {
             m.cc = 1;
+            m.kp = kp_next;
             clock();
             m.dump = dump;
             m.cc = 0;
@@ -129,6 +145,33 @@ TEST_CASE("paddles: partial dumps, position changes and unplugged paddles follow
         b.run(4, true);
         b.run(rng() % 40, true);
         b.run(rng() % (round % 3 == 0 ? 60000 : 3000), false);
+    }
+    INFO("colour clocks " << b.ccs);
+    CHECK(b.wrong == 0);
+    CHECK(b.close == 0);
+}
+
+TEST_CASE("paddles: keypads' columns charge, connect and ground as Stella's equations do") {
+    // A column with no key down, from empty: 4.7 kohm and 1.8 kohm cross the threshold after
+    // Stella's 560.7 colour clocks.
+    Bench<Vpaddles> m;
+    m.keypad(0, 1);
+    m.run(400, true);
+    m.run(560, false);
+    CHECK((m.m.hi & 1) == 0);
+    m.run(1, false);
+    CHECK((m.m.hi & 1) == 1);
+    CHECK(m.wrong == 0);
+
+    // Random columns (and paddles beside them), changed with the colour clock, dumped or not.
+    Bench<Vpaddles> b;
+    std::mt19937 rng(6532);
+    for (int i = 0; i < 4; i++) b.set(i, true, 100);
+    b.clocks(8);
+    for (int round = 0; round < 400; round++) {
+        for (int i = 0; i < 4; i++) b.keypad(i, rng() % 5 == 0 ? 0 : 1 + rng() % 3);
+        const bool dump = rng() % 4 == 0;
+        b.run(1 + rng() % (round % 5 == 0 ? 3000 : 300), dump);
     }
     INFO("colour clocks " << b.ccs);
     CHECK(b.wrong == 0);

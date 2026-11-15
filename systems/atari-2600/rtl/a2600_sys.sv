@@ -79,13 +79,15 @@ module a2600_sys #(
     logic [31:0] audio_limit;     // 28
     logic [7:0]  joy, switches;   // 2C, 2D
     logic [1:0]  fire_n;          // 2E
-    logic [3:0]  paddle_on;       // 2F
+    logic [3:0]  paddle_on;       // 2F: bits 3-0
+    logic [1:0]  keypad_on;       //     bits 5-4
     logic [31:0] paddle_pos;      // 30
     logic [3:0]  cart_scheme;     // 50: a2600_cart's scheme
     logic        cart_sc;         //     bit 4: the Superchip's RAM
     logic [4:0]  cart_size;       // 51: the ROM's size, log2
     logic        in_on;           // 54: bit 0, the input player sets the pins (2C-2E)
     logic [6:0]  in_len;          // 55: entries in the input script
+    logic [23:0] keys;            // 58: the keypads' keys down
 
     wire rst = por_rst || ctrl[1];
 
@@ -117,7 +119,7 @@ module a2600_sys #(
     atari2600 #(.TIA_SCORE_GLITCH(TIA_SCORE_GLITCH)) u_sys (
         .clk, .rst, .cc,
         .cart_addr, .cart_sel, .cart_we, .cart_wdata, .cart_data,
-        .joy, .switches, .fire_n, .paddle_on, .paddle_pos,
+        .joy, .switches, .fire_n, .paddle_on, .paddle_pos, .keypad_on, .keys,
         .pix, .pix_on, .pix_x, .line_end, .vsync, .vblank, .aud0, .aud1, .aud_tick,
         .cpu_sync, .cpu_pc, .bus_ce, .bus_addr, .bus_we, .bus_data, .bus_stall);
 
@@ -316,7 +318,7 @@ module a2600_sys #(
             5'h08: reg_q = byte_of(audio_crc, r[1:0]);
             5'h09: reg_q = byte_of(samples, r[1:0]);
             5'h0A: reg_q = byte_of(audio_limit, r[1:0]);
-            5'h0B: reg_q = byte_of({4'd0, paddle_on, 6'd0, fire_n, switches, joy}, r[1:0]);
+            5'h0B: reg_q = byte_of({2'd0, keypad_on, paddle_on, 6'd0, fire_n, switches, joy}, r[1:0]);
             5'h0C: reg_q = byte_of(paddle_pos, r[1:0]);
             5'h0D: reg_q = byte_of({15'd0, vcap_ok, 14'd0, vcap_armed, vid_pace}, r[1:0]);
             5'h0E: reg_q = byte_of(vcap_frame, r[1:0]);
@@ -327,6 +329,7 @@ module a2600_sys #(
             5'h13: reg_q = byte_of(pcm_n, r[1:0]);
             5'h14: reg_q = byte_of({7'd0, ROM_EXT, 8'(ROM_LOG2), 3'd0, cart_size, 3'd0, cart_sc, cart_scheme}, r[1:0]);
             5'h15: reg_q = byte_of({16'd0, 1'b0, in_len, 7'd0, in_on}, r[1:0]);
+            5'h16: reg_q = byte_of({8'd0, keys}, r[1:0]);
             default: ;
         endcase
     end
@@ -347,7 +350,9 @@ module a2600_sys #(
             switches    <= 8'hFF;
             fire_n      <= 2'b11;
             paddle_on   <= '0;
+            keypad_on   <= '0;
             paddle_pos  <= '0;
+            keys        <= '0;
             vid_pace    <= 1'b0;
             vcap_frame  <= '0;
             cart_scheme <= '0;
@@ -386,7 +391,7 @@ module a2600_sys #(
                                   2'd0: joy       <= s_wdata;
                                   2'd1: switches  <= s_wdata;
                                   2'd2: fire_n    <= s_wdata[1:0];
-                                  2'd3: paddle_on <= s_wdata[3:0];
+                                  2'd3: {keypad_on, paddle_on} <= s_wdata[5:0];
                               endcase
                         5'h0C: paddle_pos <= set_byte(paddle_pos, r[1:0], s_wdata);
                         5'h14: case (r[1:0])
@@ -399,6 +404,7 @@ module a2600_sys #(
                                   2'd1: in_len <= s_wdata[6:0];
                                   default: ;
                               endcase
+                        5'h16: if (r[1:0] != 2'd3) keys <= 24'(set_byte({8'd0, keys}, r[1:0], s_wdata));
                         default: ;
                     endcase
             end

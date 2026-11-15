@@ -4,7 +4,9 @@
 // `pos`'s charge rate (a pot of pos / 256 Mohm, 1.8 kohm and 68 nF), a block
 // RAM ROM whose address is taken on the falling edge (on the GW2AR-18 a block
 // RAM's address needs more hold than a short path from a register gives), read
-// on the rising edge after; `dump_rate` is the dump's (50 ohm), and `uth` the
+// on the rising edge after; `dump_rate` is the dump's (50 ohm), `kp_rate` a
+// keypad column's with no key down (4.7 kohm and 1.8 kohm), `r0_rate` the
+// console's 1.8 kohm alone (a key down: to 5 V or to ground), and `uth` the
 // TIA's threshold as a 40-bit fraction of 5 V. A rate is {s[4:0], m[23:0]}:
 // m * 2^-(24 + s) of the way to its target each colour clock.
 module paddles_rate (
@@ -12,6 +14,8 @@ module paddles_rate (
     input  logic [7:0]  pos,
     output logic [28:0] rate,
     output logic [28:0] dump_rate,
+    output logic [28:0] kp_rate,
+    output logic [28:0] r0_rate,
     output logic [39:0] uth
 );
     logic [7:0]  ix;
@@ -282,5 +286,7 @@ module paddles_rate (
 
     assign rate      = {q[27:23], 1'b1, q[22:0]};
     assign dump_rate = 29'h03a15959;
+    assign kp_rate   = 29'h0aa56c07;
+    assign r0_rate   = 29'h0895375f;
     assign uth       = 40'h4c4ded9855;
 endmodule
