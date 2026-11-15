@@ -2,3 +2,4 @@ build/
 *.fs
 *.vcd
 *.fst
+__pycache__/
