@@ -65,7 +65,7 @@ void matches_stella(const std::string& id,
 
 const std::vector<std::string> kCarts = {
     "tia_colours", "riot_ram", "riot_timer", "tia_playfield", "tia_players", "tia_missiles_ball",
-    "tia_hmove", "tia_collisions", "tia_rsync", "tia_resmp", "tia_audio", "tia_paddles", "riot_inputs",
+    "tia_hmove", "tia_collisions", "tia_rsync", "tia_resmp", "tia_audio", "tia_audio_rsync", "tia_paddles", "riot_inputs",
     "riot_power_up",
     "bank_f8", "bank_f6", "bank_f4", "bank_f8sc", "bank_f6sc", "bank_f4sc", "bank_fa", "bank_f0",
     "bank_fe", "bank_e0", "bank_3f", "bank_e7",
@@ -101,6 +101,7 @@ MATCHES_STELLA("tia_collisions")
 MATCHES_STELLA("tia_rsync")
 MATCHES_STELLA("tia_resmp")
 MATCHES_STELLA("tia_audio")
+MATCHES_STELLA("tia_audio_rsync")
 MATCHES_STELLA("tia_paddles")
 MATCHES_STELLA("riot_inputs")
 MATCHES_STELLA("riot_power_up")
@@ -160,6 +161,7 @@ MATCHES_STELLA_CONSOLE("tia_collisions")
 MATCHES_STELLA_CONSOLE("tia_rsync")
 MATCHES_STELLA_CONSOLE("tia_resmp")
 MATCHES_STELLA_CONSOLE("tia_audio")
+MATCHES_STELLA_CONSOLE("tia_audio_rsync")
 MATCHES_STELLA_CONSOLE("tia_paddles")
 MATCHES_STELLA_CONSOLE("riot_inputs")
 MATCHES_STELLA_CONSOLE("riot_power_up")
@@ -187,6 +189,7 @@ MATCHES_STELLA_PYNQ("tia_collisions")
 MATCHES_STELLA_PYNQ("tia_rsync")
 MATCHES_STELLA_PYNQ("tia_resmp")
 MATCHES_STELLA_PYNQ("tia_audio")
+MATCHES_STELLA_PYNQ("tia_audio_rsync")
 MATCHES_STELLA_PYNQ("tia_paddles")
 MATCHES_STELLA_PYNQ("riot_inputs")
 MATCHES_STELLA_PYNQ("riot_power_up")

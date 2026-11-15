@@ -6,8 +6,10 @@
 // clocks since the last sample, a sample at each of the TIA's phase 1 clocks, as Stella takes them),
 // as two little-endian 16-bit words, and the CRC of the first N samples from power-up. Skipped when
 // the cartridges aren't fetched (testroms/fetch.py). A cartridge with an input script (input=F:JJCC,...)
-// gets each entry's pins once frame F - 1 has ended, as a2600_sys's input player sets them; the pins
-// are FF3F (nothing pressed, both difficulties B, colour) until then.
+// gets each entry's pins at the first opcode fetch once frame F - 1 has ended, as a2600_sys's input
+// player sets them; the pins are FF3F (nothing pressed, both difficulties B, colour) until then.
+// RS_A2600_GOLDEN, RS_A2600_AUDIO_GOLDEN and RS_A2600_PADDLES, set, are other lists to run (with
+// RS_TESTROMS their folder).
 #include <catch2/catch_test_macros.hpp>
 #include <zlib.h>
 
@@ -54,6 +56,12 @@ Script parse_input(const std::string& s) {
     return out;
 }
 
+// The list the environment variable `name` names, or `fallback`, the repository's.
+std::ifstream list(const char* name, const char* fallback) {
+    const char* p = std::getenv(name);
+    return std::ifstream(p ? p : fallback);
+}
+
 struct AudioGolden {
     std::string id;
     size_t samples;
@@ -62,7 +70,7 @@ struct AudioGolden {
 
 // harness/golden/a2600_audio_crc32.txt: id, samples, CRC-32 of their sums, path.
 std::vector<AudioGolden> audio_golden() {
-    std::ifstream f(RS_A2600_AUDIO_GOLDEN);
+    std::ifstream f = list("RS_A2600_AUDIO_GOLDEN", RS_A2600_AUDIO_GOLDEN);
     std::vector<AudioGolden> out;
     std::string line;
     while (std::getline(f, line)) {
@@ -81,7 +89,7 @@ std::vector<AudioGolden> audio_golden() {
 // n / 256 Mohm) or - for none. A cartridge not listed has none.
 using Paddles = std::array<int, 4>;
 std::map<std::string, Paddles> paddles_golden() {
-    std::ifstream f(RS_A2600_PADDLES);
+    std::ifstream f = list("RS_A2600_PADDLES", RS_A2600_PADDLES);
     std::map<std::string, Paddles> out;
     std::string line;
     while (std::getline(f, line)) {
@@ -100,7 +108,7 @@ std::map<std::string, Paddles> paddles_golden() {
 }
 
 std::vector<Golden> golden() {
-    std::ifstream f(RS_A2600_GOLDEN);
+    std::ifstream f = list("RS_A2600_GOLDEN", RS_A2600_GOLDEN);
     std::vector<Golden> out;
     std::string line;
     while (std::getline(f, line)) {
@@ -133,7 +141,8 @@ uint32_t run(const std::vector<uint8_t>& rom, int frames, std::vector<uint8_t>& 
     };
     set_pins(0xFF3F);
     size_t next = 0;
-    // The entries due once `cut.frames` frames have ended.
+    // The entries due once `cut.frames` frames have ended, applied at an opcode fetch (as a2600_sys's
+    // input player does: Stella finishes the instruction a frame ends in before it takes input).
     const auto play = [&] {
         for (; next < input.size() && input[next].first <= cut.frames + 1; next++) set_pins(input[next].second);
     };
@@ -160,6 +169,11 @@ uint32_t run(const std::vector<uint8_t>& rom, int frames, std::vector<uint8_t>& 
     std::ofstream trace;
     if (const char* dir = std::getenv("RS_A2600_TRACE"); dir && !dump_name.empty())
         trace.open(std::string(dir) + "/" + dump_name + ".trace");
+    // RS_A2600_BUS=DIR: every CPU access as "<colour clock> <address> R|W <value>" (hex), in <dump_name>.bus,
+    // leaving out the reads WSYNC repeats; as Stella's bus trace (my-fpga-rig) takes them, to diff the two.
+    std::ofstream bus;
+    if (const char* dir = std::getenv("RS_A2600_BUS"); dir && !dump_name.empty())
+        bus.open(std::string(dir) + "/" + dump_name + ".bus");
     uint64_t colour_clock = 0;
     uint32_t sum0 = 0, sum1 = 0;
     std::vector<uint8_t> levels, vsyncs;
@@ -173,6 +187,12 @@ uint32_t run(const std::vector<uint8_t>& rom, int frames, std::vector<uint8_t>& 
         // The access this colour clock ends, as the rising edge will take it.
         if (cc && trace.is_open() && m.bus_ce && m.bus_we && !(m.bus_addr & 0x1080))
             trace << colour_clock << ' ' << (m.bus_addr & 0x3F) << ' ' << int(m.bus_data) << '\n';
+        if (cc && bus.is_open() && m.bus_ce && !m.bus_stall) {
+            char line[32];
+            std::snprintf(line, sizeof line, "%llu %04x %c %02x\n", static_cast<unsigned long long>(colour_clock),
+                          unsigned(m.bus_addr), m.bus_we ? 'W' : 'R', unsigned(m.bus_data));
+            bus << line;
+        }
         m.clk = 1;
         m.eval();
         m.cart_data = rom[m.cart_addr & mask];
@@ -195,7 +215,7 @@ uint32_t run(const std::vector<uint8_t>& rom, int frames, std::vector<uint8_t>& 
         if (m.pix_on) cut.pixel(m.pix_x, m.pix);
         if (m.line_end) cut.line_end();
         cut.vsync(m.vsync);
-        if (cut.frames != before) play();
+        if (m.cpu_sync) play();
         if (cut.frames != before && cut.frames == frames) {
             crc = static_cast<uint32_t>(crc32(crc32(0, nullptr, 0), cut.buffer.data(), cut.buffer.size()));
             if (const char* dir = std::getenv("RS_A2600_DUMP"); dir && !dump_name.empty()) {

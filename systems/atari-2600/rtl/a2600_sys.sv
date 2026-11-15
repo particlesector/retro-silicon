@@ -265,15 +265,18 @@ module a2600_sys #(
     // {frame[15:0], SWCHA's pins, SWCHB's pins with the fire buttons' (INPT4, INPT5) in bits 4-5} in
     // frame order, played from reset: an entry applies once frame - 1 frames have ended, so its pins
     // hold from the start of the frame it names, as Stella takes its input before running a frame.
-    // `frames` changes only at a frame's end, and an entry applies on the clock after, before the next
-    // colour clock (at least 7 clocks on), so a run's input is the same on any board and in the sim.
+    // Stella runs whole instructions, so the frame's end lets the instruction it falls in finish
+    // first: an entry applies at the next opcode fetch (`cpu_sync`), which reads no pins. `frames`
+    // changes only at a frame's end and `cpu_sync` only as a cycle ends, and an entry applies on the
+    // clock after, before the next colour clock (at least 7 clocks on), so a run's input is the same
+    // on any board and in the sim.
     // The script is in logic, read without a clock: the GW2AR-18's block RAM wants its address held
     // longer than a register's short path gives (systems/nes's script takes it on the falling edge).
     logic [31:0] script[64];
     logic [23:0] in_stage;
     logic [5:0]  in_idx;
     wire  [31:0] in_ent = script[in_idx];
-    wire         in_due = in_on && {1'b0, in_idx} < in_len && {16'd0, in_ent[31:16]} <= frames + 32'd1;
+    wire         in_due = in_on && cpu_sync && {1'b0, in_idx} < in_len && {16'd0, in_ent[31:16]} <= frames + 32'd1;
     wire         sh_in  = s_req && !s_ack && s_we && s_addr[31:24] == 8'h07 && s_addr[23:8] == '0;
 
     always_ff @(posedge clk) begin
@@ -419,5 +422,5 @@ module a2600_sys #(
         end
     assign led = ~{beat[24], at_limit, running, 1'b0, stalled, bad_frame};
 
-    wire unused = &{1'b0, cart_addr, cart_sel, cart_we, cart_wdata, vblank, cpu_sync, cpu_pc};
+    wire unused = &{1'b0, cart_addr, cart_sel, cart_we, cart_wdata, vblank, cpu_pc};
 endmodule
