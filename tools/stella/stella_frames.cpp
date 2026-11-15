@@ -74,6 +74,13 @@ constexpr unsigned kBarsFirstLine = 37 - 23;
 
 std::vector<uint32_t> g_frame;
 bool g_got_frame = false;
+// Phosphor blending off: Stella 7.0's core applies stella_phosphor only when it changes after the game
+// is loaded (set before, it's stored but never reaches the TIA surface), so a cartridge whose entry in
+// Stella's database turns phosphor on (flicker games, such as Asteroids) would keep blending. So the
+// option says "auto" until the game is loaded, then "off", and the core is told the options changed
+// once, which it reads at the start of its next retro_run, before the frame.
+bool g_loaded = false;
+bool g_options_sent = false;
 
 bool environment(unsigned cmd, void* data) {
     switch (cmd) {
@@ -82,12 +89,19 @@ bool environment(unsigned cmd, void* data) {
         static const std::map<std::string, const char*> kOptions = {
             {"stella_console", "ntsc"},       {"stella_palette", "standard"},
             {"stella_filter", "disabled"},    {"stella_crop_hoverscan", "disabled"},
-            {"stella_phosphor", "off"},
         };
+        if (std::string(var->key) == "stella_phosphor") {
+            var->value = g_loaded ? "off" : "auto";
+            return true;
+        }
         auto it = kOptions.find(var->key);
         var->value = it == kOptions.end() ? nullptr : it->second;
         return it != kOptions.end();
     }
+    case RETRO_ENVIRONMENT_GET_VARIABLE_UPDATE:
+        *static_cast<bool*>(data) = g_loaded && !g_options_sent;
+        if (g_loaded) g_options_sent = true;
+        return true;
     case RETRO_ENVIRONMENT_SET_PIXEL_FORMAT:
         return *static_cast<const retro_pixel_format*>(data) == RETRO_PIXEL_FORMAT_XRGB8888;
     default:
@@ -188,6 +202,7 @@ struct Core {
             std::fprintf(stderr, "stella-frames: the core didn't load %s\n", name.c_str());
             std::exit(2);
         }
+        g_loaded = true;
     }
 
     void frame() {
