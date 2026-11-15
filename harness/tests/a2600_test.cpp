@@ -68,7 +68,7 @@ const std::vector<std::string> kCarts = {
     "tia_hmove", "tia_collisions", "tia_rsync", "tia_resmp", "tia_audio", "tia_audio_rsync", "tia_paddles", "riot_inputs",
     "riot_power_up",
     "bank_f8", "bank_f6", "bank_f4", "bank_f8sc", "bank_f6sc", "bank_f4sc", "bank_fa", "bank_f0",
-    "bank_fe", "bank_e0", "bank_3f", "bank_e7",
+    "bank_fe", "bank_e0", "bank_3f", "bank_e7", "bank_cv",
 };
 
 } // namespace
@@ -123,6 +123,7 @@ MATCHES_STELLA("bank_fe")
 MATCHES_STELLA("bank_e0")
 MATCHES_STELLA("bank_3f")
 MATCHES_STELLA("bank_e7")
+MATCHES_STELLA("bank_cv")
 
 MATCHES_STELLA_SDRAM("bank_f8")
 MATCHES_STELLA_SDRAM("bank_f6")
@@ -136,6 +137,7 @@ MATCHES_STELLA_SDRAM("bank_fe")
 MATCHES_STELLA_SDRAM("bank_e0")
 MATCHES_STELLA_SDRAM("bank_3f")
 MATCHES_STELLA_SDRAM("bank_e7")
+MATCHES_STELLA_SDRAM("bank_cv")
 
 MATCHES_STELLA_SDRAM_WAIT("bank_f8")
 MATCHES_STELLA_SDRAM_WAIT("bank_f6")
@@ -149,6 +151,7 @@ MATCHES_STELLA_SDRAM_WAIT("bank_fe")
 MATCHES_STELLA_SDRAM_WAIT("bank_e0")
 MATCHES_STELLA_SDRAM_WAIT("bank_3f")
 MATCHES_STELLA_SDRAM_WAIT("bank_e7")
+MATCHES_STELLA_SDRAM_WAIT("bank_cv")
 
 MATCHES_STELLA_CONSOLE("tia_colours")
 MATCHES_STELLA_CONSOLE("riot_ram")
@@ -177,6 +180,7 @@ MATCHES_STELLA_CONSOLE("bank_fe")
 MATCHES_STELLA_CONSOLE("bank_e0")
 MATCHES_STELLA_CONSOLE("bank_3f")
 MATCHES_STELLA_CONSOLE("bank_e7")
+MATCHES_STELLA_CONSOLE("bank_cv")
 
 MATCHES_STELLA_PYNQ("tia_colours")
 MATCHES_STELLA_PYNQ("riot_ram")
@@ -205,6 +209,7 @@ MATCHES_STELLA_PYNQ("bank_fe")
 MATCHES_STELLA_PYNQ("bank_e0")
 MATCHES_STELLA_PYNQ("bank_3f")
 MATCHES_STELLA_PYNQ("bank_e7")
+MATCHES_STELLA_PYNQ("bank_cv")
 
 TEST_CASE("a2600_sys: every cartridge of a2600_frames_crc32.txt has its test case") {
     std::vector<std::string> ids;

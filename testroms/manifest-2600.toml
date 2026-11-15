@@ -338,3 +338,14 @@ covers = "E7 (M Network, 16 KB): each 2 KB slice at $1000, the 1 KB RAM there, t
 check = "frame"
 frames = 10
 stella = "40 40-46 00 00 00 43 7d 00 b0-b3 c0-c3 00"
+
+[[rom]]
+id = "bank_cv"
+source = "a2600-carts"
+path = "bank_cv.CV"
+sha256 = "798d869740e718a43702e3b26cd25a518ea0967a2bcdd49ad57d759290e10dbd"
+needs = "cpu, tia, bank switching"
+covers = "CV (CommaVid, 2 KB of ROM): the 1 KB of RAM on the cartridge, read at $1000-$13FF and written at $1400-$17FF, its start as 0s, and the ROM at $1800"
+check = "frame"
+frames = 10
+stella = "00 00 5a a5 78 00"

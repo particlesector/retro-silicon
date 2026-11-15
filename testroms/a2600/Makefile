@@ -5,7 +5,7 @@ CARTS := $(patsubst %.s,%.bin,$(filter-out bank_%.s,$(wildcard *.s)))
 # The bank-switching cartridges, each named for its scheme (Stella takes the scheme from the
 # extension): bank_f.s once per 4 KB bank (-D BANK=k), the banks joined in order.
 BANKED := bank_f8.F8 bank_f6.F6 bank_f4.F4 bank_f8sc.F8SC bank_f6sc.F6SC bank_f4sc.F4SC \
-          bank_fa.FA bank_f0.F0 bank_fe.FE bank_e0.E0 bank_3f.3F bank_e7.E7
+          bank_fa.FA bank_f0.F0 bank_fe.FE bank_e0.E0 bank_3f.3F bank_e7.E7 bank_cv.CV
 
 DEFS_bank_f8.F8     := -D NB=2 -D HOT=65528
 DEFS_bank_f6.F6     := -D NB=4 -D HOT=65526
@@ -36,6 +36,11 @@ bank_f8.F8 bank_f6.F6 bank_f4.F4 bank_f8sc.F8SC bank_f6sc.F6SC bank_f4sc.F4SC ba
 	done
 	cat $@.part* > $@
 	rm -f $@.part* $@.o
+
+# CV: 2 KB of ROM at $F800 (the cartridge's RAM is below it).
+bank_cv.CV: bank_cv.s vcs.inc show.inc cart2k.cfg
+	ca65 -o $@.o bank_cv.s && ld65 -C cart2k.cfg -o $@ $@.o
+	rm -f $@.o
 
 # FE: two 4 KB banks, bank 0 at $F000 and bank 1 at $D000.
 bank_fe.FE: bank_fe.s vcs.inc show.inc fe.cfg

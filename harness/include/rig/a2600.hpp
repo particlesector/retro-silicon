@@ -89,7 +89,7 @@ struct InputEntry {
 std::vector<InputEntry> parse_input(const std::string& text);
 
 // The bank-switching schemes a2600_cart has (its README), as register 50 takes them.
-enum class Scheme : uint8_t { k4K = 0, F8, F6, F4, FE, E0, F3F, FA, E7, F0 };
+enum class Scheme : uint8_t { k4K = 0, F8, F6, F4, FE, E0, F3F, FA, E7, F0, CV };
 
 // A cartridge's scheme: Stella's name for it ("F8", "F8SC", "3F", ...; "2K" and "4K" unbanked), and
 // whether it has the Superchip's RAM.

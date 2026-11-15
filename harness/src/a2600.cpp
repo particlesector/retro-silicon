@@ -56,6 +56,7 @@ std::optional<Cart> cart_from_name(const std::string& path) {
         {"F8SC", {Scheme::F8, true}}, {"F6SC", {Scheme::F6, true}}, {"F4SC", {Scheme::F4, true}},
         {"FE", {Scheme::FE, false}}, {"E0", {Scheme::E0, false}}, {"3F", {Scheme::F3F, false}},
         {"FA", {Scheme::FA, false}}, {"E7", {Scheme::E7, false}}, {"F0", {Scheme::F0, false}},
+        {"CV", {Scheme::CV, false}},
     };
     auto it = names.find(ext);
     if (it == names.end()) return std::nullopt;
@@ -71,6 +72,8 @@ std::optional<std::string> Console::load(const std::vector<uint8_t>& rom, Cart c
     case Scheme::F4: want_size = 32768; break;
     case Scheme::FA: want_size = 12288; break;
     case Scheme::F0: want_size = 65536; break;
+    // A 4 KB CV image starts its RAM with its first 1 KB, which the system can't load yet.
+    case Scheme::CV: want_size = 2048; break;
     case Scheme::F3F:
         want_size = rom.size();
         if (rom.size() < 2048 || rom.size() > 512 * 1024 || (rom.size() & (rom.size() - 1)))
