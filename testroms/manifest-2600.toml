@@ -313,12 +313,12 @@ stella = "4f, then 40-4f (16 reads, round to bank 15 again), the first 8 reads' 
 id = "bank_fe"
 source = "a2600-carts"
 path = "bank_fe.FE"
-sha256 = "81f20769b8a84720d3dd98511f4cd1ed4ebf4fbeb6338a2ec9e22221487a0cac"
+sha256 = "e0fb8ba442b380b9f9e351b0fa760770f80f56460072793478f2c9c23bb84e4f"
 needs = "cpu, tia, bank switching"
-covers = "FE (Activision, 8 KB): the bank chosen by the access after $01FE, a JSR or RTS with S = $FF, and not by calls with S lower"
+covers = "FE (Activision, 8 KB): the bank chosen by the access after $01FE, a JSR or RTS with S = $FF, and not by calls with S lower, nor by the reset's own read of $01FE (its next access the vector's low byte, not an address's high byte)"
 check = "frame"
 frames = 10
-stella = "40 41 40 40 40 41 41"
+stella = "40 41 40 40 40 41 41 00"
 
 [[rom]]
 id = "bank_e0"

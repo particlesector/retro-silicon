@@ -7,6 +7,7 @@
 #include "Va2600_ext_wait_sim.h"
 #include "Va2600_hdmi_sim.h"
 #include "Va2600_sim.h"
+#include "Va2600_sim___024root.h"
 #include "Vshell_ram_sim.h"
 #include "Vnes_axi_sim.h"
 #include "Vnes_ext_sim.h"
@@ -21,6 +22,11 @@
 #include "axi_memory_model.hpp"
 #include "sdram_model.hpp"
 #include "Vuart_echo_sim.h"
+
+#include <cstdio>
+#include <cstdlib>
+#include <fstream>
+#include <string>
 
 namespace rig {
 
@@ -264,10 +270,63 @@ private:
     std::function<void(uint32_t)> on_symbol_;
 };
 
+// a2600_sys, and with RS_A2600_BUS naming a folder, every CPU access of each run out of reset in
+// <folder>/run<k>.bus (k from 1), as systems/atari-2600's a2600_frames_test writes its RS_A2600_BUS
+// trace: "<colour clock> <address> R|W <value>" (hex), the colour clocks counted from the run's
+// first, the reads WSYNC repeats left out. To diff a banked cartridge against Stella's bus trace.
+class A2600Traced : public SimModel {
+public:
+    A2600Traced() {
+        if (const char* d = std::getenv("RS_A2600_BUS")) dir_ = d;
+    }
+
+    bool tick(bool rx) override {
+        m_.uart_rx = rx;
+        m_.clk = 0;
+        m_.eval();
+        if (!dir_.empty()) trace();
+        m_.clk = 1;
+        m_.eval();
+        return m_.uart_tx;
+    }
+
+private:
+    // The access the rising edge takes, as a2600_frames_test reads it.
+    void trace() {
+        const auto* r = m_.rootp;
+        if (r->a2600_sys__DOT__rst) {
+            out_.close();
+            in_reset_ = true;
+            return;
+        }
+        if (in_reset_) {
+            in_reset_ = false;
+            out_.open(dir_ + "/run" + std::to_string(++runs_) + ".bus");
+            colour_clock_ = 0;
+        }
+        if (!r->a2600_sys__DOT__cc) return;
+        if (r->a2600_sys__DOT__bus_ce && !r->a2600_sys__DOT__bus_stall) {
+            char line[40];
+            std::snprintf(line, sizeof line, "%llu %04x %c %02x\n", static_cast<unsigned long long>(colour_clock_),
+                          unsigned(r->a2600_sys__DOT__bus_addr), r->a2600_sys__DOT__bus_we ? 'W' : 'R',
+                          unsigned(r->a2600_sys__DOT__bus_data));
+            out_ << line;
+        }
+        ++colour_clock_;
+    }
+
+    Va2600_sim m_;
+    std::string dir_;
+    std::ofstream out_;
+    bool in_reset_ = true;
+    int runs_ = 0;
+    unsigned long long colour_clock_ = 0;
+};
+
 } // namespace
 
 std::unique_ptr<SimLink> make_a2600_sim() {
-    return std::make_unique<SimLink>(std::make_unique<Verilated<Va2600_sim>>());
+    return std::make_unique<SimLink>(std::make_unique<A2600Traced>());
 }
 
 std::unique_ptr<SimLink> make_a2600_hdmi_sim(std::function<void(uint32_t)> on_symbol) {

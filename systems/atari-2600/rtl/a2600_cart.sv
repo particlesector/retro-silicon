@@ -14,9 +14,11 @@
 //   1  F8: 8 KB, 4 KB banks; $1FF8, $1FF9 select bank 0, 1. Starts in bank 1
 //   2  F6: 16 KB; $1FF6-$1FF9 select bank 0-3. Starts in bank 0
 //   3  F4: 32 KB; $1FF4-$1FFB select bank 0-7. Starts in bank 0
-//   4  FE: 8 KB (Activision); the access after one of $01FE selects bank !D5 of its data. Only
-//      accesses to $01C0-$01FF and the cartridge count (Stella's view), and a read's data is what
-//      the CPU read. Starts in bank 0
+//   4  FE: 8 KB (Activision); the access after one of $01FE selects bank !D5 of its data if that's
+//      an address's high byte, $Fx (bank 0) or $Dx (bank 1): with D7-D5 anything else it stays
+//      (Activision's patent, as Gopher2600 has it; so the reset's own read of $01FE, followed by
+//      the vector's low byte, doesn't switch). Only accesses to $01C0-$01FF and the cartridge
+//      count (Stella's view), and a read's data is what the CPU read. Starts in bank 0
 //   5  E0: 8 KB (Parker Brothers) in 1 KB slices: $1000, $1400 and $1800 show the slices $1FE0-7,
 //      $1FE8-F and $1FF0-7 select; $1C00 always slice 7. Starts with 4, 5, 6
 //   6  3F: up to 512 KB (Tigervision) in 2 KB banks: a write to $0000-$003F selects the bank at
@@ -210,7 +212,7 @@ module a2600_cart #(
             if (scheme == S_3F && we && addr <= 13'h003F)
                 b3f <= data;
             if (scheme == S_FE && fe_sees) begin
-                if (fe_next)
+                if (fe_next && data[7:6] == 2'b11)
                     bank <= {3'd0, !data[5]};
                 fe_next <= !fe_next && addr == 13'h01FE;
             end
