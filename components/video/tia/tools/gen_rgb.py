@@ -1,20 +1,27 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: Apache-2.0
-"""Generate rtl/tia_rgb.sv: the NTSC TIA's 128 colours as 24-bit RGB, by
-modelling its composite signal and decoding it as an NTSC TV would.
+"""Generate rtl/tia_rgb.sv: the NTSC TIA's 128 colours as 24-bit RGB, from a
+model of its composite signal decoded as an NTSC TV does.
 
-A TIA colour is {hue (bits 7-4), luma (bits 3-1)}; bit 0 isn't used. The luma
-picks one of 8 evenly spaced levels. Hue 0 has no chroma (the greys). Hue 1's
-chroma is in phase with the colour burst, and each hue after it comes from a
-tap further down a delay chain, so it lags the one before by the same angle:
-hue 15 is 14 steps on, about a whole turn, which is why it looks like hue 1
-again. The chroma's amplitude is the same for every hue and luma.
+A TIA colour is {hue (bits 7-4), luma (bits 3-1)}; bit 0 isn't used. Hue 0 has
+no chroma: the greys, black to white. The others come from taps along a delay
+chain, each a phase of the colour burst's subcarrier; hue 15 is about a whole
+turn from hue 1, which is why the two look alike.
 
-The TV takes the burst's phase as the -U axis, decodes U and V, and converts
-YUV to RGB. The step, the amplitude and the luma range are set so the hues
-land where a TV shows them (1 gold, 4 red, 8 blue, 11 cyan, 13 green) and the
-lightest colours just reach white; they are this model's settings, not
-measurements, and a console's colour pot moves the step.
+The model, in a TV's gamma-encoded YUV (what an NTSC signal carries):
+  - brightness: luma L (0-7) gives Y = Y_WHITE ((L + LUMA_OFS) / (7 + LUMA_OFS))^LUMA_CURVE
+    for the colours, and Y_GREY (L / 7)^GREY_CURVE for the greys (luma 0 is black);
+  - each hue has its own phase angle in the U-V plane, chroma amplitude and
+    brightness offset (HUES): the delay taps aren't evenly spaced, and the
+    hues don't come out equally bright;
+  - chroma fades as the brightness rises (CHROMA_FADE), as a TV's signal nears
+    its limits, so the light colours are pastel;
+  - YUV to RGB with the standard matrix, clipped.
+Its settings were fitted to Stella 7.0's NTSC palette, which is from
+measurements of real consoles and is the palette most players know (fitted
+settings, not its table: the greys come out within a step of it and the colours
+about 12 of 441, the largest RGB distance, apart on average). A console's colour
+pot turns every hue's angle.
 
 usage: gen_rgb.py [--check] [--png PATH]
   writes the RTL; --check instead fails if the RTL differs from what it would
@@ -26,24 +33,42 @@ import math
 import pathlib
 import zlib
 
-STEP = 360.0 / 14        # degrees between hues: 1 and 15 a whole turn apart
-BURST = 180.0            # the burst's angle in the U-V plane (-U)
-CHROMA = 0.20            # the chroma's amplitude, in U-V units
-Y_BLACK, Y_WHITE = 0.0, 0.92   # luma 0 and 7
-GAMMA = 1.0              # the levels are already a TV's
+GREY_CURVE, Y_GREY = 0.59, 0.920       # the greys
+LUMA_CURVE, Y_WHITE, LUMA_OFS = 0.600, 0.831, 1.094   # the colours' brightness
+CHROMA_FADE = 0.124                    # chroma's loss from luma 0 to luma 7
+HUES = [  # hue 1-15: (phase in degrees, chroma amplitude, brightness offset)
+    (  167.5, 0.253, +0.043),   # 1
+    (  137.0, 0.255, -0.040),   # 2
+    (  122.0, 0.290, -0.045),   # 3
+    (  103.5, 0.335, -0.120),   # 4
+    (   68.5, 0.265, -0.112),   # 5
+    (   39.0, 0.225, -0.135),   # 6
+    (    9.0, 0.210, -0.175),   # 7
+    (  -17.0, 0.247, -0.220),   # 8
+    (  -44.0, 0.238, -0.120),   # 9
+    (  -60.0, 0.230, -0.080),   # 10
+    (  -88.5, 0.228, -0.050),   # 11
+    ( -119.5, 0.223, -0.062),   # 12
+    ( -150.0, 0.155, -0.035),   # 13
+    ( -183.0, 0.158, -0.020),   # 14
+    ( -211.0, 0.210, -0.015),   # 15
+]
 
 
 def rgb(index):
     hue, luma = index >> 3, index & 7
-    y = Y_BLACK + (Y_WHITE - Y_BLACK) * luma / 7
-    u = v = 0.0
-    if hue:
-        a = math.radians(BURST - (hue - 1) * STEP)
-        u, v = CHROMA * math.cos(a), CHROMA * math.sin(a)
+    if hue == 0:
+        y = Y_GREY * (luma / 7) ** GREY_CURVE
+        u = v = 0.0
+    else:
+        angle, chroma, bright = HUES[hue - 1]
+        y = Y_WHITE * ((luma + LUMA_OFS) / (7 + LUMA_OFS)) ** LUMA_CURVE + bright
+        c = chroma * (1 - CHROMA_FADE * luma / 7)
+        u, v = c * math.cos(math.radians(angle)), c * math.sin(math.radians(angle))
     r = y + 1.140 * v
     g = y - 0.395 * u - 0.581 * v
     b = y + 2.032 * u
-    return tuple(round(max(0.0, min(1.0, c)) ** GAMMA * 255) for c in (r, g, b))
+    return tuple(round(max(0.0, min(1.0, c)) * 255) for c in (r, g, b))
 
 
 def sv(colours):

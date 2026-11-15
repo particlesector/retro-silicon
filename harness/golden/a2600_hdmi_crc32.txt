@@ -3,6 +3,6 @@
 # islands' packet symbols as 0). The sim's receiver checks that frame's picture against the golden
 # frame (Stella's, by its CRC), and the sound against the system's samples, before these are
 # trusted; the board must match them.
-tia_colours 30 0xb6b2dc03
-tia_playfield 30 0x8ccb2fcb
-tia_audio 108 0xa36bc25b
+tia_colours 30 0xba8fb44b
+tia_playfield 30 0x91f4b670
+tia_audio 108 0x113a03f9
