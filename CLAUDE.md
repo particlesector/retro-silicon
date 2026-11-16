@@ -6,7 +6,7 @@ Public library of reusable FPGA components for retro systems. Read CONTRIBUTING.
 
 - Build and test: `cmake --preset default && cmake --build --preset default && ctest --preset default`. Tools must be on PATH (OSS CAD Suite; FuseSoC for the FuseSoC lint).
 - One test: `ctest --preset default -R <regex>`; ctest names are the Catch2 test-case names, plus `lint verilator <module>`, `lint yosys <module>` and `fusesoc lint <system>`.
-- Test ROMs: `testroms/fetch.py [--dest DIR]` downloads and checks them; `tools/mesen/check.py --mesen <path> --roms DIR` confirms each passes in MesenCE. Add a ROM to `testroms/manifest.toml` only with its SHA-256 and a result confirmed in MesenCE.
+- Test ROMs: `testroms/fetch.py [--dest DIR]` downloads and checks them; `tools/mesen/check.py --mesen <path> --roms DIR` confirms each passes in MesenCE. Add a ROM to `testroms/manifest.toml` only with its SHA-256 and a result confirmed in MesenCE. The Game Boy's (`testroms/manifest-gb.toml`) are checked and given golden frames by `tools/mesen/gb_frames.py`, through SameBoy's open boot ROMs (built by `fetch.py`, never Nintendo's); a ROM MesenCE gets wrong takes an `override` from a second opinion, applied only while MesenCE still gives the CRC it names.
 - Tang Nano 20K bitstream: `boards/tang-nano-20k/build.sh -t <top> -c <pins.cst> -o <dir> [-g NAME=VALUE]... <sources...>`, or the `<name>_bitstream` CMake targets. A missed timing constraint fails the build; never pass `--timing-allow-fail`.
 
 ## Rules
