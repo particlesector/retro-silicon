@@ -16,6 +16,7 @@ How to read it:
 | `cdc_sync` | `components/common/cdc` | 3759 MHz, 0 LUTs | 3759 MHz, 0 LUTs | — |
 | `clock_enable` | `components/common/clock-enable` | 1550 MHz, 2 LUTs | 2451 MHz, 2 LUTs | 1086 MHz, 2 LUTs |
 | `cpu_6502` | `components/cpu/6502` | 91 MHz, 2705 LUTs | 93 MHz, 2620 LUTs | 83 MHz, 2071 LUTs |
+| `cpu_sm83` | `components/cpu/sm83` | 83 MHz, 3118 LUTs | 91 MHz, 3101 LUTs | 76 MHz, 2217 LUTs |
 | `crc32` | `components/common/crc32` | 420 MHz, 116 LUTs | 447 MHz, 116 LUTs | 374 MHz, 96 LUTs |
 | `fifo` | `components/common/fifo` | 374 MHz, 76 LUTs, 1 BRAM | 404 MHz, 68 LUTs, 1 BRAM | 281 MHz, 63 LUTs, 1 BRAM |
 | `hdmi` | `components/video/hdmi` | 152 MHz, 1573 LUTs | 154 MHz, 1457 LUTs | 116 MHz, 1226 LUTs |

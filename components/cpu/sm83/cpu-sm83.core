@@ -1,0 +1,31 @@
+CAPI=2:
+# SPDX-License-Identifier: Apache-2.0
+name: retro-silicon:cpu:sm83:0.1.0
+description: Sharp SM83, the Game Boy's CPU, exact to the machine cycle
+
+filesets:
+  rtl:
+    files:
+      - rtl/cpu_sm83.sv
+    file_type: systemVerilogSource
+
+targets:
+  # Parameters go on lint only, as in every component core.
+  default: &default
+    filesets: [rtl]
+    toplevel: cpu_sm83
+  lint:
+    <<: *default
+    parameters: [SAVE_STATE]
+    default_tool: verilator
+    tools:
+      verilator:
+        mode: lint-only
+        verilator_options: [-Wall]
+
+parameters:
+  SAVE_STATE:
+    datatype: bool
+    default: true
+    paramtype: vlogparam
+    description: false leaves out the save-state port's logic
