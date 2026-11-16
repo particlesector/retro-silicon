@@ -126,6 +126,7 @@ All notable changes to this project are listed here. The format follows [Keep a 
 
 ### Changed
 
+- `systems/atari-2600`: the README's status: complete on all three boards, with the commercial games, Stella's errors and the known limits.
 - `video/tia`: `tia_rgb`'s colours as people know the 2600's: `tools/gen_rgb.py`'s model now has a TV's brightness curve, each hue's own phase, amplitude and brightness, and chroma fading toward the light colours, its settings fitted to Stella's NTSC palette (greys within a step, colours about 12 of 441 apart on average). The 2600's HDMI video CRCs (`a2600_hdmi_crc32.txt`) change with it.
 - `video/tia`: a player's NUSIZ checks decode the counter's last two values from the counter's register instead of from the count after this colour clock's tick (the PYNQ-Z2's slowest path, the counter into the render count).
 - `audio/apu-2a03`: `apu_mixer` sums the triangle, noise and DMC levels on the rising edge and only copies the sum on the falling edge to its block RAM's address, so the levels' paths get a whole clock instead of half (the Tang Console 138K NES's slowest path); the mix comes a clock later, from the second rising edge after the levels change.
