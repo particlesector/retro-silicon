@@ -1,0 +1,1770 @@
+# SPDX-License-Identifier: Apache-2.0
+# The Game Boy's test ROMs, its boot ROMs and the SM83's per-instruction tests.
+# fetch.py downloads or builds them into a cache and checks them against these
+# SHA-256 sums; they're never committed here.
+#
+# model: the console the ROM runs on, dmg (the Game Boy) or cgb (the Game Boy
+# Color); it powers up through that model's boot ROM.
+# needs: the parts of the console the ROM exercises.
+# check = "serial": blargg's: text over the serial port, ending in "Passed"
+# or "Failed".
+# check = "blargg": blargg's newer ROMs: $80 at cartridge RAM $A000 while
+# running, then the result (0 a pass), valid once $A001-$A003 hold DE B0 61;
+# the text report from $A004.
+# check = "mooneye": Mooneye's: the bytes 3 5 8 13 21 34 over the serial port
+# for a pass (and in B C D E H L at an LD B,B), $42 six times for a failure.
+# check = "frame": no result of its own; the core's frame `frames` must match
+# MesenCE's (tools/mesen/gb_frames.py).
+# frames: for a check with a result, the frame it finishes on in MesenCE
+# (frames ended since power-up, the boot ROM's included); allow at least twice
+# that. gb_frames.py records the frame 30 after it.
+
+[sources.blargg-gb]
+# blargg's Game Boy tests, as built by blargg, in a copy on GitHub (his site
+# is gone).
+url = "https://raw.githubusercontent.com/retrio/gb-test-roms/c240dd7d700e5c0b00a7bbba52b53e4ee67b5f15/"
+
+[sources.mooneye]
+# Gekkio's Mooneye test suite (MIT), as Gekkio builds it from commit 31510e1.
+archive = "https://gekkio.fi/files/mooneye-test-suite/mts-20260714-0944-31510e1/mts-20260714-0944-31510e1.tar.xz"
+sha256 = "6d4fdda2f1d8d2f5f51b0ff3f6f3cc2fbae047aa395a39c82bda3a0e7cbd2641"
+strip = 1
+
+[sources.dmg-acid2]
+# Matt Currie's dmg-acid2 (MIT).
+url = "https://github.com/mattcurrie/dmg-acid2/releases/download/v1.0/"
+
+[sources.cgb-acid2]
+# Matt Currie's cgb-acid2 (MIT).
+url = "https://github.com/mattcurrie/cgb-acid2/releases/download/v1.1/"
+
+[sources.sameboy]
+# SameBoy 1.0.5 (Lior Halphon, Expat): its open-source boot ROMs, built from
+# source. Needs rgbds 1.0.4 (another version may build other bytes) and a C
+# compiler, for the logo's compressor.
+git = "https://github.com/LIJI32/SameBoy"
+commit = "ea667ad79aa28409f034b1fd6da7304e1844750d"
+build = ["make", "bootroms", "CONF=release"]
+
+[sources.sm83]
+# SingleStepTests' SM83 tests (MIT): 1,000 cases for each opcode, each its
+# registers and memory before and after and its bus in every machine cycle.
+git = "https://github.com/SingleStepTests/sm83"
+commit = "f9c30210245dd691661db39f5ace022c465ecc2f"
+
+[[boot]]
+id = "dmg"
+source = "sameboy"
+path = "build/bin/BootROMs/dmg_boot.bin"
+sha256 = "6f64da4cecd7e54e2f928eb3e3ba7810a7a567d0d247cc71737d1771e073a916"
+
+[[boot]]
+id = "cgb"
+source = "sameboy"
+path = "build/bin/BootROMs/cgb_boot.bin"
+sha256 = "f767b8e7e510a255f81328c89dba6e0c996b370e1bc86aebb8584a7da47a5bba"
+
+[[tree]]
+id = "sm83"
+source = "sm83"
+path = "v1"
+sha256 = "b839b41a76bb06b1a340863a018bd6df2349b40eebb7af8b55d47bee935fdbd8"
+
+[[rom]]
+id = "cpu_instrs-01"
+source = "blargg-gb"
+path = "cpu_instrs/individual/01-special.gb"
+sha256 = "fe61349cbaee10cc384b50f356e541c90d1bc380185716706b5d8c465a03cf89"
+model = "dmg"
+needs = "cpu, serial"
+covers = "JR, JP, CALL, RET, RST, DAA, the flags' unused bits and other special cases"
+check = "serial"
+frames = 222
+
+[[rom]]
+id = "cpu_instrs-02"
+source = "blargg-gb"
+path = "cpu_instrs/individual/02-interrupts.gb"
+sha256 = "fb90b0d2b9501910c49709abda1d8e70f757dc12020ebf8409a7779bbfd12229"
+model = "dmg"
+needs = "cpu, timer, interrupts, serial"
+covers = "EI, DI, HALT and the timer's interrupt"
+check = "serial"
+frames = 108
+
+[[rom]]
+id = "cpu_instrs-03"
+source = "blargg-gb"
+path = "cpu_instrs/individual/03-op sp,hl.gb"
+sha256 = "ca553e606d9b9c86fbd318f1b916c6f0b9df0cf1774825d4361a3fdff2e5a136"
+model = "dmg"
+needs = "cpu, serial"
+covers = "Operations on SP and HL"
+check = "serial"
+frames = 223
+
+[[rom]]
+id = "cpu_instrs-04"
+source = "blargg-gb"
+path = "cpu_instrs/individual/04-op r,imm.gb"
+sha256 = "7686aa7a39ef3d2520ec1037371b5f94dc283fbbfd0f5051d1f64d987bdd6671"
+model = "dmg"
+needs = "cpu, serial"
+covers = "Operations on a register and an immediate"
+check = "serial"
+frames = 246
+
+[[rom]]
+id = "cpu_instrs-05"
+source = "blargg-gb"
+path = "cpu_instrs/individual/05-op rp.gb"
+sha256 = "d504adfa0a4c4793436a154f14492f044d38b3c6db9efc44138f3c9ad138b775"
+model = "dmg"
+needs = "cpu, serial"
+covers = "Operations on register pairs"
+check = "serial"
+frames = 307
+
+[[rom]]
+id = "cpu_instrs-06"
+source = "blargg-gb"
+path = "cpu_instrs/individual/06-ld r,r.gb"
+sha256 = "17ada54b0b9c1a33cd5429fce5b765e42392189ca36da96312222ffe309e7ed1"
+model = "dmg"
+needs = "cpu, serial"
+covers = "Every LD r,r"
+check = "serial"
+frames = 117
+
+[[rom]]
+id = "cpu_instrs-07"
+source = "blargg-gb"
+path = "cpu_instrs/individual/07-jr,jp,call,ret,rst.gb"
+sha256 = "ab31d3daaaa3a98bdbd9395b64f48c1bdaa889aba5b19dd5aaff4ec2a7d228a3"
+model = "dmg"
+needs = "cpu, serial"
+covers = "Jumps, calls, returns and RST"
+check = "serial"
+frames = 125
+
+[[rom]]
+id = "cpu_instrs-08"
+source = "blargg-gb"
+path = "cpu_instrs/individual/08-misc instrs.gb"
+sha256 = "974a71fe4c67f70f5cc6e98d4dc8c096057ff8a028b7bfa9f7a4330038cf8b7e"
+model = "dmg"
+needs = "cpu, serial"
+covers = "The other instructions"
+check = "serial"
+frames = 115
+
+[[rom]]
+id = "cpu_instrs-09"
+source = "blargg-gb"
+path = "cpu_instrs/individual/09-op r,r.gb"
+sha256 = "b28e1be5cd95f22bd1ecacdd33c6f03e607d68870e31a47b15a0229033d5ba2a"
+model = "dmg"
+needs = "cpu, serial"
+covers = "Operations on two registers"
+check = "serial"
+frames = 628
+
+[[rom]]
+id = "cpu_instrs-10"
+source = "blargg-gb"
+path = "cpu_instrs/individual/10-bit ops.gb"
+sha256 = "7f5b8e488c6988b5aaba8c2a74529b7c180c55a58449d5ee89d606a07c53514a"
+model = "dmg"
+needs = "cpu, serial"
+covers = "The CB prefix's bit operations"
+check = "serial"
+frames = 911
+
+[[rom]]
+id = "cpu_instrs-11"
+source = "blargg-gb"
+path = "cpu_instrs/individual/11-op a,(hl).gb"
+sha256 = "0ec0cf9fda3f00becaefa476df6fb526c434abd9d4a4beac237c2c2692dac5d3"
+model = "dmg"
+needs = "cpu, serial"
+covers = "Operations on A and (HL)"
+check = "serial"
+frames = 1133
+
+[[rom]]
+id = "instr_timing"
+source = "blargg-gb"
+path = "instr_timing/instr_timing.gb"
+sha256 = "646067b3d6c79fda810e9c3f1cb7c0efd5abb0a7ac06437c54e65720c15d9925"
+model = "dmg"
+needs = "cpu, timer, serial"
+covers = "Every instruction's length in machine cycles, timed with the timer"
+check = "serial"
+frames = 121
+
+[[rom]]
+id = "mem_timing-01"
+source = "blargg-gb"
+path = "mem_timing/individual/01-read_timing.gb"
+sha256 = "52724532c5709e38e947eb429337c124c38bc68f373874435a7460548098b617"
+model = "dmg"
+needs = "cpu, timer, serial"
+covers = "The machine cycle in which each instruction reads memory"
+check = "serial"
+frames = 110
+
+[[rom]]
+id = "mem_timing-02"
+source = "blargg-gb"
+path = "mem_timing/individual/02-write_timing.gb"
+sha256 = "eea92d3f4e95aab5910e0f7080916a3c42a2b8deae1ee5d45d1e3751d648f3f6"
+model = "dmg"
+needs = "cpu, timer, serial"
+covers = "The machine cycle in which each instruction writes memory"
+check = "serial"
+frames = 109
+
+[[rom]]
+id = "mem_timing-03"
+source = "blargg-gb"
+path = "mem_timing/individual/03-modify_timing.gb"
+sha256 = "2e9067c670ff8b45916bf321677ad04a6896d06a057dbcb82ae9f208a1ae9c34"
+model = "dmg"
+needs = "cpu, timer, serial"
+covers = "The cycles of each read-modify-write instruction's read and write"
+check = "serial"
+frames = 112
+
+[[rom]]
+id = "halt_bug"
+source = "blargg-gb"
+path = "halt_bug.gb"
+sha256 = "ddebfb81f992132954a5580e16cfb97346a4e061c762634d7701328e23fea7c6"
+model = "dmg"
+needs = "cpu, timer, interrupts, serial"
+covers = "HALT with interrupts disabled and one pending: the next byte is read twice"
+check = "frame"
+frames = 600
+mesen = "Passed, on the screen only (no serial output)"
+
+[[rom]]
+id = "interrupt_time"
+source = "blargg-gb"
+path = "interrupt_time/interrupt_time.gb"
+sha256 = "1a8f8f3bc609a92a5838214c00906c81e7cc77b3b9a63be5a1ec6d513f234929"
+model = "cgb"
+needs = "cpu, timer, interrupts, serial, cgb"
+covers = "An interrupt's dispatch time, at normal and double speed"
+check = "frame"
+frames = 600
+mesen = "Passed, on the screen only (no serial output)"
+
+[[rom]]
+id = "dmg_sound-01"
+source = "blargg-gb"
+path = "dmg_sound/rom_singles/01-registers.gb"
+sha256 = "c6b9fa4b9d9d26919b33ebe78a6ef19ad2df854186cf741ca2746179cc9fc3f1"
+model = "dmg"
+needs = "cpu, apu, mbc1"
+covers = "The sound registers' readable bits"
+check = "blargg"
+frames = 134
+
+[[rom]]
+id = "dmg_sound-02"
+source = "blargg-gb"
+path = "dmg_sound/rom_singles/02-len ctr.gb"
+sha256 = "745544125a5065729cab22494a79f65c3836e4426f89e4cc43d330afe711b413"
+model = "dmg"
+needs = "cpu, apu, mbc1"
+covers = "The length counters"
+check = "blargg"
+frames = 649
+
+[[rom]]
+id = "dmg_sound-03"
+source = "blargg-gb"
+path = "dmg_sound/rom_singles/03-trigger.gb"
+sha256 = "bb11e7266a7143bafb8aa2a73ca70957c6011f36cd4e0b6aaf0678378294e75c"
+model = "dmg"
+needs = "cpu, apu, mbc1"
+covers = "Triggering a channel"
+check = "blargg"
+frames = 1093
+
+[[rom]]
+id = "dmg_sound-04"
+source = "blargg-gb"
+path = "dmg_sound/rom_singles/04-sweep.gb"
+sha256 = "58bc14541d91bb020c7761b423825b3432cfde7ee2fa4d1116126e4cb9573c7e"
+model = "dmg"
+needs = "cpu, apu, mbc1"
+covers = "Channel 1's sweep"
+check = "blargg"
+frames = 158
+
+[[rom]]
+id = "dmg_sound-05"
+source = "blargg-gb"
+path = "dmg_sound/rom_singles/05-sweep details.gb"
+sha256 = "f582ca3a0b2544b9510797d7d4dd56a17f53e000511b0ae88a6353200dcd9167"
+model = "dmg"
+needs = "cpu, apu, mbc1"
+covers = "The sweep's details"
+check = "blargg"
+frames = 156
+
+[[rom]]
+id = "dmg_sound-06"
+source = "blargg-gb"
+path = "dmg_sound/rom_singles/06-overflow on trigger.gb"
+sha256 = "1a511e95e84ed6fe6077cabf451a98b4e01fdef59cadae3efbc178113eb064b1"
+model = "dmg"
+needs = "cpu, apu, mbc1"
+covers = "A sweep overflow on trigger"
+check = "blargg"
+frames = 139
+
+[[rom]]
+id = "dmg_sound-07"
+source = "blargg-gb"
+path = "dmg_sound/rom_singles/07-len sweep period sync.gb"
+sha256 = "56bf5b0c18b996929c9b052ba5a02b450cb619bb6c24cc1d34ea20951c977bf7"
+model = "dmg"
+needs = "cpu, apu, mbc1"
+covers = "The length and sweep clocks' alignment"
+check = "blargg"
+frames = 119
+
+[[rom]]
+id = "dmg_sound-08"
+source = "blargg-gb"
+path = "dmg_sound/rom_singles/08-len ctr during power.gb"
+sha256 = "31cb41f7be106a708ec0bc94f2a9d0b506d247cd591e9d0a2a6a960dc3bf6595"
+model = "dmg"
+needs = "cpu, apu, mbc1"
+covers = "The length counters while the APU is off"
+check = "blargg"
+frames = 166
+
+[[rom]]
+id = "dmg_sound-09"
+source = "blargg-gb"
+path = "dmg_sound/rom_singles/09-wave read while on.gb"
+sha256 = "378b86f6a25daa16855260d7ef0c24e48146ba05df434a0b5413983a1447e875"
+model = "dmg"
+needs = "cpu, apu, mbc1"
+covers = "Reading wave RAM while channel 3 plays"
+check = "blargg"
+frames = 120
+
+[[rom]]
+id = "dmg_sound-10"
+source = "blargg-gb"
+path = "dmg_sound/rom_singles/10-wave trigger while on.gb"
+sha256 = "fa63c8ed7473411e54285d318e33bf23ff6d637ed2caa7555ddeaf80578e3279"
+model = "dmg"
+needs = "cpu, apu, mbc1"
+covers = "Triggering channel 3 while it plays"
+check = "blargg"
+frames = 318
+
+[[rom]]
+id = "dmg_sound-11"
+source = "blargg-gb"
+path = "dmg_sound/rom_singles/11-regs after power.gb"
+sha256 = "d27dab46e8b881028723f1975328572d38e25d295289b974cd698916a0be5dab"
+model = "dmg"
+needs = "cpu, apu, mbc1"
+covers = "The registers after the APU is turned off and on"
+check = "blargg"
+frames = 127
+
+[[rom]]
+id = "dmg_sound-12"
+source = "blargg-gb"
+path = "dmg_sound/rom_singles/12-wave write while on.gb"
+sha256 = "2efbecd2c6d40928d44f45da4f634626bcd2790165b3949aedfe377c73913774"
+model = "dmg"
+needs = "cpu, apu, mbc1"
+covers = "Writing wave RAM while channel 3 plays"
+check = "blargg"
+frames = 318
+
+[[rom]]
+id = "cgb_sound-01"
+source = "blargg-gb"
+path = "cgb_sound/rom_singles/01-registers.gb"
+sha256 = "8415d6c69f7954e9365a586bac235f5ce39270ece32c09cb8ebbbff043b9852c"
+model = "cgb"
+needs = "cpu, apu, mbc1, cgb"
+covers = "The sound registers' readable bits"
+check = "blargg"
+frames = 238
+
+[[rom]]
+id = "cgb_sound-02"
+source = "blargg-gb"
+path = "cgb_sound/rom_singles/02-len ctr.gb"
+sha256 = "a1ccf47375a2bede3077ac85a4903cb037dd8a4c7c85fc5d0c176af52915271f"
+model = "cgb"
+needs = "cpu, apu, mbc1, cgb"
+covers = "The length counters"
+check = "blargg"
+frames = 753
+
+[[rom]]
+id = "cgb_sound-03"
+source = "blargg-gb"
+path = "cgb_sound/rom_singles/03-trigger.gb"
+sha256 = "70173be396d14ac955c47aededcee90ba994206cc403273d0bb49ba163ae23ef"
+model = "cgb"
+needs = "cpu, apu, mbc1, cgb"
+covers = "Triggering a channel"
+check = "blargg"
+frames = 1197
+
+[[rom]]
+id = "cgb_sound-04"
+source = "blargg-gb"
+path = "cgb_sound/rom_singles/04-sweep.gb"
+sha256 = "abfd1f6fa9e6701e46135ac9f5bb5b10a46cde22d0fc34922636aa09a5647483"
+model = "cgb"
+needs = "cpu, apu, mbc1, cgb"
+covers = "Channel 1's sweep"
+check = "blargg"
+frames = 262
+
+[[rom]]
+id = "cgb_sound-05"
+source = "blargg-gb"
+path = "cgb_sound/rom_singles/05-sweep details.gb"
+sha256 = "f51a80c5538fe4b3afbc5c9af0e689a67869b1e2bbb73d4c60a8874826d056cb"
+model = "cgb"
+needs = "cpu, apu, mbc1, cgb"
+covers = "The sweep's details"
+check = "blargg"
+frames = 260
+
+[[rom]]
+id = "cgb_sound-06"
+source = "blargg-gb"
+path = "cgb_sound/rom_singles/06-overflow on trigger.gb"
+sha256 = "5701414d13ba55d25b59d13076e2e9cb59a9da6890595b41464f957605e317c0"
+model = "cgb"
+needs = "cpu, apu, mbc1, cgb"
+covers = "A sweep overflow on trigger"
+check = "blargg"
+frames = 243
+
+[[rom]]
+id = "cgb_sound-07"
+source = "blargg-gb"
+path = "cgb_sound/rom_singles/07-len sweep period sync.gb"
+sha256 = "47d57ba87c3a93050ee340cf49b9d276e62e9573542b92b1de5fa2f17e3716c1"
+model = "cgb"
+needs = "cpu, apu, mbc1, cgb"
+covers = "The length and sweep clocks' alignment"
+check = "blargg"
+frames = 223
+
+[[rom]]
+id = "cgb_sound-08"
+source = "blargg-gb"
+path = "cgb_sound/rom_singles/08-len ctr during power.gb"
+sha256 = "be7948c70946e0b81c178b8778ef1907231e734650062f8fa8cdb1ceb5ac8c65"
+model = "cgb"
+needs = "cpu, apu, mbc1, cgb"
+covers = "The length counters while the APU is off"
+check = "blargg"
+frames = 335
+
+[[rom]]
+id = "cgb_sound-09"
+source = "blargg-gb"
+path = "cgb_sound/rom_singles/09-wave read while on.gb"
+sha256 = "9b101c68b2de1930df74c19aaf22cce74d37dd5aade93855c805ecb2e1e83fd3"
+model = "cgb"
+needs = "cpu, apu, mbc1, cgb"
+covers = "Reading wave RAM while channel 3 plays"
+check = "blargg"
+frames = 224
+
+[[rom]]
+id = "cgb_sound-10"
+source = "blargg-gb"
+path = "cgb_sound/rom_singles/10-wave trigger while on.gb"
+sha256 = "cbea1771a5384f4d8f8a249056224a750ad5ee4671297836e4ba87e689af2a23"
+model = "cgb"
+needs = "cpu, apu, mbc1, cgb"
+covers = "Triggering channel 3 while it plays"
+check = "blargg"
+frames = 422
+
+[[rom]]
+id = "cgb_sound-11"
+source = "blargg-gb"
+path = "cgb_sound/rom_singles/11-regs after power.gb"
+sha256 = "d347dd195a78c2d0f665b94da493a857218f032b014654b84ddb01f7b8e9befc"
+model = "cgb"
+needs = "cpu, apu, mbc1, cgb"
+covers = "The registers after the APU is turned off and on"
+check = "blargg"
+frames = 242
+
+[[rom]]
+id = "cgb_sound-12"
+source = "blargg-gb"
+path = "cgb_sound/rom_singles/12-wave.gb"
+sha256 = "7bbd2e78e159de4297f567fec7851f9b90c3076d18d1043af5f30e14bd66cd0a"
+model = "cgb"
+needs = "cpu, apu, mbc1, cgb"
+covers = "Wave RAM while channel 3 plays"
+check = "blargg"
+frames = 214
+
+[[rom]]
+id = "mem_timing-2-01"
+source = "blargg-gb"
+path = "mem_timing-2/rom_singles/01-read_timing.gb"
+sha256 = "d9c6e86b7008fdaec2d4345c59192af4cea98b812e9b7b07239d16ad6770b576"
+model = "dmg"
+needs = "cpu, timer, mbc1"
+covers = "As mem_timing, results in cartridge RAM"
+check = "blargg"
+frames = 112
+
+[[rom]]
+id = "mem_timing-2-02"
+source = "blargg-gb"
+path = "mem_timing-2/rom_singles/02-write_timing.gb"
+sha256 = "9188e5d9cf9dfc9e25f7b7c5d67e5c8e36e1b25e5ef4be0089dad1ddb526706a"
+model = "dmg"
+needs = "cpu, timer, mbc1"
+covers = "As mem_timing, results in cartridge RAM"
+check = "blargg"
+frames = 111
+
+[[rom]]
+id = "mem_timing-2-03"
+source = "blargg-gb"
+path = "mem_timing-2/rom_singles/03-modify_timing.gb"
+sha256 = "818256ab477bb8fbb0709d28e3ec932a55c0ecd044292e760838efbb2b7fc09b"
+model = "dmg"
+needs = "cpu, timer, mbc1"
+covers = "As mem_timing, results in cartridge RAM"
+check = "blargg"
+frames = 114
+
+[[rom]]
+id = "oam_bug-1"
+source = "blargg-gb"
+path = "oam_bug/rom_singles/1-lcd_sync.gb"
+sha256 = "abc303a2c644528cbcf36e83f8020cad17fdb6abdf42940533c4f6c8830c530a"
+model = "dmg"
+needs = "cpu, ppu, oam bug, mbc1"
+covers = "The PPU's timing after the LCD is turned on"
+check = "blargg"
+frames = 113
+
+[[rom]]
+id = "oam_bug-2"
+source = "blargg-gb"
+path = "oam_bug/rom_singles/2-causes.gb"
+sha256 = "3f9c0db75222aae7c47382fe814b3806735b9ef76c791c6c26985b55c82235b9"
+model = "dmg"
+needs = "cpu, ppu, oam bug, mbc1"
+covers = "What corrupts OAM"
+check = "blargg"
+frames = 180
+
+[[rom]]
+id = "oam_bug-3"
+source = "blargg-gb"
+path = "oam_bug/rom_singles/3-non_causes.gb"
+sha256 = "33e474075def3c025ff7990af82f1effb31e83617fb88aa1ee401976c35b8978"
+model = "dmg"
+needs = "cpu, ppu, oam bug, mbc1"
+covers = "What doesn't"
+check = "blargg"
+frames = 176
+
+[[rom]]
+id = "oam_bug-4"
+source = "blargg-gb"
+path = "oam_bug/rom_singles/4-scanline_timing.gb"
+sha256 = "5527c97665c3ad5474e5bda53a7e8e629bb1d0cb8ec54e6a1b42946dc9835ec7"
+model = "dmg"
+needs = "cpu, ppu, oam bug, mbc1"
+covers = "When in a line the corruption happens"
+check = "blargg"
+frames = 138
+
+[[rom]]
+id = "oam_bug-5"
+source = "blargg-gb"
+path = "oam_bug/rom_singles/5-timing_bug.gb"
+sha256 = "ca3500d92e77883a09e5bc560046ed3471ab362eca550689cd38a944dc558e4f"
+model = "dmg"
+needs = "cpu, ppu, oam bug, mbc1"
+covers = "Its timing"
+check = "blargg"
+frames = 138
+
+[[rom]]
+id = "oam_bug-6"
+source = "blargg-gb"
+path = "oam_bug/rom_singles/6-timing_no_bug.gb"
+sha256 = "e5ea594ddc7ad9a0e3063c3d6b050a2a10239cd43a23012551d4985c3712ea70"
+model = "dmg"
+needs = "cpu, ppu, oam bug, mbc1"
+covers = "Its timing, where it doesn't happen"
+check = "blargg"
+frames = 170
+
+[[rom]]
+id = "oam_bug-7"
+source = "blargg-gb"
+path = "oam_bug/rom_singles/7-timing_effect.gb"
+sha256 = "b4bb86462a5701155d92ea7dafe826cbffae6faec2c48c10feef0a5f78154d6c"
+model = "dmg"
+needs = "cpu, ppu, oam bug, mbc1"
+covers = "What it does to OAM"
+check = "blargg"
+frames = 600
+mesen = "no result: the LCD stays off; SameBoy is the reference here"
+
+[[rom]]
+id = "oam_bug-8"
+source = "blargg-gb"
+path = "oam_bug/rom_singles/8-instr_effect.gb"
+sha256 = "11b372a91f65dd3bd2570aafc6f26e201fc0f05955ba3bb57f4c17cd642f7b2d"
+model = "dmg"
+needs = "cpu, ppu, oam bug, mbc1"
+covers = "What each instruction does"
+check = "blargg"
+frames = 433
+
+[[rom]]
+id = "mts-add_sp_e_timing"
+source = "mooneye"
+path = "acceptance/add_sp_e_timing.gb"
+sha256 = "bf736cb8fc06949ba2b16d68ab831e9e6a726a8521ff25ea4257d7cb3499839e"
+model = "dmg"
+needs = "cpu"
+covers = "Mooneye: acceptance/add_sp_e_timing.gb"
+check = "mooneye"
+frames = 97
+
+[[rom]]
+id = "mts-bits-mem_oam"
+source = "mooneye"
+path = "acceptance/bits/mem_oam.gb"
+sha256 = "eba5d165aaa55e7d4a1d1d910ea312a55c78157923c29fbbc34031709390f1de"
+model = "dmg"
+needs = "cpu"
+covers = "Mooneye: acceptance/bits/mem_oam.gb"
+check = "mooneye"
+frames = 93
+
+[[rom]]
+id = "mts-bits-reg_f"
+source = "mooneye"
+path = "acceptance/bits/reg_f.gb"
+sha256 = "4b193e887ee3ac82b38b796729e1503e9a78da3e1140f8bd5600d0884f2e2627"
+model = "dmg"
+needs = "cpu"
+covers = "Mooneye: acceptance/bits/reg_f.gb"
+check = "mooneye"
+frames = 94
+
+[[rom]]
+id = "mts-bits-unused_hwio-GS"
+source = "mooneye"
+path = "acceptance/bits/unused_hwio-GS.gb"
+sha256 = "1588928b71c596e41c58c9f414a18a0f906c0bf82a1dfde9d4cefc624a2d193d"
+model = "dmg"
+needs = "cpu"
+covers = "Mooneye: acceptance/bits/unused_hwio-GS.gb"
+check = "mooneye"
+frames = 94
+
+[[rom]]
+id = "mts-boot_div-dmgABCmgb"
+source = "mooneye"
+path = "acceptance/boot_div-dmgABCmgb.gb"
+sha256 = "ef2cd0ac53dd2f656461e9b29e95aaef44a843379a2337c168f1832c488242d3"
+model = "dmg"
+needs = "cpu, timer, boot"
+covers = "Mooneye: acceptance/boot_div-dmgABCmgb.gb"
+check = "mooneye"
+frames = 94
+mesen = "fail, as in SameBoy: it checks the timer's divider as Nintendo's boot ROM leaves it, and SameBoy's takes another time"
+
+[[rom]]
+id = "mts-boot_hwio-dmgABCmgb"
+source = "mooneye"
+path = "acceptance/boot_hwio-dmgABCmgb.gb"
+sha256 = "39f29e27e803bab7ae789bd7dfd556a9df9bc65a825206745aca3f30e4887456"
+model = "dmg"
+needs = "cpu, boot"
+covers = "Mooneye: acceptance/boot_hwio-dmgABCmgb.gb"
+check = "mooneye"
+frames = 94
+mesen = "fail, as in SameBoy: it checks the I/O registers as Nintendo's boot ROM leaves them"
+
+[[rom]]
+id = "mts-boot_regs-dmgABC"
+source = "mooneye"
+path = "acceptance/boot_regs-dmgABC.gb"
+sha256 = "50b4869bfdf6f69e14f82ac4d673c1983b29439157cf84bb422268069766c3c5"
+model = "dmg"
+needs = "cpu, boot"
+covers = "Mooneye: acceptance/boot_regs-dmgABC.gb"
+check = "mooneye"
+frames = 94
+
+[[rom]]
+id = "mts-call_cc_timing"
+source = "mooneye"
+path = "acceptance/call_cc_timing.gb"
+sha256 = "2ef47505ed501128071b490174dccb6904ee6037f88723ed98a23382eee7b4d1"
+model = "dmg"
+needs = "cpu"
+covers = "Mooneye: acceptance/call_cc_timing.gb"
+check = "mooneye"
+frames = 97
+
+[[rom]]
+id = "mts-call_cc_timing2"
+source = "mooneye"
+path = "acceptance/call_cc_timing2.gb"
+sha256 = "67d84fc4d97c64399118ef3483a455fe7269d6fdf7f9840f6a00a9596d838a8c"
+model = "dmg"
+needs = "cpu"
+covers = "Mooneye: acceptance/call_cc_timing2.gb"
+check = "mooneye"
+frames = 98
+
+[[rom]]
+id = "mts-call_timing"
+source = "mooneye"
+path = "acceptance/call_timing.gb"
+sha256 = "249f524368b8b9bbaa7e05b36f29a5210137d61d59889b596ea505d42e6b749b"
+model = "dmg"
+needs = "cpu"
+covers = "Mooneye: acceptance/call_timing.gb"
+check = "mooneye"
+frames = 97
+
+[[rom]]
+id = "mts-call_timing2"
+source = "mooneye"
+path = "acceptance/call_timing2.gb"
+sha256 = "d7ee4ceae48ef630c43a8e960c923b951f492250d9f5e28c1795705692051b47"
+model = "dmg"
+needs = "cpu"
+covers = "Mooneye: acceptance/call_timing2.gb"
+check = "mooneye"
+frames = 98
+
+[[rom]]
+id = "mts-di_timing-GS"
+source = "mooneye"
+path = "acceptance/di_timing-GS.gb"
+sha256 = "618dd8f765c71c0f299cd124d8596d12da9ef987e800a45ac5c4b98fd240c54d"
+model = "dmg"
+needs = "cpu"
+covers = "Mooneye: acceptance/di_timing-GS.gb"
+check = "mooneye"
+frames = 99
+
+[[rom]]
+id = "mts-div_timing"
+source = "mooneye"
+path = "acceptance/div_timing.gb"
+sha256 = "382a9cd42a60ef0a3f03ef834d476a32907f1b3a42b40de5bd3d9705ae9a9734"
+model = "dmg"
+needs = "cpu, timer"
+covers = "Mooneye: acceptance/div_timing.gb"
+check = "mooneye"
+frames = 94
+
+[[rom]]
+id = "mts-ei_sequence"
+source = "mooneye"
+path = "acceptance/ei_sequence.gb"
+sha256 = "dcd7f37e8fe7d8eb38cab6732a5826e0bb0278fd1e1d9e297c28d205da1b69e1"
+model = "dmg"
+needs = "cpu"
+covers = "Mooneye: acceptance/ei_sequence.gb"
+check = "mooneye"
+frames = 94
+
+[[rom]]
+id = "mts-ei_timing"
+source = "mooneye"
+path = "acceptance/ei_timing.gb"
+sha256 = "e5fa88f83727e79912f2c69b91b8e3c1351c0b50ac26203a60c7a6c21e825dbc"
+model = "dmg"
+needs = "cpu"
+covers = "Mooneye: acceptance/ei_timing.gb"
+check = "mooneye"
+frames = 94
+
+[[rom]]
+id = "mts-halt_ime0_ei"
+source = "mooneye"
+path = "acceptance/halt_ime0_ei.gb"
+sha256 = "0768fd3e698047f5ec2631b5a830558f0ac14bd9cb0ef0ebcc409b00d69adb4d"
+model = "dmg"
+needs = "cpu"
+covers = "Mooneye: acceptance/halt_ime0_ei.gb"
+check = "mooneye"
+frames = 94
+
+[[rom]]
+id = "mts-halt_ime0_nointr_timing"
+source = "mooneye"
+path = "acceptance/halt_ime0_nointr_timing.gb"
+sha256 = "40a1e614d77a881672b7c20420aed6b121ad9d3977d71a08fd9bb92ee8f010cf"
+model = "dmg"
+needs = "cpu"
+covers = "Mooneye: acceptance/halt_ime0_nointr_timing.gb"
+check = "mooneye"
+frames = 98
+
+[[rom]]
+id = "mts-halt_ime1_timing"
+source = "mooneye"
+path = "acceptance/halt_ime1_timing.gb"
+sha256 = "09d9be4ebdd7645a6b208f18b1354f4b75420ae567dcf27ac404ed6f934d2efa"
+model = "dmg"
+needs = "cpu"
+covers = "Mooneye: acceptance/halt_ime1_timing.gb"
+check = "mooneye"
+frames = 94
+
+[[rom]]
+id = "mts-halt_ime1_timing2-GS"
+source = "mooneye"
+path = "acceptance/halt_ime1_timing2-GS.gb"
+sha256 = "10f0f35025d9d648831eaa7b1bfc42251fe26cf130ee483e6baac88d20c01581"
+model = "dmg"
+needs = "cpu"
+covers = "Mooneye: acceptance/halt_ime1_timing2-GS.gb"
+check = "mooneye"
+frames = 102
+
+[[rom]]
+id = "mts-if_ie_registers"
+source = "mooneye"
+path = "acceptance/if_ie_registers.gb"
+sha256 = "d055b2b4c44902cf827296a06b17cea4f2c84f6b7d540c777cb1d1049ef35e61"
+model = "dmg"
+needs = "cpu"
+covers = "Mooneye: acceptance/if_ie_registers.gb"
+check = "mooneye"
+frames = 94
+
+[[rom]]
+id = "mts-instr-daa"
+source = "mooneye"
+path = "acceptance/instr/daa.gb"
+sha256 = "1498d92d70592a07a2493ef764609916616f0b023b21408189e277201e6c14c1"
+model = "dmg"
+needs = "cpu"
+covers = "Mooneye: acceptance/instr/daa.gb"
+check = "mooneye"
+frames = 106
+
+[[rom]]
+id = "mts-interrupts-ie_push"
+source = "mooneye"
+path = "acceptance/interrupts/ie_push.gb"
+sha256 = "f80df1b48ca2f81d4ec43b9c66be5f0b30f0d409603d256cc5c7cfc6241c0120"
+model = "dmg"
+needs = "cpu"
+covers = "Mooneye: acceptance/interrupts/ie_push.gb"
+check = "mooneye"
+frames = 93
+
+[[rom]]
+id = "mts-intr_timing"
+source = "mooneye"
+path = "acceptance/intr_timing.gb"
+sha256 = "a795a190830104a4a231935d3bd16e64a1088bb79084f80bf7d9946ca93d873d"
+model = "dmg"
+needs = "cpu"
+covers = "Mooneye: acceptance/intr_timing.gb"
+check = "mooneye"
+frames = 94
+
+[[rom]]
+id = "mts-jp_cc_timing"
+source = "mooneye"
+path = "acceptance/jp_cc_timing.gb"
+sha256 = "8747fa6f969c8ac153a79b37abd2abac5ea98dbe142d5e77e074adec6e9fd481"
+model = "dmg"
+needs = "cpu"
+covers = "Mooneye: acceptance/jp_cc_timing.gb"
+check = "mooneye"
+frames = 97
+
+[[rom]]
+id = "mts-jp_timing"
+source = "mooneye"
+path = "acceptance/jp_timing.gb"
+sha256 = "514ba4b96355f5074b63feb159a06af85f4fbea412a2d49599c19ea3781712e0"
+model = "dmg"
+needs = "cpu"
+covers = "Mooneye: acceptance/jp_timing.gb"
+check = "mooneye"
+frames = 97
+
+[[rom]]
+id = "mts-ld_hl_sp_e_timing"
+source = "mooneye"
+path = "acceptance/ld_hl_sp_e_timing.gb"
+sha256 = "fe22571b9aee1681b81b31055b3773574ba11eb838550fd86e0e773cb0f4240e"
+model = "dmg"
+needs = "cpu"
+covers = "Mooneye: acceptance/ld_hl_sp_e_timing.gb"
+check = "mooneye"
+frames = 97
+
+[[rom]]
+id = "mts-oam_dma-basic"
+source = "mooneye"
+path = "acceptance/oam_dma/basic.gb"
+sha256 = "326b747cac8cc96b62d6ee508e73b87eda24bfe29553d3d32e719f3b6d76c97c"
+model = "dmg"
+needs = "cpu, ppu, oam dma"
+covers = "Mooneye: acceptance/oam_dma/basic.gb"
+check = "mooneye"
+frames = 93
+
+[[rom]]
+id = "mts-oam_dma-reg_read"
+source = "mooneye"
+path = "acceptance/oam_dma/reg_read.gb"
+sha256 = "006516fcb302867a2848b47529208ef530669c6445e41d4f3d2dbd33995154a3"
+model = "dmg"
+needs = "cpu, ppu, oam dma"
+covers = "Mooneye: acceptance/oam_dma/reg_read.gb"
+check = "mooneye"
+frames = 93
+
+[[rom]]
+id = "mts-oam_dma-sources-GS"
+source = "mooneye"
+path = "acceptance/oam_dma/sources-GS.gb"
+sha256 = "35a38c640047c38b63da0b929f9d744914ee53555e7ccc6853bcc0e82185f11e"
+model = "dmg"
+needs = "cpu, ppu, oam dma"
+covers = "Mooneye: acceptance/oam_dma/sources-GS.gb"
+check = "mooneye"
+frames = 119
+
+[[rom]]
+id = "mts-oam_dma_restart"
+source = "mooneye"
+path = "acceptance/oam_dma_restart.gb"
+sha256 = "5234eaaa78fcf722a4c8d32bb4f108c65c24e327d062315c6b61f60e535e25de"
+model = "dmg"
+needs = "cpu, ppu, oam dma"
+covers = "Mooneye: acceptance/oam_dma_restart.gb"
+check = "mooneye"
+frames = 97
+
+[[rom]]
+id = "mts-oam_dma_start"
+source = "mooneye"
+path = "acceptance/oam_dma_start.gb"
+sha256 = "7c39f8f6f8043fe0ea289d8015b3e72c125ac302a22159b49514dd4e78d89dd3"
+model = "dmg"
+needs = "cpu, ppu, oam dma"
+covers = "Mooneye: acceptance/oam_dma_start.gb"
+check = "mooneye"
+frames = 97
+
+[[rom]]
+id = "mts-oam_dma_timing"
+source = "mooneye"
+path = "acceptance/oam_dma_timing.gb"
+sha256 = "e8477c5da80e4fb7999da08abf01ad2438d65fb308a8f0c36b0c7e464c0ad0e0"
+model = "dmg"
+needs = "cpu, ppu, oam dma"
+covers = "Mooneye: acceptance/oam_dma_timing.gb"
+check = "mooneye"
+frames = 97
+
+[[rom]]
+id = "mts-pop_timing"
+source = "mooneye"
+path = "acceptance/pop_timing.gb"
+sha256 = "4b658ab238b46319f24fa890faf9f337f03ce8769c05be6540742c9aaaf5773a"
+model = "dmg"
+needs = "cpu"
+covers = "Mooneye: acceptance/pop_timing.gb"
+check = "mooneye"
+frames = 94
+
+[[rom]]
+id = "mts-ppu-hblank_ly_scx_timing-GS"
+source = "mooneye"
+path = "acceptance/ppu/hblank_ly_scx_timing-GS.gb"
+sha256 = "3adec9174d16b7a4cece42e5525e4363ff956c19070600aa9344de68b0885449"
+model = "dmg"
+needs = "cpu, ppu"
+covers = "Mooneye: acceptance/ppu/hblank_ly_scx_timing-GS.gb"
+check = "mooneye"
+frames = 131
+
+[[rom]]
+id = "mts-ppu-intr_1_2_timing-GS"
+source = "mooneye"
+path = "acceptance/ppu/intr_1_2_timing-GS.gb"
+sha256 = "3bac47fc79ce514fd7f6bbe0d87f1160b91a5292be27fee7bc3bcea6bc171ee9"
+model = "dmg"
+needs = "cpu, ppu"
+covers = "Mooneye: acceptance/ppu/intr_1_2_timing-GS.gb"
+check = "mooneye"
+frames = 97
+
+[[rom]]
+id = "mts-ppu-intr_2_0_timing"
+source = "mooneye"
+path = "acceptance/ppu/intr_2_0_timing.gb"
+sha256 = "6ea58d6940ad2dde6d20ef1fc63f1da83bdff842672d757a7a2377a3d0cfb7ff"
+model = "dmg"
+needs = "cpu, ppu"
+covers = "Mooneye: acceptance/ppu/intr_2_0_timing.gb"
+check = "mooneye"
+frames = 96
+
+[[rom]]
+id = "mts-ppu-intr_2_mode0_timing"
+source = "mooneye"
+path = "acceptance/ppu/intr_2_mode0_timing.gb"
+sha256 = "be1555d577506073ba1ec4717060aa24075c02b9c787b874623a98bf2ac2da6e"
+model = "dmg"
+needs = "cpu, ppu"
+covers = "Mooneye: acceptance/ppu/intr_2_mode0_timing.gb"
+check = "mooneye"
+frames = 96
+
+[[rom]]
+id = "mts-ppu-intr_2_mode0_timing_sprites"
+source = "mooneye"
+path = "acceptance/ppu/intr_2_mode0_timing_sprites.gb"
+sha256 = "52b10bb0d3073ec35d6bc4f0129fcabb788e4d11ea765163a49d519121d5169e"
+model = "dmg"
+needs = "cpu, ppu"
+covers = "Mooneye: acceptance/ppu/intr_2_mode0_timing_sprites.gb"
+check = "mooneye"
+frames = 311
+
+[[rom]]
+id = "mts-ppu-intr_2_mode3_timing"
+source = "mooneye"
+path = "acceptance/ppu/intr_2_mode3_timing.gb"
+sha256 = "b5cb7d22162e3ed6fa2dafeaa487cf1d1c042b5e8a3a9877823c33b578b9c31e"
+model = "dmg"
+needs = "cpu, ppu"
+covers = "Mooneye: acceptance/ppu/intr_2_mode3_timing.gb"
+check = "mooneye"
+frames = 96
+
+[[rom]]
+id = "mts-ppu-intr_2_oam_ok_timing"
+source = "mooneye"
+path = "acceptance/ppu/intr_2_oam_ok_timing.gb"
+sha256 = "38d7acfddce357c8b084f9bb647d6ffc99d1fb85d7a312c2db2c348ba888f7ff"
+model = "dmg"
+needs = "cpu, ppu"
+covers = "Mooneye: acceptance/ppu/intr_2_oam_ok_timing.gb"
+check = "mooneye"
+frames = 96
+
+[[rom]]
+id = "mts-ppu-lcdon_timing-GS"
+source = "mooneye"
+path = "acceptance/ppu/lcdon_timing-GS.gb"
+sha256 = "2a9d46b61935ae1a2332abd419bd6d63c2c48697b96ad547c859c207cf531e2f"
+model = "dmg"
+needs = "cpu, ppu"
+covers = "Mooneye: acceptance/ppu/lcdon_timing-GS.gb"
+check = "mooneye"
+frames = 113
+
+[[rom]]
+id = "mts-ppu-lcdon_write_timing-GS"
+source = "mooneye"
+path = "acceptance/ppu/lcdon_write_timing-GS.gb"
+sha256 = "e28b34cef8b5d58bf19e058be2206309129a5896568e918b6b11b6c61dce2a51"
+model = "dmg"
+needs = "cpu, ppu"
+covers = "Mooneye: acceptance/ppu/lcdon_write_timing-GS.gb"
+check = "mooneye"
+frames = 136
+
+[[rom]]
+id = "mts-ppu-stat_irq_blocking"
+source = "mooneye"
+path = "acceptance/ppu/stat_irq_blocking.gb"
+sha256 = "604436aeb6a37badd71be0fafa526307345f1de6af757193f11fc77e09a01fc7"
+model = "dmg"
+needs = "cpu, ppu"
+covers = "Mooneye: acceptance/ppu/stat_irq_blocking.gb"
+check = "mooneye"
+frames = 95
+
+[[rom]]
+id = "mts-ppu-stat_lyc_onoff"
+source = "mooneye"
+path = "acceptance/ppu/stat_lyc_onoff.gb"
+sha256 = "29f04aaf6b26085bca1dccfab648fb44fbf57d4aa923bca75a30167e45d8670e"
+model = "dmg"
+needs = "cpu, ppu"
+covers = "Mooneye: acceptance/ppu/stat_lyc_onoff.gb"
+check = "mooneye"
+frames = 98
+
+[[rom]]
+id = "mts-ppu-vblank_stat_intr-GS"
+source = "mooneye"
+path = "acceptance/ppu/vblank_stat_intr-GS.gb"
+sha256 = "f7de9a3ef1399f73ad16ef23dccf05d38cbd62373215608ee5da53a35850436e"
+model = "dmg"
+needs = "cpu, ppu"
+covers = "Mooneye: acceptance/ppu/vblank_stat_intr-GS.gb"
+check = "mooneye"
+frames = 102
+
+[[rom]]
+id = "mts-push_timing"
+source = "mooneye"
+path = "acceptance/push_timing.gb"
+sha256 = "f764ee5053f4d1f84896ec3ff8761e30beded493d204566e3e5b20af736179f9"
+model = "dmg"
+needs = "cpu"
+covers = "Mooneye: acceptance/push_timing.gb"
+check = "mooneye"
+frames = 97
+
+[[rom]]
+id = "mts-rapid_di_ei"
+source = "mooneye"
+path = "acceptance/rapid_di_ei.gb"
+sha256 = "4bcfbee2dcdca7895afff7947742ec942166aeb4899f07995863149ef360f7f0"
+model = "dmg"
+needs = "cpu"
+covers = "Mooneye: acceptance/rapid_di_ei.gb"
+check = "mooneye"
+frames = 94
+
+[[rom]]
+id = "mts-ret_cc_timing"
+source = "mooneye"
+path = "acceptance/ret_cc_timing.gb"
+sha256 = "eb95fe488131f625c656631b0188484f3126d80944584128dc514aaf95111fb6"
+model = "dmg"
+needs = "cpu"
+covers = "Mooneye: acceptance/ret_cc_timing.gb"
+check = "mooneye"
+frames = 98
+
+[[rom]]
+id = "mts-ret_timing"
+source = "mooneye"
+path = "acceptance/ret_timing.gb"
+sha256 = "cfb13c7aa11ff299402530c021fe93bd6f51769433757fd32e46985eb1296206"
+model = "dmg"
+needs = "cpu"
+covers = "Mooneye: acceptance/ret_timing.gb"
+check = "mooneye"
+frames = 98
+
+[[rom]]
+id = "mts-reti_intr_timing"
+source = "mooneye"
+path = "acceptance/reti_intr_timing.gb"
+sha256 = "a98440bfb0e4f29ef762515e4b842e2777bc35445a30903ed86799cf18dc5c55"
+model = "dmg"
+needs = "cpu"
+covers = "Mooneye: acceptance/reti_intr_timing.gb"
+check = "mooneye"
+frames = 94
+
+[[rom]]
+id = "mts-reti_timing"
+source = "mooneye"
+path = "acceptance/reti_timing.gb"
+sha256 = "bb90e11fdb8e40f8d69c94aff300c65ea28e74fd212316a477edbb2325a61eb0"
+model = "dmg"
+needs = "cpu"
+covers = "Mooneye: acceptance/reti_timing.gb"
+check = "mooneye"
+frames = 98
+
+[[rom]]
+id = "mts-rst_timing"
+source = "mooneye"
+path = "acceptance/rst_timing.gb"
+sha256 = "8ba26360bad21b451f36551863e60831f98e3de1308ae6bf2aee7a73973c99c2"
+model = "dmg"
+needs = "cpu"
+covers = "Mooneye: acceptance/rst_timing.gb"
+check = "mooneye"
+frames = 97
+
+[[rom]]
+id = "mts-serial-boot_sclk_align-dmgABCmgb"
+source = "mooneye"
+path = "acceptance/serial/boot_sclk_align-dmgABCmgb.gb"
+sha256 = "14c48977ddf9c734d53c23ad435a21d2db7fbd90411f99d2c7713b2335e55778"
+model = "dmg"
+needs = "cpu, serial, boot"
+covers = "Mooneye: acceptance/serial/boot_sclk_align-dmgABCmgb.gb"
+check = "mooneye"
+frames = 94
+mesen = "fail, as in SameBoy but with another frame: it checks the serial clock as Nintendo's boot ROM leaves it"
+
+[[rom]]
+id = "mts-timer-div_write"
+source = "mooneye"
+path = "acceptance/timer/div_write.gb"
+sha256 = "2be1e4da6fa24b9123d2a8bae47dd0d6f5e97e1855186c0c0f49e6d213eebfff"
+model = "dmg"
+needs = "cpu, timer"
+covers = "Mooneye: acceptance/timer/div_write.gb"
+check = "mooneye"
+frames = 135
+
+[[rom]]
+id = "mts-timer-rapid_toggle"
+source = "mooneye"
+path = "acceptance/timer/rapid_toggle.gb"
+sha256 = "59fe311058895c39475f74bcffb7d4f29272edb74e75d2cfe860c1a9d033b68a"
+model = "dmg"
+needs = "cpu, timer"
+covers = "Mooneye: acceptance/timer/rapid_toggle.gb"
+check = "mooneye"
+frames = 94
+
+[[rom]]
+id = "mts-timer-tim00"
+source = "mooneye"
+path = "acceptance/timer/tim00.gb"
+sha256 = "2193036c1628efd9ba86e5729292ef716d6ff3178cfa2abb9797709cd40252e8"
+model = "dmg"
+needs = "cpu, timer"
+covers = "Mooneye: acceptance/timer/tim00.gb"
+check = "mooneye"
+frames = 94
+
+[[rom]]
+id = "mts-timer-tim00_div_trigger"
+source = "mooneye"
+path = "acceptance/timer/tim00_div_trigger.gb"
+sha256 = "5cafdf474dfa7507b0db596118ad7bc65a6d5d652ee4232263dd028e7f2462b7"
+model = "dmg"
+needs = "cpu, timer"
+covers = "Mooneye: acceptance/timer/tim00_div_trigger.gb"
+check = "mooneye"
+frames = 94
+
+[[rom]]
+id = "mts-timer-tim01"
+source = "mooneye"
+path = "acceptance/timer/tim01.gb"
+sha256 = "b6f5043eae7fd2b2c3dc098ff16f664c8eb5699523616d84274669cf90c17fe7"
+model = "dmg"
+needs = "cpu, timer"
+covers = "Mooneye: acceptance/timer/tim01.gb"
+check = "mooneye"
+frames = 94
+
+[[rom]]
+id = "mts-timer-tim01_div_trigger"
+source = "mooneye"
+path = "acceptance/timer/tim01_div_trigger.gb"
+sha256 = "73c1e2677a2a122a285aa052e232153b133873c68cbcbf1cf41aa3d0a1b80a96"
+model = "dmg"
+needs = "cpu, timer"
+covers = "Mooneye: acceptance/timer/tim01_div_trigger.gb"
+check = "mooneye"
+frames = 94
+
+[[rom]]
+id = "mts-timer-tim10"
+source = "mooneye"
+path = "acceptance/timer/tim10.gb"
+sha256 = "fe3b0b292341d5ff26c9db3f6c9f3ba8a3d6e8b63977c61767a457962bd1faed"
+model = "dmg"
+needs = "cpu, timer"
+covers = "Mooneye: acceptance/timer/tim10.gb"
+check = "mooneye"
+frames = 94
+
+[[rom]]
+id = "mts-timer-tim10_div_trigger"
+source = "mooneye"
+path = "acceptance/timer/tim10_div_trigger.gb"
+sha256 = "d83c7acf20a0315486ed77db4f873db40fff6099564f8e250df66274a304b1b9"
+model = "dmg"
+needs = "cpu, timer"
+covers = "Mooneye: acceptance/timer/tim10_div_trigger.gb"
+check = "mooneye"
+frames = 94
+
+[[rom]]
+id = "mts-timer-tim11"
+source = "mooneye"
+path = "acceptance/timer/tim11.gb"
+sha256 = "624fd3ad3ede2790095162cfa212e488825072a0ecc287ff0e88da6c5d7040f1"
+model = "dmg"
+needs = "cpu, timer"
+covers = "Mooneye: acceptance/timer/tim11.gb"
+check = "mooneye"
+frames = 94
+
+[[rom]]
+id = "mts-timer-tim11_div_trigger"
+source = "mooneye"
+path = "acceptance/timer/tim11_div_trigger.gb"
+sha256 = "3f60bc3d2ba63bd9209706332dd6d0ef59ad09ada8dede0caa9e2e5132ed102e"
+model = "dmg"
+needs = "cpu, timer"
+covers = "Mooneye: acceptance/timer/tim11_div_trigger.gb"
+check = "mooneye"
+frames = 94
+
+[[rom]]
+id = "mts-timer-tima_reload"
+source = "mooneye"
+path = "acceptance/timer/tima_reload.gb"
+sha256 = "1ca70c725bd1e027b07d3058839bd140eccddd9f4ca41305c4f8ab3acaff8a98"
+model = "dmg"
+needs = "cpu, timer"
+covers = "Mooneye: acceptance/timer/tima_reload.gb"
+check = "mooneye"
+frames = 94
+
+[[rom]]
+id = "mts-timer-tima_write_reloading"
+source = "mooneye"
+path = "acceptance/timer/tima_write_reloading.gb"
+sha256 = "7d9a6d5ada792596621f8bfdf257112887b2dd01d98e0f91a253afd6e05d0540"
+model = "dmg"
+needs = "cpu, timer"
+covers = "Mooneye: acceptance/timer/tima_write_reloading.gb"
+check = "mooneye"
+frames = 94
+
+[[rom]]
+id = "mts-timer-tma_write_reloading"
+source = "mooneye"
+path = "acceptance/timer/tma_write_reloading.gb"
+sha256 = "e48ff98d4f363b92e92bdabe86253fcf63f648964e3a61e73d52aedcba3e5ab2"
+model = "dmg"
+needs = "cpu, timer"
+covers = "Mooneye: acceptance/timer/tma_write_reloading.gb"
+check = "mooneye"
+frames = 94
+
+[[rom]]
+id = "mts-mbc1-bits_bank1"
+source = "mooneye"
+path = "emulator-only/mbc1/bits_bank1.gb"
+sha256 = "77c698cb537d22ab00bef3907499853b415d6f03f2572c1e8f199dee9936f74b"
+model = "dmg"
+needs = "cpu, mbc1"
+covers = "Mooneye: emulator-only/mbc1/bits_bank1.gb"
+check = "mooneye"
+frames = 262
+
+[[rom]]
+id = "mts-mbc1-bits_bank2"
+source = "mooneye"
+path = "emulator-only/mbc1/bits_bank2.gb"
+sha256 = "52cde75b4ec3c597ad112af1e24bc686e8354c9ed63f3df2cb571afa49f7ff38"
+model = "dmg"
+needs = "cpu, mbc1"
+covers = "Mooneye: emulator-only/mbc1/bits_bank2.gb"
+check = "mooneye"
+frames = 259
+
+[[rom]]
+id = "mts-mbc1-bits_mode"
+source = "mooneye"
+path = "emulator-only/mbc1/bits_mode.gb"
+sha256 = "68417ce068e9b94ab14b2dfbd3953d57c3110bc9c9e50dac69f3bdda665b68be"
+model = "dmg"
+needs = "cpu, mbc1"
+covers = "Mooneye: emulator-only/mbc1/bits_mode.gb"
+check = "mooneye"
+frames = 262
+
+[[rom]]
+id = "mts-mbc1-bits_ramg"
+source = "mooneye"
+path = "emulator-only/mbc1/bits_ramg.gb"
+sha256 = "14815d18d1ddb23c6a1e46c70ab3bbf273bf1c3aec580036362e576de0783675"
+model = "dmg"
+needs = "cpu, mbc1"
+covers = "Mooneye: emulator-only/mbc1/bits_ramg.gb"
+check = "mooneye"
+frames = 432
+
+[[rom]]
+id = "mts-mbc1-multicart_rom_8Mb"
+source = "mooneye"
+path = "emulator-only/mbc1/multicart_rom_8Mb.gb"
+sha256 = "71147f75818877994cca6a0c4c3f9fedacdd50466e1134b743e9d79844995192"
+model = "dmg"
+needs = "cpu, mbc1"
+covers = "Mooneye: emulator-only/mbc1/multicart_rom_8Mb.gb"
+check = "mooneye"
+frames = 95
+mesen = "fail: MesenCE doesn't wire MBC1 multicarts (MBC1M)"
+override = { mesen = "0xa8a3f0fc", result = "pass", crc = "0x96be027d", why = "SameBoy passes it, as the hardware does" }
+
+[[rom]]
+id = "mts-mbc1-ram_256kb"
+source = "mooneye"
+path = "emulator-only/mbc1/ram_256kb.gb"
+sha256 = "c6fdd46418adb4b23356740a8e2bc849c65e4a19605d290f07c49e73048a8037"
+model = "dmg"
+needs = "cpu, mbc1"
+covers = "Mooneye: emulator-only/mbc1/ram_256kb.gb"
+check = "mooneye"
+frames = 139
+
+[[rom]]
+id = "mts-mbc1-ram_64kb"
+source = "mooneye"
+path = "emulator-only/mbc1/ram_64kb.gb"
+sha256 = "df747907b4639a91cf4b61a3d342f0c7728b6e618e66ea569c6311d312f86e36"
+model = "dmg"
+needs = "cpu, mbc1"
+covers = "Mooneye: emulator-only/mbc1/ram_64kb.gb"
+check = "mooneye"
+frames = 139
+
+[[rom]]
+id = "mts-mbc1-rom_16Mb"
+source = "mooneye"
+path = "emulator-only/mbc1/rom_16Mb.gb"
+sha256 = "1e6caad540828cf79a9928ed49b8709a56ba4d7436f7fded6fcf005dbfd71a2a"
+model = "dmg"
+needs = "cpu, mbc1"
+covers = "Mooneye: emulator-only/mbc1/rom_16Mb.gb"
+check = "mooneye"
+frames = 97
+
+[[rom]]
+id = "mts-mbc1-rom_1Mb"
+source = "mooneye"
+path = "emulator-only/mbc1/rom_1Mb.gb"
+sha256 = "22e19e9222b7c531480ab0b569c0a3d9c478cd4128d5a4dc579d39a7cc2d7384"
+model = "dmg"
+needs = "cpu, mbc1"
+covers = "Mooneye: emulator-only/mbc1/rom_1Mb.gb"
+check = "mooneye"
+frames = 97
+
+[[rom]]
+id = "mts-mbc1-rom_2Mb"
+source = "mooneye"
+path = "emulator-only/mbc1/rom_2Mb.gb"
+sha256 = "1bebe8536ed6179854230239d0b1f67c7d8e5d7aa59877487465bc0154ced5c6"
+model = "dmg"
+needs = "cpu, mbc1"
+covers = "Mooneye: emulator-only/mbc1/rom_2Mb.gb"
+check = "mooneye"
+frames = 97
+
+[[rom]]
+id = "mts-mbc1-rom_4Mb"
+source = "mooneye"
+path = "emulator-only/mbc1/rom_4Mb.gb"
+sha256 = "6ba3f62b876becde96dfd130ba050962d7ac5b526d0beb3add738693d1c3526b"
+model = "dmg"
+needs = "cpu, mbc1"
+covers = "Mooneye: emulator-only/mbc1/rom_4Mb.gb"
+check = "mooneye"
+frames = 97
+
+[[rom]]
+id = "mts-mbc1-rom_512kb"
+source = "mooneye"
+path = "emulator-only/mbc1/rom_512kb.gb"
+sha256 = "9848621544e7acfade18694bbf430b713a552ce95dd1d59d04c0c49852b78d4b"
+model = "dmg"
+needs = "cpu, mbc1"
+covers = "Mooneye: emulator-only/mbc1/rom_512kb.gb"
+check = "mooneye"
+frames = 97
+
+[[rom]]
+id = "mts-mbc1-rom_8Mb"
+source = "mooneye"
+path = "emulator-only/mbc1/rom_8Mb.gb"
+sha256 = "318a9849f2c1a135fa6dbfd8916dda671c58d65fc305d101a5a15e3227fe61cf"
+model = "dmg"
+needs = "cpu, mbc1"
+covers = "Mooneye: emulator-only/mbc1/rom_8Mb.gb"
+check = "mooneye"
+frames = 97
+
+[[rom]]
+id = "mts-mbc2-bits_ramg"
+source = "mooneye"
+path = "emulator-only/mbc2/bits_ramg.gb"
+sha256 = "6b112253bf92c83da4fedc7dc29ee6457ea88ee9ed15de71fddc9714440129c9"
+model = "dmg"
+needs = "cpu, mbc2"
+covers = "Mooneye: emulator-only/mbc2/bits_ramg.gb"
+check = "mooneye"
+frames = 439
+
+[[rom]]
+id = "mts-mbc2-bits_romb"
+source = "mooneye"
+path = "emulator-only/mbc2/bits_romb.gb"
+sha256 = "7d7684f05ce489be7485dfe0b2e789f8c85b317e981637afb2813047002b8e7c"
+model = "dmg"
+needs = "cpu, mbc2"
+covers = "Mooneye: emulator-only/mbc2/bits_romb.gb"
+check = "mooneye"
+frames = 270
+
+[[rom]]
+id = "mts-mbc2-bits_unused"
+source = "mooneye"
+path = "emulator-only/mbc2/bits_unused.gb"
+sha256 = "14813cb3305e52ecfd84887797ed606b6b804db68196397bb6a7cd0d824d57b3"
+model = "dmg"
+needs = "cpu, mbc2"
+covers = "Mooneye: emulator-only/mbc2/bits_unused.gb"
+check = "mooneye"
+frames = 258
+
+[[rom]]
+id = "mts-mbc2-ram"
+source = "mooneye"
+path = "emulator-only/mbc2/ram.gb"
+sha256 = "dc039f0796c35bc749d564610aee7cace339560555298256e4824e915a38c141"
+model = "dmg"
+needs = "cpu, mbc2"
+covers = "Mooneye: emulator-only/mbc2/ram.gb"
+check = "mooneye"
+frames = 112
+
+[[rom]]
+id = "mts-mbc2-rom_1Mb"
+source = "mooneye"
+path = "emulator-only/mbc2/rom_1Mb.gb"
+sha256 = "d1f772ae92234265bc54a023924ac98d4efcb1b59b3c8c2f388afbaca19969d7"
+model = "dmg"
+needs = "cpu, mbc2"
+covers = "Mooneye: emulator-only/mbc2/rom_1Mb.gb"
+check = "mooneye"
+frames = 94
+
+[[rom]]
+id = "mts-mbc2-rom_2Mb"
+source = "mooneye"
+path = "emulator-only/mbc2/rom_2Mb.gb"
+sha256 = "0463c1a364b717d10680e58b2e95854dadcacbdfabe9f7d39f17eb826ef42e69"
+model = "dmg"
+needs = "cpu, mbc2"
+covers = "Mooneye: emulator-only/mbc2/rom_2Mb.gb"
+check = "mooneye"
+frames = 94
+
+[[rom]]
+id = "mts-mbc2-rom_512kb"
+source = "mooneye"
+path = "emulator-only/mbc2/rom_512kb.gb"
+sha256 = "4748aeda444bee6520e1bd2268870b53c080a61adc4039c8f32eb101a03df635"
+model = "dmg"
+needs = "cpu, mbc2"
+covers = "Mooneye: emulator-only/mbc2/rom_512kb.gb"
+check = "mooneye"
+frames = 94
+
+[[rom]]
+id = "mts-mbc5-rom_16Mb"
+source = "mooneye"
+path = "emulator-only/mbc5/rom_16Mb.gb"
+sha256 = "315ac9d9d7a3adda80f5fa8dee5826912bd99961e9539bd39ca8b440464ae794"
+model = "dmg"
+needs = "cpu, mbc5"
+covers = "Mooneye: emulator-only/mbc5/rom_16Mb.gb"
+check = "mooneye"
+frames = 96
+
+[[rom]]
+id = "mts-mbc5-rom_1Mb"
+source = "mooneye"
+path = "emulator-only/mbc5/rom_1Mb.gb"
+sha256 = "5170771b8183f7e5e10c2f40d7b3e18d170657b5906305caf111776e2277b425"
+model = "dmg"
+needs = "cpu, mbc5"
+covers = "Mooneye: emulator-only/mbc5/rom_1Mb.gb"
+check = "mooneye"
+frames = 96
+
+[[rom]]
+id = "mts-mbc5-rom_2Mb"
+source = "mooneye"
+path = "emulator-only/mbc5/rom_2Mb.gb"
+sha256 = "e93c53a71292b0066cba749a46fde2119b8733580b403189d3987e922588f0ca"
+model = "dmg"
+needs = "cpu, mbc5"
+covers = "Mooneye: emulator-only/mbc5/rom_2Mb.gb"
+check = "mooneye"
+frames = 96
+
+[[rom]]
+id = "mts-mbc5-rom_32Mb"
+source = "mooneye"
+path = "emulator-only/mbc5/rom_32Mb.gb"
+sha256 = "665b18d5e876f527e2c05579f7166641539fe895522711906c468f75bd00ec90"
+model = "dmg"
+needs = "cpu, mbc5"
+covers = "Mooneye: emulator-only/mbc5/rom_32Mb.gb"
+check = "mooneye"
+frames = 96
+
+[[rom]]
+id = "mts-mbc5-rom_4Mb"
+source = "mooneye"
+path = "emulator-only/mbc5/rom_4Mb.gb"
+sha256 = "188410388f84a5569c2a9f9d6c6e9e269f40d831ea4b718c0ae251d518ecf8c3"
+model = "dmg"
+needs = "cpu, mbc5"
+covers = "Mooneye: emulator-only/mbc5/rom_4Mb.gb"
+check = "mooneye"
+frames = 96
+
+[[rom]]
+id = "mts-mbc5-rom_512kb"
+source = "mooneye"
+path = "emulator-only/mbc5/rom_512kb.gb"
+sha256 = "6aad3b6b80f5b7308e79ef1acda4a045febe1eddf5021cecc3873d63c3e734ff"
+model = "dmg"
+needs = "cpu, mbc5"
+covers = "Mooneye: emulator-only/mbc5/rom_512kb.gb"
+check = "mooneye"
+frames = 96
+
+[[rom]]
+id = "mts-mbc5-rom_64Mb"
+source = "mooneye"
+path = "emulator-only/mbc5/rom_64Mb.gb"
+sha256 = "e02ff0175932f76e01421a11b202a3840eb4dad70d735819b7dca45aedefe3c5"
+model = "dmg"
+needs = "cpu, mbc5"
+covers = "Mooneye: emulator-only/mbc5/rom_64Mb.gb"
+check = "mooneye"
+frames = 96
+
+[[rom]]
+id = "mts-mbc5-rom_8Mb"
+source = "mooneye"
+path = "emulator-only/mbc5/rom_8Mb.gb"
+sha256 = "81e32dc0cfe3940f3be759b1206ac5c46ca42acc64b7848e7de586ec1aa1973e"
+model = "dmg"
+needs = "cpu, mbc5"
+covers = "Mooneye: emulator-only/mbc5/rom_8Mb.gb"
+check = "mooneye"
+frames = 96
+
+[[rom]]
+id = "mts-cgb-bits-unused_hwio-C"
+source = "mooneye"
+path = "misc/bits/unused_hwio-C.gb"
+sha256 = "0d66303d0035fcf9dd3cbb9698952a668f50fb2f3d3e290598712a3a2ae35a5b"
+model = "cgb"
+needs = "cpu, cgb"
+covers = "Mooneye: misc/bits/unused_hwio-C.gb"
+check = "mooneye"
+frames = 198
+mesen = "fail: MesenCE reads some of the Color's unused I/O bits wrong"
+override = { mesen = "0xe6c5f4e6", result = "pass", crc = "0x3c9e32ae", why = "SameBoy passes it, as the hardware does" }
+
+[[rom]]
+id = "mts-cgb-boot_div-cgbABCDE"
+source = "mooneye"
+path = "misc/boot_div-cgbABCDE.gb"
+sha256 = "b5b2f6762cc1cbb423b561498a6ad7db88daa81161924bed86b37182438623df"
+model = "cgb"
+needs = "cpu, timer, boot, cgb"
+covers = "Mooneye: misc/boot_div-cgbABCDE.gb"
+check = "mooneye"
+frames = 198
+mesen = "fail, as in SameBoy: it checks the timer's divider as Nintendo's boot ROM leaves it"
+
+[[rom]]
+id = "mts-cgb-boot_hwio-C"
+source = "mooneye"
+path = "misc/boot_hwio-C.gb"
+sha256 = "dcc7b577b5dee89111c17654e6fb31241692ff380fb11ae6038326be7a9408cc"
+model = "cgb"
+needs = "cpu, boot, cgb"
+covers = "Mooneye: misc/boot_hwio-C.gb"
+check = "mooneye"
+frames = 198
+mesen = "fail: MesenCE reads some of the Color's I/O registers wrong after boot"
+override = { mesen = "0xc7201c7a", result = "pass", crc = "0x3c9e32ae", why = "SameBoy passes it, as the hardware does, through SameBoy's boot ROM" }
+
+[[rom]]
+id = "mts-cgb-boot_regs-cgb"
+source = "mooneye"
+path = "misc/boot_regs-cgb.gb"
+sha256 = "9b466c875eec05e7d31e643ae3c5d7bb411f3e1f0bf14d15352c355db2ef348a"
+model = "cgb"
+needs = "cpu, boot, cgb"
+covers = "Mooneye: misc/boot_regs-cgb.gb"
+check = "mooneye"
+frames = 198
+
+[[rom]]
+id = "mts-cgb-ppu-vblank_stat_intr-C"
+source = "mooneye"
+path = "misc/ppu/vblank_stat_intr-C.gb"
+sha256 = "20c6925c49226416d7f06941ff734664120e1d20e1e674bba230aa202ed350be"
+model = "cgb"
+needs = "cpu, ppu, cgb"
+covers = "Mooneye: misc/ppu/vblank_stat_intr-C.gb"
+check = "mooneye"
+frames = 206
+
+[[rom]]
+id = "dmg-acid2"
+source = "dmg-acid2"
+path = "dmg-acid2.gb"
+sha256 = "464e14b7d42e7feea0b7ede42be7071dc88913f75b9ffa444299424b63d1dff1"
+model = "dmg"
+needs = "cpu, ppu"
+covers = "The PPU: background, window, objects and their priorities, as a face"
+check = "frame"
+frames = 300
+mesen = "The face, matching dmg-acid2's reference image pixel for pixel"
+
+[[rom]]
+id = "cgb-acid2"
+source = "cgb-acid2"
+path = "cgb-acid2.gbc"
+sha256 = "197fb0bcec544f0400527fc707e0a94f55435974986e6986b424ace5de81720e"
+model = "cgb"
+needs = "cpu, ppu, cgb"
+covers = "The Color's PPU: attributes, banks, palettes and priorities, as a face"
+check = "frame"
+frames = 300
+mesen = "The face, matching cgb-acid2's reference image pixel for pixel"
+
