@@ -48,6 +48,8 @@ Each top module placed alone by `tools/timing/report.py` (see `docs/timing.md` f
 
 ## Status
 
+**Now (Nov 2026):** it takes every frame CRC the rig checks, on the Tang Nano 20K, the Tang Console 138K and the PYNQ-Z2: the NES's 190 golden ROMs and the Atari 2600's 29 test cartridges and 446 games. The paragraphs below are from when it arrived (Oct 25).
+
 Sim tests (at 16 x 6): frame and line CRCs match a software CRC over three frames, with pixels 3 clocks apart; a whole frame captured line by line, holding after each line until the next is asked for, matches what was sent.
 
 In `systems/nes` on a Tang Nano 20K: frame CRCs match MesenCE's for 42 test ROMs, and a frame dumped from the board matches MesenCE's pixel for pixel.

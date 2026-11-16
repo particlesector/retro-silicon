@@ -60,6 +60,8 @@ Each top module placed alone by `tools/timing/report.py` (see `docs/timing.md` f
 
 ## Status
 
+**Now (Nov 2026):** in `systems/nes` and `systems/atari-2600` on the Tang Nano 20K, the Tang Console 138K and the PYNQ-Z2, with the sim's video CRCs.
+
 Sim tests, with both clocks at the Tang Nano 20K's rates (46.40625 and 74.25 MHz, from one PLL) and a source with the 2C02's exact timing (341 dots by 262 lines, pixels two dots after they're drawn, the odd-frame dot skip):
 - From the third display frame on, every frame shows the source's frame whole, each pixel from the right frame, line and column, with no late or overwritten lines.
 - A source stopped for over half a frame gives black lines and `d_late`, never wrong pixels, and is whole again within three frames.

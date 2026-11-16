@@ -36,4 +36,4 @@ Each top module placed alone by `tools/timing/report.py` (see `docs/timing.md` f
 
 ## Status
 
-Sim tests pass: the standard check value (`"123456789"` → `0xCBF43926`), the empty input, random data up to 61,440 bytes (one NES frame) against a bitwise software model, holding its value while `en` is low, a CRC restored mid-stream finishing as if it had seen the whole stream, and `W` = 30 against the bitwise model. Not yet run on a board.
+Sim tests pass: the standard check value (`"123456789"` → `0xCBF43926`), the empty input, random data up to 61,440 bytes (one NES frame) against a bitwise software model, holding its value while `en` is low, a CRC restored mid-stream finishing as if it had seen the whole stream, and `W` = 30 against the bitwise model. On all three boards it checks every upload and every frame and sound: in the test shell's CRC command and in `debug/video-probe`, under `systems/nes` and `systems/atari-2600`.

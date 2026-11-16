@@ -83,7 +83,7 @@ Sim tests:
 - **Ports and PA7:** direction registers, port B reading back its outputs, the edge detector both ways, its flag, and both interrupts.
 - **Save state:** 40 random runs of random accesses, saved at a random cycle, restored into another RIOT and run on: the same reads, outputs and interrupt for 400 cycles each. Without save states (`SAVE_STATE = 0`) it runs the same.
 
-Not yet in a system or on a board: `systems/atari-2600` (milestone A4) will run the `riot_ram` and `riot_timer` cartridges against Stella's frames.
+In `systems/atari-2600`, in the sim and on the Tang Nano 20K, the Tang Console 138K and the PYNQ-Z2: the `riot_ram`, `riot_timer`, `riot_inputs` and `riot_power_up` cartridges match Stella's frames, as do the joysticks, console switches and keypads of 446 commercial games (the system's README).
 
 ## References
 

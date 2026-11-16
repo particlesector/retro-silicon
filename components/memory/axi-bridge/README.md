@@ -47,4 +47,4 @@ Each top module placed alone by `tools/timing/report.py` (see `docs/timing.md` f
 
 Sim test (`AW` = 12): 20,000 random byte reads and writes against a byte array, through an AXI slave model that withholds ready on every channel at random and answers after 0 to 11 clocks. The model checks AXI's rules as it goes: payloads hold while valid is up, one transfer at a time, single 8-byte beats inside the window, a one-byte strobe. `req` is held high the clock after each `ack` without starting a second access. The bench caught both bugs planted in it, a read's byte from the wrong lane and a write's strobe on the wrong byte.
 
-Not yet on a board: the PYNQ-Z2's HP0 is next (milestone 9.5).
+On the PYNQ-Z2, into the Zynq's HP0 port and its DDR3: `systems/shell-axi`'s SDRAM test over the whole 8 MB window gives the Tang Nano 20K's CRC, and the NES (`nes_axi`) runs every golden ROM with its PRG ROM there, behind `memory/cache`.

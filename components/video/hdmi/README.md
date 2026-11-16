@@ -65,6 +65,8 @@ Each top module placed alone by `tools/timing/report.py` (see `docs/timing.md` f
 
 ## Status
 
+**Now (Nov 2026):** picture and sound at 720p in `systems/nes` and `systems/atari-2600` on the Tang Nano 20K, the Tang Console 138K and the PYNQ-Z2, with the sim's video CRCs and the capture dongle's picture.
+
 Sim tests (`sim/tmds_model.hpp` holds a TMDS encoder written from the DVI spec, a receiver's decoder, and an HDMI sink's decoder that follows preambles into data islands, rebuilds packets and checks their BCH codes, checksums and sample parity; the harness uses them too):
 - `tmds_encoder` gives the spec encoder's symbol for 2 million random inputs, every one decodes back to its input, and the running disparity stays within ±10.
 - Two whole 720p frames decode to the test pattern, with control symbols everywhere else, 750 hsync pulses of 40 pixels at pixel 1390, and vsync for 5 lines from line 725, starting with that line's hsync.
