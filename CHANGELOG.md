@@ -124,6 +124,7 @@ All notable changes to this project are listed here. The format follows [Keep a 
 - `systems/atari-2600`: `a2600_frames_test` writes every CPU access with `RS_A2600_BUS=DIR` (as `<colour clock> <address> R|W <value>`), to diff against an emulator's trace, and runs other lists with `RS_A2600_GOLDEN`, `RS_A2600_AUDIO_GOLDEN` and `RS_A2600_PADDLES`.
 - `testroms`: `riot_power_up`, a 2600 test cartridge that shows the RIOT's RAM as it finds it at power-up, all 0 from Stella's power-up; the harness also runs it right after `riot_ram` on the same system.
 - `testroms/manifest-gb.toml`: the Game Boy's test ROMs (blargg's CPU, timing, sound and OAM-bug tests, Mooneye's acceptance, MBC and Color tests, dmg-acid2 and cgb-acid2: 153), SameBoy 1.0.5's open boot ROMs built from source, and SingleStepTests' SM83 cases; `fetch.py` takes archive sources, git sources without a build, `[[boot]]` entries and `[[tree]]` entries (a folder checked by one sum). `tools/mesen/gb_frames.py`: each ROM's result in MesenCE and its golden frame (`harness/golden/gb_frames_crc32.txt`), through SameBoy's boot ROMs, with overrides where SameBoy and the hardware show MesenCE wrong.
+- `cpu/sm83`: the Sharp SM83, the Game Boy's CPU, exact to the machine cycle: every opcode and CB-prefixed one, interrupt dispatch (with the IE-push cancel), HALT and its bug, STOP, EI's delay and a save-state port; all 500,000 of SingleStepTests' SM83 cases pass, every M-cycle's bus access included.
 
 ### Changed
 
