@@ -80,10 +80,10 @@ Sim tests:
 - **Save state:** 40 random programs with random IRQs and NMIs, saved at a random cycle, restored into another CPU and run on: the same 400 bus cycles each. Leaving out the NMI pending flag, the address register or the cycle counter fails it.
 - **Unit tests:** hand-written checks of the documented bus patterns (indexed addressing, read-modify-write, JMP's page-wrap bug, branches, JSR and RTS, BRK and RTI, reset), interrupt timing, RDY and JAM.
 
-On a Tang Nano 20K, in `systems/nes`: nestest's 26,554 cycles give the same bus-trace CRC as the sim bench (`harness/golden/nes_trace_crc32.txt`).
+On the Tang Nano 20K, the Tang Console 138K and the PYNQ-Z2, in `systems/nes`: nestest's 26,554 cycles give the same bus-trace CRC as the sim bench (`harness/golden/nes_trace_crc32.txt`), and the NES's 190 golden ROMs pass. As the 6507 (`DECIMAL = 1`, 13 address lines) in `systems/atari-2600`, on the same three boards, every test cartridge matches Stella, and 446 commercial games pass.
 
 Gaps:
-- **RDY:** stalls are modelled as repeating the stalled read, which is right for straightforward cases but not every pipeline stage. It's left out of the lockstep for now and will be matched exactly when the NES's DMA needs it.
+- **RDY:** stalls are modelled as repeating the stalled read, which is right for straightforward cases but not every pipeline stage. It isn't in the perfect6502 lockstep; the NES's DMA test ROMs (`dmc_dma`, `sprdma_and_dmc_dma`) and the 2600's WSYNC, on every cartridge, check it against MesenCE and Stella.
 - **Unstable opcodes:** as MesenCE runs them, which is how the NES's tests expect them; not checked against perfect6502, whose results for them depend on analogue effects it doesn't model.
 - **ARR with D set:** binary on this core; the NMOS chip adjusts it. The NES never sees it.
 - **perfect6502's ANC, ALR and ARR** leave out the AND with the operand, which real chips do (perfect6502 issue #13). Those three are checked by unit tests instead of the lockstep.

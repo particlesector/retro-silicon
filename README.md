@@ -1,14 +1,14 @@
 # retro-silicon
 
-Classic consoles and computers rebuilt chip by chip in FPGA logic: reusable SystemVerilog cores, verified against reference emulators in simulation and on real boards. The NES comes first; its CPU, video and test blocks are built to carry over to the Atari 2600, the C64 and the systems after them.
+Classic consoles and computers rebuilt chip by chip in FPGA logic: reusable SystemVerilog cores, verified against reference emulators in simulation and on real boards. Two systems are complete, the NES and the Atari 2600, each on three boards (Sipeed's Tang Nano 20K and Tang Console 138K, and TUL's PYNQ-Z2); their CPU, video, memory and test blocks carry over to the systems after them.
 
 **[retro-silicon.particlesector.com](https://retro-silicon.particlesector.com)** has the rest: each [system](https://retro-silicon.particlesector.com/systems/)'s history and specifications, the live status of every [component](https://retro-silicon.particlesector.com/components/) on every [board](https://retro-silicon.particlesector.com/boards/), the build log, and [how the cores are verified](https://retro-silicon.particlesector.com/about/).
 
-Every component builds with the open-source flow (Yosys, nextpnr, Verilator) and ships with a FuseSoC manifest, so it can be pulled into another project by name.
+Every component builds with the open-source flow (Yosys, nextpnr, Verilator) and ships with a FuseSoC manifest, so it can be pulled into another project by name. Only `boards/` depends on a vendor's tools: the Tang Console 138K builds with Gowin EDA's free Education edition, as the open flow has no PLL for its chip.
 
 ## Status
 
-retro-silicon is built one system at a time, starting with the NES. The site shows where every part stands, generated from the latest simulation and board runs: see [Components](https://retro-silicon.particlesector.com/components/) and [Boards](https://retro-silicon.particlesector.com/boards/), and each component's own README.
+retro-silicon is built one system at a time. The NES (`systems/nes`) and the Atari 2600 (`systems/atari-2600`) are complete: every test ROM in their golden lists matches the reference emulator's frames and sound (MesenCE's for the NES, Stella's for the 2600) in the sim and on all three boards, and so do the commercial games they've been checked with. The site shows where every part stands, generated from the latest simulation and board runs: see [Components](https://retro-silicon.particlesector.com/components/) and [Boards](https://retro-silicon.particlesector.com/boards/), and each component's own README.
 
 ## Quick start
 
@@ -51,7 +51,7 @@ See [CONTRIBUTING.md](CONTRIBUTING.md) for what each component folder holds and 
 
 ## Tested with
 
-Verilator 5.053, Yosys 0.70, nextpnr-himbaechel 0.11.1, Apicula 0.35, openFPGALoader 1.1.1 (all OSS CAD Suite 2026-10-16), openXC7 2026-09-24 (nextpnr-xilinx, Project X-Ray) for the PYNQ-Z2, Catch2 3.7.1, FuseSoC 2.4.7, GCC 15.
+Verilator 5.053, Yosys 0.70, nextpnr-himbaechel 0.11.1, Apicula 0.35, openFPGALoader 1.1.1 (all OSS CAD Suite 2026-10-16), openXC7 2026-09-24 (nextpnr-xilinx, Project X-Ray) for the PYNQ-Z2, Gowin EDA Education 1.9.11.03 for the Tang Console 138K, Catch2 3.7.1, FuseSoC 2.4.7, GCC 15. References: MesenCE 2.2.1 (the NES) and Stella 7.0's libretro core (the Atari 2600).
 
 ## License
 

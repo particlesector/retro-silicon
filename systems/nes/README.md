@@ -239,6 +239,10 @@ It plays exactly what the test build plays: in the sim (`make_nes_lean_sim`, the
 
 ## Status
 
+**Now (Nov 2026): complete.** In the sim and on the Tang Nano 20K, the Tang Console 138K and the PYNQ-Z2, all 190 golden ROMs (`harness/golden/nes_frames_crc32.txt`: every manifest ROM but nestest, which is checked by its trace) match MesenCE's frames and the sim's audio CRCs, the HDMI checks pass with the dongle's picture, and so do 63 checks of 29 commercial games, battery saves included. Mappers: NROM, UxROM, CNROM, AxROM, MMC1, MMC2, MMC3 and MMC6. Save states run on the Tang Console 138K and the PYNQ-Z2; the Tang Nano 20K leaves them out (`SAVE_STATE=0`) to fit the APU and HDMI audio. The sections below are in the order the work happened, each with what was true then.
+
+### How it got here
+
 `rig::nes::nestest` runs nestest's automated mode for 26,554 cycles while the host reads memory; the trace CRC is still `0xebba51ce`, in the sim (both memories) and on both boards, and the trace buffer's last 1024 cycles match nestest.log, instruction by instruction.
 
 **The unstable opcodes' ROMs (Oct 31).** blargg's `all_instrs`, `instr_timing`, `instr_misc` and two of their singles need the unstable opcodes, which `cpu/6502` now runs; with them the golden list has 188 ROMs, every manifest ROM but nestest (checked by its trace).

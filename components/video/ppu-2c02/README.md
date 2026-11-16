@@ -69,6 +69,8 @@ Each top module placed alone by `tools/timing/report.py` (see `docs/timing.md` f
 
 ## Status
 
+**Now (Nov 2026):** in `systems/nes`, in the sim and on the Tang Nano 20K, the Tang Console 138K and the PYNQ-Z2, all 190 golden ROMs match MesenCE's frames, and so do 29 commercial games. The paragraphs below are from when the PPU arrived (Oct 25).
+
 Unit tests: frame length with and without rendering (the odd frame's skipped dot), VBL set and clear times, NMI and its suppression, $2007's buffer, palette mirrors and increment, a background tile with fine X scroll, sprite 0 hit's first dot, and a save-state round trip mid-frame with rendering and register writes going on.
 
 In `systems/nes`, 42 test ROMs pass and their frames match MesenCE's (`harness/golden/nes_frames_crc32.txt`), in the sim and on a Tang Nano 20K: blargg's `ppu_vbl_nmi` (all 10), `ppu_open_bus`, `oam_read`, the 2005 sprite hit (11), sprite overflow (5), VBL/NMI timing (7) and PPU (5) tests, `nmi_sync`'s demo and `full_palette`.

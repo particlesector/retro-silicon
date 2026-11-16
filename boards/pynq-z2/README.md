@@ -59,4 +59,6 @@ LD0 overflow and LD1 framing error (both sticky until reload), LD3 heartbeat, fo
 
 ## Status
 
-On the board, with the same CRCs as the Tang boards: the UART echo (also 10 MB with no errors), the test shell with injected faults, nestest's bus trace, the save-state round trip, all 42 test ROMs with MesenCE's frame CRCs, and HDMI at 720p, both the video CRCs (full_palette's once `video/line-scaler` stopped using block RAM parity bits) and the captured picture.
+**Now (Nov 2026):** the NES (`nes_axi`, PRG ROM in the DDR3) passes all 190 golden ROMs, the HDMI checks and 63 checks of 29 commercial games, and the Atari 2600 (`pynq_a2600`) all 29 test cartridges, its HDMI checks and 892 checks of 446 commercial games, all with the Tang boards' CRCs.
+
+At bring-up (Oct 27), on the board, with the same CRCs as the Tang boards: the UART echo (also 10 MB with no errors), the test shell with injected faults, nestest's bus trace, the save-state round trip, all 42 test ROMs with MesenCE's frame CRCs, and HDMI at 720p, both the video CRCs (full_palette's once `video/line-scaler` stopped using block RAM parity bits) and the captured picture.

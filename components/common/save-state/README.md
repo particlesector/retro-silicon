@@ -46,6 +46,8 @@ Each top module placed alone by `tools/timing/report.py` (see `docs/timing.md` f
 
 ## Status
 
+**Now (Nov 2026):** in `systems/nes` on the Tang Console 138K and the PYNQ-Z2, where the save-state round trip and the hand-off between the two pass; the Tang Nano 20K's NES leaves save states out (`SAVE_STATE=0`) to fit. The paragraph below is from when it arrived (Oct 25), with the 20K and the 138K as the two boards.
+
 Sim tests, with two regions behind a bus of random latency and a stop that takes up to 20 clocks: a save fills the buffer with the regions in order, touching nothing else; a repeated command does nothing; a load after the system is scrambled restores every byte; nothing reaches the bus before `ready`; and a buffer the host wrote loads. Planted bug caught: a load that doesn't wait for its buffer read.
 
 In `systems/nes`, sim and both boards: a state saved mid-run and restored after a reset finishes with the uninterrupted run's frames, trace CRC and cycle count, and a state saved at 27 MHz on SDRAM finishes the same at 50 MHz on block RAM.
