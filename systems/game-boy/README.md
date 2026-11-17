@@ -84,6 +84,43 @@ The cartridge and work RAM share the external bus; video RAM has its own.
 | `pix_we`, `pix_x`, `pix_y`, `pix_shade` | out | 1, 8, 8, 2 | A pixel of the picture, shade 0 (white) to 3 |
 | `frame_end` | out | 1 | VBlank starts: the frame is out |
 
+## gb_sys, under the test shell
+
+`gb_sys` puts the Game Boy behind `debug/test-shell`, as `systems/atari-2600`'s `a2600_sys` does the 2600, so the host (`harness`'s `rig::gb`) can run a test ROM on a board or in the sim and check it over the link.
+
+- **Cartridge:** 32 KB of ROM and 8 KB of RAM at `$A000-$BFFF`, in block RAM; no MBC yet (G6).
+- **Boot ROM:** the host writes it, as it does the cartridge.
+- **T-cycles:** at `T_NUM`/`T_DEN` of the clock (the console's 4.194304 MHz from 27 MHz is 65,536/421,875), only while it runs. It stops between T-cycles, so a run stopped and started again is the same as one left to run, on any board and in the sim.
+- **Frames:** a frame ends as VBlank starts, or after 70,224 T-cycles without one (the LCD off), as `gb_roms_test` counts them. The frame buffer holds each pixel's shade as the PPU last drew it.
+- **Frame CRC:** when the system stops at a limit, it takes the CRC of the frame buffer (2 bytes a pixel, the shade then 0, as `gb_frames.py` takes MesenCE's), in about 23,000 clocks, before it runs again.
+- **Serial port:** every byte the game sends is kept (the last 4,096), with a count, for blargg's and Mooneye's reports.
+
+| Address | What |
+| --- | --- |
+| `0x00000000-0x00007FFF` | The cartridge's ROM |
+| `0x01000000-0x0100007F` | Registers, below |
+| `0x02000000-0x02001FFF` | The cartridge's RAM |
+| `0x03000000-0x030000FF` | The boot ROM |
+| `0x04000000-0x04000FFF` | The serial port's bytes: byte n at n mod 4,096 |
+| `0x05000000-0x050059FF` | The frame buffer: y × 160 + x, a shade (0 white to 3) a byte |
+
+| Register | Bytes | Meaning |
+| --- | --- | --- |
+| `00` | 1 | Bit 0 run, bit 1 hold the system in reset (set at power-up) |
+| `04` | 4 | Stop once this many T-cycles have run since reset; 0 never |
+| `08` | 4 | T-cycles since reset (read-only) |
+| `0C` | 1 | Status (read-only): bit 0 stopped at a limit, 1 running, 2 the frame CRC is taken, 3 taking it |
+| `10` | 4 | Stop once this many frames have ended since reset; 0 never |
+| `14` | 4 | Frames ended since reset (read-only) |
+| `18` | 4 | The frame CRC (read-only) |
+| `1C` | 4 | Frames ended when it was taken (read-only) |
+| `20` | 4 | Bytes the serial port has sent since reset (read-only) |
+| `24` | 1 | Keys down, as `keys` |
+| `28` | 1 | LCDC (read-only) |
+| `29` | 1 | Bit 0: the boot ROM is mapped (read-only) |
+| `2A` | 2 | The CPU's PC (read-only) |
+| `2C` | 1 | The room for ROM, log2 (read-only) |
+
 ## Tests
 
 `gb_roms_test` runs the test ROMs of `testroms/manifest-gb.toml` that the system has the parts for, through SameBoy's DMG boot ROM. These are the ROMs for the Game Boy (dmg) whose `needs` are among cpu, serial, timer, interrupts, boot, ppu and oam dma.
@@ -93,6 +130,8 @@ The cartridge and work RAM share the external bus; video RAM has its own.
 - **Expected fails:** MesenCE fails three Mooneye tests through SameBoy's boot ROM, which takes a different time from Nintendo's (`boot_div`, `boot_hwio` and `serial-boot_sclk_align`). The system must fail them too.
 - **One frame not compared:** `serial-boot_sclk_align`'s fail screen shows counts that depend on the serial clock's phase from power-up, which nothing settles for this boot ROM. Ours differ from MesenCE's, and SameBoy's from ours by one (its DIV runs 4 T-cycles ahead).
 - **Options:** `RS_GB_ONLY=<id>,...` runs some of them, `RS_GB_JOBS=<n>` sets the threads (default up to 6), `RS_GB_TRACE=1` prints each opcode fetch and serial byte, and `RS_GB_DUMP=<dir>` writes each ROM's checked frame there as a PGM.
+
+`harness`'s `harness_test` runs three of them through `gb_sys`'s shell in the sim, as a board will (`rig::gb::rom_test`): `ei_sequence` (Mooneye's bytes), `instr_timing` (blargg's text) and dmg-acid2 (a frame). The host steps the system a frame at a time, reading the serial port's bytes at each frame's end as `gb_roms_test` does, until the result; then it runs to the frame 30 on and checks the CRC the system took.
 
 ## Status
 
@@ -105,7 +144,6 @@ The cartridge and work RAM share the external bus; video RAM has its own.
   - The sound (G5).
   - MBCs and cartridge RAM (G6), and with MBC1, blargg's `oam_bug` ROMs: the OAM bug (`cpu/sm83`'s README).
   - The PPU's rarer edges: the window's pixel-insertion glitch, WX=166, writes to LCDC's object bit during an object's fetch, and OAM DMA's effect on the OAM scan beyond its bus.
-  - The test shell's system and the harness's Game Boy console.
 
 ## References
 

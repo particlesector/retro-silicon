@@ -44,7 +44,8 @@ namespace fs = std::filesystem;
 
 // What the system has so far (the manifest's `needs`).
 const std::set<std::string> kHas = {"cpu", "serial", "timer", "interrupts", "boot", "ppu", "oam dma"};
-// ROMs whose result is checked but not their frame, and why.
+// ROMs whose result is checked but not their frame, and why (harness's
+// rig::gb::frame_not_checked() has the same list).
 const std::map<std::string, std::string> kFrameNotChecked = {
     // Its fail screen (it fails through SameBoy's boot ROM, as in MesenCE) shows
     // counts that hang on the serial clock's phase from power-up, which nothing
