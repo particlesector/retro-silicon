@@ -28,6 +28,7 @@ openFPGALoader -b pynq_z2 build/fpga/pynq_uart_echo/pynq_echo_top.bit
 | `pynq_shell_ram_bitstream` | `systems/shell-ram` | `rtl/pynq_shell_ram_top.sv` | As echo; `BUILD_ID` from the RTL's SHA-256, the same as the Tang boards' |
 | `pynq_nes_bitstream` | `systems/nes` through `nes_axi`, with HDMI | `rtl/pynq_nes_top.sv` | `nes.xdc`; its own clocks (below), 1.485 Mbaud (`CLKS_PER_BIT=25`), PRG ROM in the DDR3 and 256 KB of CHR in block RAM, paced by the display |
 | `pynq_a2600_bitstream` | `systems/atari-2600`'s `a2600_sys`, with HDMI | `rtl/pynq_a2600_top.sv` | `nes.xdc`; the NES's clocks, 1.485 Mbaud, 256 KB of cartridge ROM in block RAM, paced by the display; no DDR3 |
+| `pynq_gb_bitstream` | `systems/game-boy`'s `gb_sys`, with HDMI | `rtl/pynq_gb_top.sv` | `nes.xdc`; the NES's clocks, T-cycles at 35/304 (the 20K's rate), a 32 KB cartridge in block RAM, paced by the display; no DDR3 |
 
 ## Clocks
 
@@ -40,6 +41,8 @@ The Atari 2600 runs on the same clocks, its colour clock 35/356 of the system cl
 ## Memory
 
 `nes_axi` keeps PRG ROM in the DDR3 from 0x10000000, through HP0 and `memory/cache`, with HP0 and the AXI bridge on the 74.25 MHz pixel clock. CHR's 256 KB of block RAM is built in 32 KB banks: Yosys builds anything deeper from pairs of cascaded block RAMs, and nextpnr-xilinx fails to place them.
+
+The Game Boy's memories are all 8 bits wide or less and none deeper than 32 KB, as openXC7 needs. Its first build read the boot ROM back wrong: the shell's 256-byte copy, written in block RAM's write-first form (a write gives its own byte), became a Yosys distributed RAM (`$__XILINX_LUTRAM_SP_`) that took each write's first clock at the bus's address before it, so every byte of a block landed an address low too. Written as a plain read-before-write memory, it reads back right; the memories in write-first form that became block RAMs (the frame buffer's port, video RAM's CPU port) are right as they are. nextpnr-xilinx places the system clock at 40.4 MHz, 9% over the 37.125 it runs at.
 
 The 2600's cartridge ROM, 256 KB (`ROM_LOG2` 18), is in block RAM in 32 KB memories the same way (`ROM_BANK_LOG2` 15): 64 of the XC7Z020's 140 36 Kb block RAMs. 512 KB, as the Tang boards have, would take 128, with the rest of the system needing more than the 12 left; 256 KB holds every scheme `a2600_cart` has.
 
