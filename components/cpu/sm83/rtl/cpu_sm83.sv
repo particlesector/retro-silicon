@@ -22,7 +22,9 @@
 // pulses `int_ack` with that bit for the system to clear in IF. If none is
 // left (the high byte's push wrote IE), PC goes to $0000 and nothing is acked.
 //
-// HALT stops the CPU until int_req is non-zero. With IME clear and an
+// HALT stops the CPU until int_req is non-zero; the M-cycle that sees it is
+// the next one's first: the dispatch's dropped fetch (IME set) or the opcode
+// fetch (IME clear), so `rd` may rise during it. With IME clear and an
 // interrupt already pending, it doesn't halt and the next opcode byte is read
 // twice (the HALT bug); with EI just before it and an interrupt pending, the
 // interrupt returns to the HALT. EI enables interrupts after the next
@@ -346,12 +348,15 @@ module cpu_sm83 #(
         s = mc;
 
         if (boundary) begin
+            // Halted, the M-cycle that sees an interrupt is the next one's
+            // first: the dispatch's dropped fetch (IME set), or the fetch.
+            if (halt_r && pend) n_halt = 1'b0;
             if (lock_r) begin
                 // locked up for good
             end else if (stop_r) begin
                 if (stop_exit) n_stop = 1'b0;
-            end else if (halt_r) begin
-                if (pend) n_halt = 1'b0;  // this M-cycle idles; the next fetches or dispatches
+            end else if (halt_r && !pend) begin
+                // halted: no access
             end else if (prev_ill) begin
                 n_lock = 1'b1;
             end else if (prev_stop && !pend) begin

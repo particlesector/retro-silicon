@@ -29,7 +29,7 @@ module gb_joypad (
 
     always_ff @(posedge clk) begin
         if (rst) begin
-            sel  <= 2'b11;
+            sel  <= 2'b00;  // P1 reads $CF after the boot ROM, both groups selected
             last <= 4'hF;
         end else if (m) begin
             if (wr) sel <= wsel;
