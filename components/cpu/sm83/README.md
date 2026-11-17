@@ -71,10 +71,11 @@ Sim tests:
 - **Unit tests:** interrupt dispatch (EI's delay, 5 M-cycles, the vector, IF cleared, priority), IE written by the push cancelling the interrupt, HALT with IME clear and set, the HALT bug, EI then HALT, DI and RETI acting at once, STOP and `stop_exit`, and the illegal opcodes' lock-up.
 - **Save state:** 200 runs of random memory with random interrupts, saved at a random M-cycle, restored into another CPU and run on: the same 300 M-cycles each. Leaving out the last-step flag, the dispatch flag or a data latch fails it.
 
-Gaps:
-- **Internal M-cycles' address:** the chip puts an address on the bus during some internal M-cycles (the register pair for `INC rr` and `DEC rr`, SP for a push), which the OAM bug depends on. SingleStepTests give no real address for them, so `addr` there isn't checked yet; the OAM bug comes with the Game Boy system, against blargg's `oam_bug` ROMs.
-- **Sub-M-cycle timing:** when, in an M-cycle's four T-cycles, an interrupt is seen and a read or write lands is the system's to set, against Mooneye's timing tests.
-- **The CGB's speed switch** is the system's, through `stop_exit`.
+Settled in the Game Boy system (`systems/game-boy`, G2): when, in an M-cycle's four T-cycles, an interrupt is seen and a read or write lands. Mooneye's timer, interrupt and per-instruction timing tests pass there.
+
+Still to come, neither of which games depend on:
+- **Internal M-cycles' address (the OAM bug, with the PPU):** the chip puts an address on the bus during some internal M-cycles (the register pair for `INC rr` and `DEC rr`, SP before a push). The CPU already drives these, but SingleStepTests give no real address for them, so they aren't checked yet. They will be against blargg's `oam_bug` ROMs once the PPU scans OAM.
+- **The Color's speed switch (with the Color):** it is the system's, through `stop_exit`.
 
 ## References
 
