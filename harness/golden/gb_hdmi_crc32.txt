@@ -1,0 +1,6 @@
+# The Game Boy on HDMI at 720p (systems/game-boy's gb_video): id, the frame gb::rom_test checks
+# (where its result is, + 30, on this system; a frame check's own), and the CRC-32 of the TMDS
+# symbols of the display frame showing it, from the sim of the Tang Nano 20K's build
+# (make_gb_hdmi_sim). Every board must give these.
+dmg-acid2 300 0x456dc691
+mts-ei_sequence 126 0xc38d0935

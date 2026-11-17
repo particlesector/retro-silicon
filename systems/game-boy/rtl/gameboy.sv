@@ -146,11 +146,16 @@ module gameboy (
     logic [7:0]  vram_q, ppu_vq;
     logic [12:0] ppu_vaddr;
     logic        vram_rd_blk, vram_wr_blk, oam_rd_blk, oam_wr_blk;
+    // The CPU's writes and reads share a port: a write never comes while the DMA reads video RAM
+    // (that's a conflict), so its address is vram_a. A write gives its own byte on the port (block
+    // RAM's write-first mode, which the Gowin parts' dual-port RAM has), which nothing reads.
     wire [12:0] vram_a = dma_vram ? dma_addr[12:0] : a[12:0];
-    always_ff @(posedge clk) begin
-        if (cpu_wr && reg_a == R_VRAM && !vram_wr_blk) vram[a[12:0]] <= dout;
-        vram_q <= vram[vram_a];
-    end
+    always_ff @(posedge clk)
+        if (cpu_wr && reg_a == R_VRAM && !vram_wr_blk) begin
+            vram[vram_a] <= dout;
+            vram_q       <= dout;
+        end else
+            vram_q <= vram[vram_a];
     always_ff @(posedge clk) ppu_vq <= vram[ppu_vaddr];
     wire [7:0] dma_byte = dma_vram ? vram_q : ext_q;
 

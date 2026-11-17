@@ -8,6 +8,7 @@
 #include "Va2600_hdmi_sim.h"
 #include "Va2600_sim.h"
 #include "Va2600_sim___024root.h"
+#include "Vgb_hdmi_sim.h"
 #include "Vgb_sim.h"
 #include "Vshell_ram_sim.h"
 #include "Vnes_axi_sim.h"
@@ -404,6 +405,54 @@ std::unique_ptr<SimLink> make_nes_hdmi_sim(std::function<void(uint32_t)> on_symb
 std::unique_ptr<SimLink> make_nes_lean_sim(std::function<void(uint32_t)> on_symbol) {
     return std::make_unique<SimLink>(std::make_unique<NesHdmiT<Vnes_lean_sim>>(std::move(on_symbol)),
                                      kNesHdmiClksPerBit, 64, kNesHdmiClockHz);
+}
+
+namespace {
+
+// The Game Boy with HDMI on the 20K's clocks, as NesHdmiT without the SDRAM: 46.40625 MHz for the
+// system and 74.25 MHz for the pixels, 5 system clocks to 8 pixel clocks.
+class GbHdmi : public SimModel {
+public:
+    explicit GbHdmi(std::function<void(uint32_t)> on_symbol) : on_symbol_(std::move(on_symbol)) {}
+
+    bool tick(bool rx) override {
+        m_.uart_rx = rx;
+        while (t_pix_ < t_sys_) pixel();
+        bool both = t_pix_ == t_sys_;
+        m_.clk = 0;
+        if (both) m_.pclk = 0;
+        m_.eval();
+        m_.clk = 1;
+        if (both) m_.pclk = 1;
+        m_.eval();
+        if (both) after_pixel();
+        t_sys_ += 8;
+        return m_.uart_tx;
+    }
+
+private:
+    void pixel() {
+        m_.pclk = 0;
+        m_.eval();
+        m_.pclk = 1;
+        m_.eval();
+        after_pixel();
+    }
+    void after_pixel() {
+        t_pix_ += 5;
+        if (on_symbol_) on_symbol_(m_.tmds0 | m_.tmds1 << 10 | static_cast<uint32_t>(m_.tmds2) << 20);
+    }
+
+    Vgb_hdmi_sim m_;
+    std::function<void(uint32_t)> on_symbol_;
+    uint64_t t_sys_ = 0, t_pix_ = 0;
+};
+
+} // namespace
+
+std::unique_ptr<SimLink> make_gb_hdmi_sim(std::function<void(uint32_t)> on_symbol) {
+    return std::make_unique<SimLink>(std::make_unique<GbHdmi>(std::move(on_symbol)), kNesHdmiClksPerBit, 64,
+                                     kNesHdmiClockHz);
 }
 
 std::unique_ptr<SimLink> make_gb_sim() { return std::make_unique<SimLink>(std::make_unique<Verilated<Vgb_sim>>()); }

@@ -85,5 +85,9 @@ std::unique_ptr<SimLink> make_a2600_pynq_sim(std::function<void(uint32_t)> on_sy
 // The Game Boy (systems/game-boy's gb_sys) at 27 MHz, 18 clocks a bit, T-cycles at 65,536/421,875
 // of the clock (the console's 4.194304 MHz). Reports RS_GB_BUILD_ID.
 std::unique_ptr<SimLink> make_gb_sim();
+// The Game Boy as the Tang Nano 20K runs it (boards/tang-nano-20k/rtl/gb_top.sv): 46.40625 MHz for
+// the system (31 clocks a bit, T-cycles at 7/76, 1.9% fast) and its HDMI on a 74.25 MHz pixel
+// clock, keeping pace with it when asked; on_symbol as make_nes_hdmi_sim()'s. Reports RS_GB_BUILD_ID.
+std::unique_ptr<SimLink> make_gb_hdmi_sim(std::function<void(uint32_t)> on_symbol = {});
 
 } // namespace rig
