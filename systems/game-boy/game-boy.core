@@ -1,0 +1,29 @@
+CAPI=2:
+# SPDX-License-Identifier: Apache-2.0
+name: retro-silicon:system:game-boy:0.1.0
+description: The Game Boy (DMG) - the SM83 on the console's memory map with its boot ROM, RAMs, timer, serial port, joypad, OAM DMA and interrupts - with the cartridge outside; the LCD and the sound are their registers only, until their milestones
+
+filesets:
+  rtl:
+    files:
+      - rtl/gb_timer.sv
+      - rtl/gb_serial.sv
+      - rtl/gb_joypad.sv
+      - rtl/gb_lcd_timing.sv
+      - rtl/gb_apu_regs.sv
+      - rtl/gameboy.sv
+    file_type: systemVerilogSource
+    depend:
+      - retro-silicon:cpu:sm83
+
+targets:
+  default: &default
+    filesets: [rtl]
+    toplevel: gameboy
+  lint:
+    <<: *default
+    default_tool: verilator
+    tools:
+      verilator:
+        mode: lint-only
+        verilator_options: [-Wall]
