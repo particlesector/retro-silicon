@@ -2,7 +2,7 @@
 
 The Game Boy (DMG): the SM83 (`cpu/sm83`) on the console's memory map, with its boot ROM, video RAM, work RAM, OAM, high RAM, timer, serial port, joypad, OAM DMA and interrupt registers, and the cartridge outside the core.
 
-Module `gameboy`. **In progress** (G2 of the rig's Game Boy roadmap): the LCD and the sound are, until G3 and G5, their registers only (`gb_lcd_timing`, `gb_apu_regs`), so nothing is drawn or heard yet; the cartridge is a plain 32 KB ROM in the tests, with no MBC. It runs from power-up through [SameBoy](https://github.com/LIJI32/SameBoy)'s open DMG boot ROM, and runs blargg's CPU and timing ROMs and Mooneye's CPU, timer, interrupt and OAM DMA timing tests to MesenCE's result in the sim (below).
+Module `gameboy`. **In progress** (G3 of the rig's Game Boy roadmap): it draws its picture with the PPU (`gb_ppu`), a pixel at a time; the sound is, until G5, its registers only (`gb_apu_regs`), so nothing is heard yet; the cartridge is a plain 32 KB ROM in the tests, with no MBC. It runs from power-up through [SameBoy](https://github.com/LIJI32/SameBoy)'s open DMG boot ROM, and runs blargg's CPU and timing ROMs, Mooneye's CPU, timer, interrupt, OAM DMA and PPU tests and dmg-acid2 to MesenCE's result and frame in the sim (below).
 
 ## Timing
 
@@ -15,6 +15,8 @@ The system steps one T-cycle per `ce` (4.194304 MHz on the console). An M-cycle 
 This order is what the hardware's tests measure. It is also what M-cycle emulators that pass them do: they step the timer, then make the access. With the timer stepping at the M-cycle's end instead, blargg's `instr_timing` measured opcodes one M-cycle off, and Mooneye's `tim00` and `intr_timing` failed.
 
 An interrupt request lands in IF at the edge that makes it (`irq` outputs are combinational with their strobes), so a read of IF in the same M-cycle as a register's change sees both, at any clock ratio.
+
+The CPU decides on an interrupt at an instruction's end, from IF as it is then. Halted, it sees a request made at an M-cycle's second or third T-cycle an M-cycle late, as SameBoy's DMG, which looks two T-cycles into each halted M-cycle, does; the M-cycle that sees a request is the dispatch's first, or the next opcode's fetch (`cpu/sm83`). Mooneye's HALT tests and its PPU interrupt tests (`intr_1_2_timing`, `vblank_stat_intr`, `hblank_ly_scx_timing`) need both: the VBlank request comes at an M-cycle's first T-cycle, mode 2's at its third, mode 0's anywhere.
 
 `ce` must come at least 2 clocks apart. The read mux is registered, so a read's data is taken a clock before the M-cycle's last T-cycle ends: on any clock ratio, it is what the address held during that T-cycle.
 
@@ -51,10 +53,14 @@ The cartridge and work RAM share the external bus; video RAM has its own.
   - A CPU access on the bus the DMA reads from gets the DMA's byte if it reads; if it writes, the write is lost.
   - A write to `$FF46` during a copy restarts it.
   - Mooneye's per-instruction timing tests (`call_timing`, `ret_timing` and the others) place a read one M-cycle either side of the copy's end, so they fix its length to the M-cycle.
-- **LCD, for now (`gb_lcd_timing`):** its registers, and the line timing only.
-  - With the LCD on, a line takes 456 T-cycles: mode 2 for 80, mode 3 for 172 (its length doesn't vary yet), then mode 0. Lines 144-153 are VBlank, and LY reaching 144 requests the VBlank interrupt.
-  - STAT's interrupt is requested when the OR of its enabled conditions rises.
-  - The boot ROM and the test ROMs' libraries wait on LY and VBlank, so they need this much. G3's PPU replaces it.
+- **PPU (`gb_ppu`):** the LCD's registers and its picture, dot by dot, as SameBoy models the DMG's (read for facts).
+  - A line is 456 dots: mode 2 (the OAM scan, up to 10 objects) for 80, mode 3 for 172 or more, then mode 0. Lines 144-153 are VBlank; LY reads 153 for only the first dots of line 153, then 0. The first line after the LCD is turned on has no mode 2 and is 7 dots shorter.
+  - Mode 3 runs the fetcher a step a dot into an 8-pixel background FIFO, and the object FIFO beside it, so its length comes out as on the chip: longer by SCX's low 3 bits, by the window's start and by each object's fetch.
+  - The window starts where WX says on lines from WY's, with its own line counter. Objects are 8x8 or 8x16, flipped either way, the one with the lower X (then the lower OAM index) in front, behind the background's colours 1-3 when their priority bit says.
+  - STAT's interrupt is requested when the OR of its enabled conditions rises, at the dots SameBoy updates it (mode 2's a dot before STAT shows it, except on line 0). Writing STAT on the DMG sets every condition for a dot first, which can request it.
+  - Video RAM reads $FF and takes no writes in mode 3; OAM in modes 2 and 3 (on the DMG, from just before mode 2).
+  - A write to SCX, SCY, LCDC, the palettes, LYC, WY, WX or STAT lands at the dot SameBoy's access conflicts put it at, which Mooneye's lcdon tests pin down.
+  - It reads video RAM and OAM through ports of their own (OAM 16 bits wide).
 - **Sound, for now (`gb_apu_regs`):** its registers only.
   - They read back with the DMG's unreadable bits set, and NR52's power bit clears them.
   - The wave RAM reads and writes.
@@ -75,31 +81,36 @@ The cartridge and work RAM share the external bus; video RAM has its own.
 | `cpu_sync`, `cpu_pc` | out | 1, 16 | This M-cycle fetches an opcode, at this PC (for traces) |
 | `boot_on` | out | 1 | The boot ROM is mapped |
 | `lcdc` | out | 8 | LCDC |
+| `pix_we`, `pix_x`, `pix_y`, `pix_shade` | out | 1, 8, 8, 2 | A pixel of the picture, shade 0 (white) to 3 |
+| `frame_end` | out | 1 | VBlank starts: the frame is out |
 
 ## Tests
 
-`gb_roms_test` runs the test ROMs of `testroms/manifest-gb.toml` that the system has the parts for, through SameBoy's DMG boot ROM. These are the ROMs for the Game Boy (dmg) whose `needs` are among cpu, serial, timer, interrupts and boot, and whose result comes over the serial port: blargg's text or Mooneye's bytes. Each must end with MesenCE's result (`harness/golden/gb_frames_crc32.txt`) within twice MesenCE's frames.
+`gb_roms_test` runs the test ROMs of `testroms/manifest-gb.toml` that the system has the parts for, through SameBoy's DMG boot ROM. These are the ROMs for the Game Boy (dmg) whose `needs` are among cpu, serial, timer, interrupts, boot, ppu and oam dma.
 
+- **Results:** a ROM with a result of its own (blargg's text over the serial port, or Mooneye's bytes) must end with MesenCE's (`harness/golden/gb_frames_crc32.txt`) within twice MesenCE's frames.
+- **Frames:** its frame 30 frames after the result must be MesenCE's too, by CRC (2 bytes a pixel, the shade then 0, row by row, as `tools/mesen/gb_frames.py` takes it). A frame check (dmg-acid2) has its frame at the number the list gives. A frame ends as VBlank starts, or every 70,224 T-cycles while the LCD is off.
 - **Expected fails:** MesenCE fails three Mooneye tests through SameBoy's boot ROM, which takes a different time from Nintendo's (`boot_div`, `boot_hwio` and `serial-boot_sclk_align`). The system must fail them too.
-- **Options:** `RS_GB_ONLY=<id>,...` runs some of them, `RS_GB_JOBS=<n>` sets the threads (default up to 6), and `RS_GB_TRACE=1` prints each opcode fetch and serial byte.
+- **One frame not compared:** `serial-boot_sclk_align`'s fail screen shows counts that depend on the serial clock's phase from power-up, which nothing settles for this boot ROM. Ours differ from MesenCE's, and SameBoy's from ours by one (its DIV runs 4 T-cycles ahead).
+- **Options:** `RS_GB_ONLY=<id>,...` runs some of them, `RS_GB_JOBS=<n>` sets the threads (default up to 6), `RS_GB_TRACE=1` prints each opcode fetch and serial byte, and `RS_GB_DUMP=<dir>` writes each ROM's checked frame there as a PGM.
 
 ## Status
 
-- **Passing:** 61 test ROMs end as they do in MesenCE.
+- **Passing:** 83 test ROMs end as they do in MesenCE, with its frame (one frame not compared, above).
   - blargg's `cpu_instrs` (all 11), `instr_timing` and `mem_timing` (all 3).
-  - Mooneye's CPU, interrupt, HALT, EI and DI tests, its per-instruction timing tests, all 13 of its timer tests, and `bits` and `boot_regs`.
+  - Mooneye's CPU, interrupt, HALT, EI and DI tests, its per-instruction timing tests, all 13 of its timer tests, `bits` and `boot_regs`.
+  - Mooneye's 12 PPU tests and 6 OAM DMA tests, `di_timing` and `halt_ime1_timing2`.
+  - dmg-acid2.
 - **Gaps:**
-  - The PPU (G3): nothing is drawn yet.
-    - Mooneye's `di_timing-GS` and `halt_ime1_timing2-GS` time themselves against LY, so they wait for it.
-    - So do its OAM DMA tests, whose `needs` include the PPU.
   - The sound (G5).
-  - MBCs and cartridge RAM (G6).
-  - The OAM bug: the address on the CPU's internal M-cycles (`cpu/sm83`'s README).
-  - The test shell's system and the harness's Game Boy console, which come with G3's frames.
+  - MBCs and cartridge RAM (G6), and with MBC1, blargg's `oam_bug` ROMs: the OAM bug (`cpu/sm83`'s README).
+  - The PPU's rarer edges: the window's pixel-insertion glitch, WX=166, writes to LCDC's object bit during an object's fetch, and OAM DMA's effect on the OAM scan beyond its bus.
+  - The test shell's system and the harness's Game Boy console.
 
 ## References
 
 - Pan Docs (gbdev.io/pandocs): the memory map, I/O registers, timer, serial port, joypad and OAM DMA.
 - Gekkio, *Game Boy: Complete Technical Reference*: the timer's overflow and reload.
-- [SameBoy](https://github.com/LIJI32/SameBoy): the serial clock's flip-flop, read for facts.
+- [SameBoy](https://github.com/LIJI32/SameBoy): the serial clock's flip-flop, the PPU's dot-by-dot timing (its `display.c`), the access conflicts on the PPU's registers and when a halted CPU sees an interrupt, read for facts; its traces, run beside the sim's, found where the timing parted.
+- [dmg-acid2](https://github.com/mattcurrie/dmg-acid2): the PPU's rendering, against MesenCE's frame.
 - [Mooneye's test suite](https://github.com/Gekkio/mooneye-test-suite): what each test measures, read for facts.

@@ -116,7 +116,7 @@ TEST_CASE("SM83 dispatch: pushing PC's high byte into IE can cancel the interrup
     }
 }
 
-TEST_CASE("SM83 HALT idles without bus accesses until an interrupt is pending") {
+TEST_CASE("SM83 HALT idles without bus accesses until an interrupt is pending, then fetches or dispatches") {
     SECTION("IME clear: it wakes and carries on after the HALT") {
         Program p({0x76, 0x3C, 0x00});  // HALT; INC A
         p.ram[0xFFFF] = 0x01;
@@ -126,9 +126,10 @@ TEST_CASE("SM83 HALT idles without bus accesses until an interrupt is pending") 
         REQUIRE(p.halted());
         for (int i = 0; i < 10; i++) REQUIRE(p.cycle().kind == '-');
         p.ram[0xFF0F] = 0x01;
-        REQUIRE(p.cycle().kind == '-');  // the M-cycle that sees it
+        auto c = p.cycle();              // the M-cycle that sees it fetches INC A
+        REQUIRE(c.kind == 'r');
+        REQUIRE(c.addr == kStart + 1);
         REQUIRE_FALSE(p.halted());
-        p.step();                        // INC A
         REQUIRE(p.regs().af >> 8 == 0x01);
         REQUIRE(p.regs().pc == kStart + 2);
         REQUIRE(p.ram[0xFF0F] == 0x01);  // not taken
@@ -140,9 +141,9 @@ TEST_CASE("SM83 HALT idles without bus accesses until an interrupt is pending") 
         p.step();
         REQUIRE(p.halted());
         p.ram[0xFF0F] = 0x01;
-        p.cycle();
-        auto d = p.step();
-        REQUIRE(d.size() == 5);
+        auto d = p.step();               // the M-cycle that sees it is the dispatch's first
+        REQUIRE(kinds(d) == std::vector<char>{'r', '-', '-', 'w', 'w'});
+        REQUIRE(d[0].addr == kStart + 1);  // the opcode fetch, dropped
         REQUIRE(p.regs().pc == 0x0040);
         REQUIRE(p.ram[kStack - 2] == ((kStart + 1) & 0xFF));
     }
