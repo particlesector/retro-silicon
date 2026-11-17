@@ -82,4 +82,8 @@ std::unique_ptr<SimLink> make_a2600_console_sim(std::function<void(uint32_t)> on
 // block RAM in 32 KB memories; on_symbol as make_a2600_hdmi_sim()'s. Reports RS_A2600_BUILD_ID.
 std::unique_ptr<SimLink> make_a2600_pynq_sim(std::function<void(uint32_t)> on_symbol = {});
 
+// The Game Boy (systems/game-boy's gb_sys) at 27 MHz, 18 clocks a bit, T-cycles at 65,536/421,875
+// of the clock (the console's 4.194304 MHz). Reports RS_GB_BUILD_ID.
+std::unique_ptr<SimLink> make_gb_sim();
+
 } // namespace rig

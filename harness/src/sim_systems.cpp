@@ -8,6 +8,7 @@
 #include "Va2600_hdmi_sim.h"
 #include "Va2600_sim.h"
 #include "Va2600_sim___024root.h"
+#include "Vgb_sim.h"
 #include "Vshell_ram_sim.h"
 #include "Vnes_axi_sim.h"
 #include "Vnes_ext_sim.h"
@@ -404,5 +405,7 @@ std::unique_ptr<SimLink> make_nes_lean_sim(std::function<void(uint32_t)> on_symb
     return std::make_unique<SimLink>(std::make_unique<NesHdmiT<Vnes_lean_sim>>(std::move(on_symbol)),
                                      kNesHdmiClksPerBit, 64, kNesHdmiClockHz);
 }
+
+std::unique_ptr<SimLink> make_gb_sim() { return std::make_unique<SimLink>(std::make_unique<Verilated<Vgb_sim>>()); }
 
 } // namespace rig

@@ -1,7 +1,7 @@
 # SPDX-License-Identifier: Apache-2.0
 # The harness core: the Link interface, UART models, CRC32 and the tests, which
 # any backend can run. A rig project adds its board backend on top of these.
-add_library(rs_harness STATIC src/a2600.cpp src/echo_test.cpp src/ines.cpp src/nes.cpp src/sdram_test.cpp src/shell.cpp
+add_library(rs_harness STATIC src/a2600.cpp src/echo_test.cpp src/gb.cpp src/ines.cpp src/nes.cpp src/sdram_test.cpp src/shell.cpp
                              src/shell_test.cpp src/sim_link.cpp)
 target_include_directories(rs_harness PUBLIC include)
 target_compile_features(rs_harness PUBLIC cxx_std_20)
@@ -21,6 +21,8 @@ get_property(nes_id GLOBAL PROPERTY RS_NES_BUILD_ID)
 string(REPLACE "32'h" "0x" nes_id_c ${nes_id})
 get_property(a2600_id GLOBAL PROPERTY RS_A2600_BUILD_ID)
 string(REPLACE "32'h" "0x" a2600_id_c ${a2600_id})
+get_property(gb_id GLOBAL PROPERTY RS_GB_BUILD_ID)
+string(REPLACE "32'h" "0x" gb_id_c ${gb_id})
 add_library(rs_sim_link STATIC src/sim_systems.cpp)
 set_source_files_properties(src/sim_systems.cpp PROPERTIES COMPILE_OPTIONS "-Wall;-Wextra")
 target_link_libraries(rs_sim_link PUBLIC rs_harness)
@@ -81,6 +83,8 @@ rs_verilate(rs_sim_link COMPONENT a2600_sys PREFIX Va2600_console_sim
 rs_verilate(rs_sim_link COMPONENT a2600_sys PREFIX Va2600_pynq_sim
             PARAMS CLKS_PER_BIT=25 IDLE_CLKS=371250 CC_NUM=35 CC_DEN=356 VIDEO=1 ROM_LOG2=18 ROM_BANK_LOG2=15
                    BUILD_ID=${a2600_id})
+# The Game Boy at 27 MHz, T-cycles at 65,536/421,875 (the console's 4.194304 MHz).
+rs_verilate(rs_sim_link COMPONENT gb_sys PREFIX Vgb_sim PARAMS CLKS_PER_BIT=18 BUILD_ID=${gb_id})
 target_include_directories(rs_sim_link PRIVATE ${PROJECT_SOURCE_DIR}/components/memory/sdram/sim
                                                ${PROJECT_SOURCE_DIR}/components/memory/axi-bridge/sim)
 # The build IDs the models and bitstreams report, for runners to check.
@@ -89,11 +93,12 @@ target_compile_definitions(rs_sim_link PUBLIC RS_SHELL_RAM_BUILD_ID=${shell_ram_
                                               RS_SHELL_AXI_BUILD_ID=${shell_axi_id_c}
                                               RS_NES_AXI_BUILD_ID=${nes_axi_id_c}
                                               RS_NES_BUILD_ID=${nes_id_c}
-                                              RS_A2600_BUILD_ID=${a2600_id_c})
+                                              RS_A2600_BUILD_ID=${a2600_id_c}
+                                              RS_GB_BUILD_ID=${gb_id_c})
 
 rs_sim_test(harness_test SOURCES tests/echo_test_test.cpp tests/sim_link_test.cpp tests/shell_test.cpp
                                tests/sdram_test.cpp tests/nes_test.cpp tests/hdmi_test.cpp tests/a2600_test.cpp
-                               tests/a2600_hdmi_test.cpp)
+                               tests/a2600_hdmi_test.cpp tests/gb_test.cpp)
 target_link_libraries(harness_test PRIVATE rs_sim_link)
 target_include_directories(harness_test PRIVATE ${PROJECT_SOURCE_DIR}/components/video/hdmi/sim)
 target_compile_definitions(harness_test PRIVATE
@@ -114,5 +119,6 @@ target_compile_definitions(harness_test PRIVATE
     RS_A2600_PADDLES="${CMAKE_CURRENT_SOURCE_DIR}/golden/a2600_paddles.txt"
     RS_A2600_KEYPADS="${CMAKE_CURRENT_SOURCE_DIR}/golden/a2600_keypads.txt"
     RS_A2600_HDMI_GOLDEN="${CMAKE_CURRENT_SOURCE_DIR}/golden/a2600_hdmi_crc32.txt"
+    RS_GB_GOLDEN="${CMAKE_CURRENT_SOURCE_DIR}/golden/gb_frames_crc32.txt"
     RS_TIA_RGB_SV="${PROJECT_SOURCE_DIR}/components/video/tia/rtl/tia_rgb.sv"
     RS_TESTROMS="${RS_TESTROMS}")
