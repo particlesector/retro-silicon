@@ -150,12 +150,13 @@ module gb_sys #(
     assign boot_we    = sh_boot && s_we && !s_ack;
     assign boot_addr  = s_addr[7:0];
     assign boot_wdata = s_wdata;
-    always_ff @(posedge clk)
-        if (boot_we) begin
-            boot[s_addr[7:0]] <= s_wdata;
-            boot_sh           <= s_wdata;
-        end else
-            boot_sh <= boot[s_addr[7:0]];
+    // Read before write, as a plain single-port memory: in write-first form (as the frame buffer's
+    // port is), Yosys's Xilinx distributed RAM took each write's first clock at the address before
+    // it on the PYNQ-Z2, so a block's every byte landed an address low too.
+    always_ff @(posedge clk) begin
+        if (boot_we) boot[s_addr[7:0]] <= s_wdata;
+        boot_sh <= boot[s_addr[7:0]];
+    end
 
     // ---- The serial port's bytes ----
     logic [7:0] ser_buf [0:2047];
