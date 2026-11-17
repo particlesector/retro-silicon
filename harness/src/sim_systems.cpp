@@ -8,6 +8,7 @@
 #include "Va2600_hdmi_sim.h"
 #include "Va2600_sim.h"
 #include "Va2600_sim___024root.h"
+#include "Vgb_console_sim.h"
 #include "Vgb_hdmi_sim.h"
 #include "Vgb_sim.h"
 #include "Vshell_ram_sim.h"
@@ -448,7 +449,43 @@ private:
     uint64_t t_sys_ = 0, t_pix_ = 0;
 };
 
+// The Game Boy with HDMI on a board whose system clock is half its pixel clock (the 138K and the
+// PYNQ-Z2), as A2600HalfClockHdmi without the outside memory.
+class GbHalfClockHdmi : public SimModel {
+public:
+    explicit GbHalfClockHdmi(std::function<void(uint32_t)> on_symbol) : on_symbol_(std::move(on_symbol)) {}
+
+    bool tick(bool rx) override {
+        m_.uart_rx = rx;
+        m_.clk = 0;
+        m_.pclk = 0;
+        m_.eval();
+        m_.clk = 1;
+        m_.pclk = 1;
+        m_.eval();
+        symbol();
+        m_.pclk = 0;
+        m_.eval();
+        m_.pclk = 1;
+        m_.eval();
+        symbol();
+        return m_.uart_tx;
+    }
+
+private:
+    void symbol() {
+        if (on_symbol_) on_symbol_(m_.tmds0 | m_.tmds1 << 10 | static_cast<uint32_t>(m_.tmds2) << 20);
+    }
+
+    Vgb_console_sim m_;
+    std::function<void(uint32_t)> on_symbol_;
+};
+
 } // namespace
+
+std::unique_ptr<SimLink> make_gb_console_sim(std::function<void(uint32_t)> on_symbol) {
+    return std::make_unique<SimLink>(std::make_unique<GbHalfClockHdmi>(std::move(on_symbol)), 25, 64, kNesX16ClockHz);
+}
 
 std::unique_ptr<SimLink> make_gb_hdmi_sim(std::function<void(uint32_t)> on_symbol) {
     return std::make_unique<SimLink>(std::make_unique<GbHdmi>(std::move(on_symbol)), kNesHdmiClksPerBit, 64,

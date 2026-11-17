@@ -89,5 +89,10 @@ std::unique_ptr<SimLink> make_gb_sim();
 // the system (31 clocks a bit, T-cycles at 7/76, 1.9% fast) and its HDMI on a 74.25 MHz pixel
 // clock, keeping pace with it when asked; on_symbol as make_nes_hdmi_sim()'s. Reports RS_GB_BUILD_ID.
 std::unique_ptr<SimLink> make_gb_hdmi_sim(std::function<void(uint32_t)> on_symbol = {});
+// The Game Boy as the Tang Console 138K runs it with HDMI (boards/tang-console-138k/rtl/gb_top.sv):
+// 37.1875 MHz for the system (25 clocks a bit, T-cycles at 35/304, the 20K's ratio to the pixel
+// clock), 74.375 MHz pixels; the PYNQ-Z2's is the same at 37.125 and 74.25 MHz. on_symbol as
+// make_gb_hdmi_sim()'s. Reports RS_GB_BUILD_ID.
+std::unique_ptr<SimLink> make_gb_console_sim(std::function<void(uint32_t)> on_symbol = {});
 
 } // namespace rig

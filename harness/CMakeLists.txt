@@ -88,6 +88,10 @@ rs_verilate(rs_sim_link COMPONENT gb_sys PREFIX Vgb_sim PARAMS CLKS_PER_BIT=18 B
 # ...and as the Tang Nano 20K runs it, with HDMI (boards/tang-nano-20k/rtl/gb_top.sv's parameters).
 rs_verilate(rs_sim_link COMPONENT gb_sys PREFIX Vgb_hdmi_sim
             PARAMS CLKS_PER_BIT=31 IDLE_CLKS=464063 T_NUM=7 T_DEN=76 VIDEO=1 BUILD_ID=${gb_id})
+# ...and as the Tang Console 138K and the PYNQ-Z2 run it: the system clock half the pixel clock,
+# T-cycles at 35/304 (the 20K's ratio to the pixel clock).
+rs_verilate(rs_sim_link COMPONENT gb_sys PREFIX Vgb_console_sim
+            PARAMS CLKS_PER_BIT=25 IDLE_CLKS=371875 T_NUM=35 T_DEN=304 VIDEO=1 BUILD_ID=${gb_id})
 target_include_directories(rs_sim_link PRIVATE ${PROJECT_SOURCE_DIR}/components/memory/sdram/sim
                                                ${PROJECT_SOURCE_DIR}/components/memory/axi-bridge/sim)
 # The build IDs the models and bitstreams report, for runners to check.

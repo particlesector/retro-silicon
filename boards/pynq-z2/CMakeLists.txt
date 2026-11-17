@@ -13,6 +13,8 @@ rs_component(pynq_nes_top RTL rtl/pynq_nes_top.sv DEPENDS nes_axi ps7_hp0 tmds_p
              LINT ${PROJECT_SOURCE_DIR}/boards/xilinx/lint/xilinx_prims.sv)
 rs_component(pynq_a2600_top RTL rtl/pynq_a2600_top.sv DEPENDS a2600_sys tmds_phy_xc7
              LINT ${PROJECT_SOURCE_DIR}/boards/xilinx/lint/xilinx_prims.sv)
+rs_component(pynq_gb_top RTL rtl/pynq_gb_top.sv DEPENDS gb_sys tmds_phy_xc7
+             LINT ${PROJECT_SOURCE_DIR}/boards/xilinx/lint/xilinx_prims.sv)
 add_subdirectory(../xilinx/sim xilinx_sim)
 
 if(NOT RS_BITSTREAMS OR NOT RS_NEXTPNR_XILINX)
@@ -39,3 +41,7 @@ get_property(a2600_id GLOBAL PROPERTY RS_A2600_BUILD_ID)
 # The Atari 2600 on the NES's clocks and pins, its cartridge's ROM in block RAM: no DDR3 setup.
 rs_board_bitstream(pynq_a2600 BUILD ${build} VENDOR xilinx COMPONENT pynq_a2600_top CST nes.xdc
                    PARAMS BUILD_ID=${a2600_id})
+# The Game Boy on the same clocks and pins, its 32 KB cartridge in block RAM: no DDR3 setup.
+get_property(gb_id GLOBAL PROPERTY RS_GB_BUILD_ID)
+rs_board_bitstream(pynq_gb BUILD ${build} VENDOR xilinx COMPONENT pynq_gb_top CST nes.xdc
+                   PARAMS BUILD_ID=${gb_id})

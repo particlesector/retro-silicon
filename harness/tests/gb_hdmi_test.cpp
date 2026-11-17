@@ -9,7 +9,9 @@
 #include <cstdint>
 #include <cstdlib>
 #include <fstream>
+#include <functional>
 #include <iterator>
+#include <memory>
 #include <optional>
 #include <string>
 #include <vector>
@@ -136,7 +138,9 @@ std::vector<uint8_t> frame_at(const Rom& r, uint32_t frame) {
 // Runs a ROM with HDMI to its golden frame and decodes the output: the display frame whose CRC
 // gb_video reports must be one the receiver saw, showing that frame, every frame must have the
 // right timing, and the video CRC must be the golden list's.
-void matches_golden(const std::string& id) {
+using MakeHdmi = std::function<std::unique_ptr<rig::SimLink>(std::function<void(uint32_t)>)>;
+
+void matches_golden(const std::string& id, const MakeHdmi& make = rig::make_gb_hdmi_sim) {
     auto r = rom(id);
     if (!r) {
         WARN("skipped: " << id << " isn't fetched");
@@ -148,7 +152,7 @@ void matches_golden(const std::string& id) {
     auto frame = frame_at(*r, want.frame);
     Receiver rx;
     rx.expect = &frame;
-    auto link = rig::make_gb_hdmi_sim([&rx](uint32_t s) { rx(s); });
+    auto link = make([&rx](uint32_t s) { rx(s); });
     auto res = rig::gb::hdmi_test(*link, r->g, r->rom, r->boot, want.frame, RS_GB_BUILD_ID);
     INFO(res.detail << " / " << res.notes);
     REQUIRE(res.passed);
@@ -175,6 +179,10 @@ TEST_CASE("Game Boy HDMI: a receiver sees dmg-acid2's frame at 720p, 5 times its
 
 TEST_CASE("Game Boy HDMI: a receiver sees mts-ei_sequence's pass screen at 720p") {
     matches_golden("mts-ei_sequence");
+}
+
+TEST_CASE("Game Boy HDMI on the Tang Console 138K and the PYNQ-Z2: mts-ei_sequence with the 20K's video CRC") {
+    matches_golden("mts-ei_sequence", rig::make_gb_console_sim);
 }
 
 TEST_CASE("Game Boy HDMI: the Game Boy makes a frame in at most 98.7% of a display frame") {
