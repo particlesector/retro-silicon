@@ -8,6 +8,8 @@ rs_component(nes_top RTL rtl/nes_top.sv DEPENDS nes_sdram tmds_phy
              LINT ${PROJECT_SOURCE_DIR}/boards/gowin/lint/gowin_prims.sv)
 rs_component(a2600_top RTL rtl/a2600_top.sv DEPENDS a2600_sdram tmds_phy
              LINT ${PROJECT_SOURCE_DIR}/boards/gowin/lint/gowin_prims.sv)
+rs_component(gb_top RTL rtl/gb_top.sv DEPENDS gb_sys tmds_phy
+             LINT ${PROJECT_SOURCE_DIR}/boards/gowin/lint/gowin_prims.sv)
 
 if(NOT RS_BITSTREAMS)
     return()
@@ -45,4 +47,9 @@ rs_board_bitstream(nes_lean BUILD ${build} COMPONENT nes_top CST nes.cst PARAMS 
 # the display).
 get_property(a2600_id GLOBAL PROPERTY RS_A2600_BUILD_ID)
 rs_board_bitstream(a2600 BUILD ${build} COMPONENT a2600_top CST nes.cst PARAMS BUILD_ID=${a2600_id}
+                   CLOCKS sclk=46.40625 pclk=74.25 fclk=371.25 SEED 1)
+# The Game Boy under the test shell, with HDMI (rtl/gb_top.sv): the NES's clocks, T-cycles at 7/76
+# of the system's (1.9% fast of the console's, to keep pace with the display).
+get_property(gb_id GLOBAL PROPERTY RS_GB_BUILD_ID)
+rs_board_bitstream(gb BUILD ${build} COMPONENT gb_top CST nes.cst PARAMS BUILD_ID=${gb_id}
                    CLOCKS sclk=46.40625 pclk=74.25 fclk=371.25 SEED 1)

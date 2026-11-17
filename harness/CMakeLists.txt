@@ -85,6 +85,13 @@ rs_verilate(rs_sim_link COMPONENT a2600_sys PREFIX Va2600_pynq_sim
                    BUILD_ID=${a2600_id})
 # The Game Boy at 27 MHz, T-cycles at 65,536/421,875 (the console's 4.194304 MHz).
 rs_verilate(rs_sim_link COMPONENT gb_sys PREFIX Vgb_sim PARAMS CLKS_PER_BIT=18 BUILD_ID=${gb_id})
+# ...and as the Tang Nano 20K runs it, with HDMI (boards/tang-nano-20k/rtl/gb_top.sv's parameters).
+rs_verilate(rs_sim_link COMPONENT gb_sys PREFIX Vgb_hdmi_sim
+            PARAMS CLKS_PER_BIT=31 IDLE_CLKS=464063 T_NUM=7 T_DEN=76 VIDEO=1 BUILD_ID=${gb_id})
+# ...and as the Tang Console 138K and the PYNQ-Z2 run it: the system clock half the pixel clock,
+# T-cycles at 35/304 (the 20K's ratio to the pixel clock).
+rs_verilate(rs_sim_link COMPONENT gb_sys PREFIX Vgb_console_sim
+            PARAMS CLKS_PER_BIT=25 IDLE_CLKS=371875 T_NUM=35 T_DEN=304 VIDEO=1 BUILD_ID=${gb_id})
 target_include_directories(rs_sim_link PRIVATE ${PROJECT_SOURCE_DIR}/components/memory/sdram/sim
                                                ${PROJECT_SOURCE_DIR}/components/memory/axi-bridge/sim)
 # The build IDs the models and bitstreams report, for runners to check.
@@ -98,7 +105,7 @@ target_compile_definitions(rs_sim_link PUBLIC RS_SHELL_RAM_BUILD_ID=${shell_ram_
 
 rs_sim_test(harness_test SOURCES tests/echo_test_test.cpp tests/sim_link_test.cpp tests/shell_test.cpp
                                tests/sdram_test.cpp tests/nes_test.cpp tests/hdmi_test.cpp tests/a2600_test.cpp
-                               tests/a2600_hdmi_test.cpp tests/gb_test.cpp)
+                               tests/a2600_hdmi_test.cpp tests/gb_test.cpp tests/gb_hdmi_test.cpp)
 target_link_libraries(harness_test PRIVATE rs_sim_link)
 target_include_directories(harness_test PRIVATE ${PROJECT_SOURCE_DIR}/components/video/hdmi/sim)
 target_compile_definitions(harness_test PRIVATE
@@ -120,5 +127,6 @@ target_compile_definitions(harness_test PRIVATE
     RS_A2600_KEYPADS="${CMAKE_CURRENT_SOURCE_DIR}/golden/a2600_keypads.txt"
     RS_A2600_HDMI_GOLDEN="${CMAKE_CURRENT_SOURCE_DIR}/golden/a2600_hdmi_crc32.txt"
     RS_GB_GOLDEN="${CMAKE_CURRENT_SOURCE_DIR}/golden/gb_frames_crc32.txt"
+    RS_GB_HDMI_GOLDEN="${CMAKE_CURRENT_SOURCE_DIR}/golden/gb_hdmi_crc32.txt"
     RS_TIA_RGB_SV="${PROJECT_SOURCE_DIR}/components/video/tia/rtl/tia_rgb.sv"
     RS_TESTROMS="${RS_TESTROMS}")

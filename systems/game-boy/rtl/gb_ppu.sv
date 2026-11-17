@@ -166,6 +166,38 @@ module gb_ppu (
         xmatch_of = r > 8'd240 ? 8'd0 : r;
     endfunction
 
+    // The next object, chosen from registers that change only on a dot (as the step below has them
+    // at its start) and registered every clock: `ce` comes at least 2 clocks apart, so a dot sees
+    // the choice for the registers it starts with, and the step's longest path doesn't run through
+    // ten comparisons of X.
+    logic [7:0] sel_x, c_x;
+    logic [3:0] sel_slot, c_slot;
+    logic       sel_have, c_have;
+    // A tournament, pairs at a time, the lower slot winning a tie: the same choice as taking the
+    // slots in order, in 4 comparisons' depth rather than 10.
+    logic [15:0] cand [0:15];  // {have, x, 3'b0, slot} for slots 0-9, none for 10-15
+    always_comb begin
+        logic [7:0] m;
+        m = xmatch_of(pos);
+        for (int k = 0; k < 16; k++) begin
+            cand[k] = '0;
+            if (k < 10)
+                cand[k] = {4'(k) < nvis && !obj_done[k] && (after_obj || obj_x[k] >= m), obj_x[k], 3'd0, 4'(k)};
+        end
+        for (int w = 8; w >= 1; w = w / 2)
+            for (int k = 0; k < w; k++)
+                cand[k] = cand[2 * k][15] && (!cand[2 * k + 1][15] || cand[2 * k][14:7] <= cand[2 * k + 1][14:7])
+                          ? cand[2 * k] : cand[2 * k + 1];
+        c_have = cand[0][15];
+        c_x    = cand[0][15] ? cand[0][14:7] : 8'hFF;
+        c_slot = cand[0][15] ? cand[0][3:0] : 4'd0;
+    end
+    always_ff @(posedge clk) begin
+        sel_have <= c_have;
+        sel_x    <= c_x;
+        sel_slot <= c_slot;
+    end
+
     // ---- the step ----
     logic [7:0]  n_lcdc, n_scy, n_scx, n_lyc, n_bgp, n_obp0, n_obp1, n_wy, n_wx, n_ly;
     logic [3:0]  n_stat_en;
@@ -379,12 +411,7 @@ module gb_ppu (
                 if (m3) begin
                     // the next object
                     xm = xmatch_of(pos);
-                    nhave = 1'b0; nx = 8'hFF; ns = '0;
-                    for (int k = 9; k >= 0; k--) begin
-                        if (4'(k) < nvis && !obj_done[k] && (after_obj || obj_x[k] >= xm) && obj_x[k] <= nx) begin
-                            nhave = 1'b1; nx = obj_x[k]; ns = 4'(k);
-                        end
-                    end
+                    nhave = sel_have; nx = sel_x; ns = sel_slot;
                     case (ost)
                         O_NORM: begin
                             if (!after_obj && !resume) begin

@@ -93,23 +93,31 @@ The cartridge and work RAM share the external bus; video RAM has its own.
 - **T-cycles:** at `T_NUM`/`T_DEN` of the clock (the console's 4.194304 MHz from 27 MHz is 65,536/421,875), only while it runs. It stops between T-cycles, so a run stopped and started again is the same as one left to run, on any board and in the sim.
 - **Frames:** a frame ends as VBlank starts, or after 70,224 T-cycles without one (the LCD off), as `gb_roms_test` counts them. The frame buffer holds each pixel's shade as the PPU last drew it.
 - **Frame CRC:** when the system stops at a limit, it takes the CRC of the frame buffer (2 bytes a pixel, the shade then 0, as `gb_frames.py` takes MesenCE's), in about 23,000 clocks, before it runs again.
-- **Serial port:** every byte the game sends is kept (the last 4,096), with a count, for blargg's and Mooneye's reports.
+- **Serial port:** every byte the game sends is kept (the last 2,048), with a count, for blargg's and Mooneye's reports.
 
 | Address | What |
 | --- | --- |
-| `0x00000000-0x00007FFF` | The cartridge's ROM |
+| `0x00000000-0x00007FFF` | The cartridge's ROM (read only while the system is held in reset) |
 | `0x01000000-0x0100007F` | Registers, below |
-| `0x02000000-0x02001FFF` | The cartridge's RAM |
+| `0x02000000-0x02001FFF` | The cartridge's RAM (written and read only while the system is held in reset) |
 | `0x03000000-0x030000FF` | The boot ROM |
-| `0x04000000-0x04000FFF` | The serial port's bytes: byte n at n mod 4,096 |
+| `0x04000000-0x040007FF` | The serial port's bytes: byte n at n mod 2,048 |
 | `0x05000000-0x050059FF` | The frame buffer: y × 160 + x, a shade (0 white to 3) a byte |
+
+**HDMI (`VIDEO`, `gb_video`):** the picture at 720p, each pixel 5 display pixels each way (800 × 720, from x = 240), its shades grey (0 white, 1 `$AA`, 2 `$55`, 3 black); DVI only, until the APU (G5).
+- **What it shows:** the frame buffer itself, through a second port on the pixel clock, not a ring of lines as the 2600's and NES's: the Game Boy can turn its LCD off and draw nothing while its frames go on, and then the screen is the buffer as the PPU last left it, as the golden frames are.
+- **Keeping pace:** with pacing on (register `34`), the system waits at each frame's end until the display asks for the next, at the start of its line 690. A frame starts as VBlank does, so its line y is whole 11 + y lines after the request; at 2% fast a line takes 4.8 display lines, so line 0 is whole 7 display lines before the display shows it, and each line after comes a little sooner than its turn.
+- **Checks:** the display checks each line as it starts showing it: a count of lines whole, from the T-cycles, must have reached it, or it counts in `late`. A display frame whose system wasn't waiting at its request (stopped, or late) is drawn black, so the last lit picture a capture sees is the frame the system stopped on.
+- **Video CRC:** as the 2600's: of the TMDS symbols of the display frame that shows frame `vcap_frame` + 1, with whether it showed it whole.
+
+**Block RAM:** each memory's ports are written so Yosys maps them to the Gowin parts' block RAM at their size: with Yosys, an 8-bit memory whose writing port also reads takes twice as much, so the shell's port to the cartridge's ROM only writes, and the shell reads the ROM and RAM through the system's port while the system is held in reset. The cartridge's RAM has one write port, the shell's in reset and the system's otherwise (two writers aren't mapped at all).
 
 | Register | Bytes | Meaning |
 | --- | --- | --- |
 | `00` | 1 | Bit 0 run, bit 1 hold the system in reset (set at power-up) |
 | `04` | 4 | Stop once this many T-cycles have run since reset; 0 never |
 | `08` | 4 | T-cycles since reset (read-only) |
-| `0C` | 1 | Status (read-only): bit 0 stopped at a limit, 1 running, 2 the frame CRC is taken, 3 taking it |
+| `0C` | 1 | Status (read-only): bit 0 stopped at a limit, 1 running, 2 the frame CRC is taken, 3 taking it, 4 the video CRC asked for has come |
 | `10` | 4 | Stop once this many frames have ended since reset; 0 never |
 | `14` | 4 | Frames ended since reset (read-only) |
 | `18` | 4 | The frame CRC (read-only) |
@@ -120,6 +128,12 @@ The cartridge and work RAM share the external bus; video RAM has its own.
 | `29` | 1 | Bit 0: the boot ROM is mapped (read-only) |
 | `2A` | 2 | The CPU's PC (read-only) |
 | `2C` | 1 | The room for ROM, log2 (read-only) |
+| `34` | 1 | With `VIDEO`: bit 0 keep pace with the display; write bit 1 to take the video CRC |
+| `36` | 1 | Bit 0: the video CRC's display frame showed its frame whole (read-only) |
+| `38` | 4 | The video CRC is of the display frame showing frame this + 1 |
+| `3C` | 4 | The video CRC (read-only) |
+| `40` | 2 | Display frames whose frame started on request (read-only) |
+| `42` | 2 | Lines late (read-only) |
 
 ## Tests
 
@@ -130,6 +144,8 @@ The cartridge and work RAM share the external bus; video RAM has its own.
 - **Expected fails:** MesenCE fails three Mooneye tests through SameBoy's boot ROM, which takes a different time from Nintendo's (`boot_div`, `boot_hwio` and `serial-boot_sclk_align`). The system must fail them too.
 - **One frame not compared:** `serial-boot_sclk_align`'s fail screen shows counts that depend on the serial clock's phase from power-up, which nothing settles for this boot ROM. Ours differ from MesenCE's, and SameBoy's from ours by one (its DIV runs 4 T-cycles ahead).
 - **Options:** `RS_GB_ONLY=<id>,...` runs some of them, `RS_GB_JOBS=<n>` sets the threads (default up to 6), `RS_GB_TRACE=1` prints each opcode fetch and serial byte, and `RS_GB_DUMP=<dir>` writes each ROM's checked frame there as a PGM.
+
+`harness`'s `harness_test` also runs the 20K's build with HDMI (`make_gb_hdmi_sim`): a receiver decodes every pixel clock, and the display frame showing dmg-acid2's frame 300 and `ei_sequence`'s pass screen must show it, with the video CRC of `harness/golden/gb_hdmi_crc32.txt`; and a frame must take at most 98.7% of a display frame.
 
 `harness`'s `harness_test` runs three of them through `gb_sys`'s shell in the sim, as a board will (`rig::gb::rom_test`): `ei_sequence` (Mooneye's bytes), `instr_timing` (blargg's text) and dmg-acid2 (a frame). The host steps the system a frame at a time, reading the serial port's bytes at each frame's end as `gb_roms_test` does, until the result; then it runs to the frame 30 on and checks the CRC the system took.
 

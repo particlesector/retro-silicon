@@ -42,7 +42,7 @@ namespace {
 
 namespace fs = std::filesystem;
 
-// What the system has so far (the manifest's `needs`).
+// What the system has so far (the manifest's `needs`; harness's rig::gb::system_has() is the same).
 const std::set<std::string> kHas = {"cpu", "serial", "timer", "interrupts", "boot", "ppu", "oam dma"};
 // ROMs whose result is checked but not their frame, and why (harness's
 // rig::gb::frame_not_checked() has the same list).
