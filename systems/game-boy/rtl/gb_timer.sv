@@ -30,7 +30,9 @@ module gb_timer (
     output logic [7:0]  tma,
     output logic [7:0]  tac,        // as read: bits 7-3 read 1
     output logic        irq,        // with tick: request the timer interrupt (at this edge)
-    output logic        fall7       // the counter's T-cycle bit 7 falls at this edge (the serial clock)
+    output logic        fall7,      // the counter's T-cycle bit 7 falls at this edge (the serial clock)
+    output logic        fall12,     // its bit 12 falls at this edge (the APU's frame sequencer)
+    output logic        rise12      // ...or rises (the APU's envelopes)
 );
     logic [2:0] tac_r;
     logic       ovf;   // cycle A
@@ -59,7 +61,9 @@ module gb_timer (
 
     assign tac = {5'b11111, tac_r};
     assign irq = tick && ovf;
-    assign fall7 = (tick || m) && counter[5] && !cnt_n[5];
+    assign fall7  = (tick || m) && counter[5] && !cnt_n[5];
+    assign fall12 = (tick || m) && counter[10] && !cnt_n[10];
+    assign rise12 = (tick || m) && !counter[10] && cnt_n[10];
 
     always_ff @(posedge clk) begin
         if (rst) begin

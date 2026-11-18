@@ -3,7 +3,8 @@
 // the boot ROM, video RAM, work RAM, OAM, high RAM, the timer, the serial
 // port, the joypad, OAM DMA and the interrupt registers; the cartridge is
 // outside, and the picture comes out a pixel at a time (`pix_*`) from the PPU
-// (`gb_ppu`). The sound (`gb_apu_regs`) is, until G5, its registers only.
+// (`gb_ppu`), and the sound as the APU's (`audio/apu-gb`) two mixes, left and
+// right, each M-cycle (`aud_*`).
 //
 // One T-cycle per `ce` (4.194304 MHz on the console); an M-cycle is 4. `ce`
 // must come at least 2 clocks apart: a read's data is taken registered, a
@@ -59,7 +60,10 @@ module gameboy (
     output logic [7:0]  pix_x,
     output logic [7:0]  pix_y,
     output logic [1:0]  pix_shade,
-    output logic        frame_end    // VBlank starts: the frame is out
+    output logic        frame_end,   // VBlank starts: the frame is out
+
+    output logic signed [9:0] aud_l, // the APU's mixes (audio/apu-gb), held from an M-cycle's end
+    output logic signed [9:0] aud_r
 );
     // ---- T-cycles and M-cycles ----
     logic [1:0] phase;
@@ -186,7 +190,7 @@ module gameboy (
     logic [13:0] counter;    // the system counter's bits 15-2: DIV is bits 13-6
     /* verilator lint_on UNUSEDSIGNAL */
     logic [7:0]  tima, tma, tac, sb, sc, p1, lcd_q, apu_q;
-    logic        fall7;
+    logic        fall7, fall12, rise12;
 
     wire  [7:0]  io = a[7:0];
     wire  [7:0]  div = counter[13:6];
@@ -196,7 +200,7 @@ module gameboy (
         .clk, .rst, .tick(ce && phase == 2'd2), .m,
         .wr_div(io_wr && io == 8'h04 || m && stop_pulse), .wr_tima(io_wr && io == 8'h05),
         .wr_tma(io_wr && io == 8'h06), .wr_tac(io_wr && io == 8'h07), .wdata(dout),
-        .counter, .tima, .tma, .tac, .irq(irq_timer), .fall7
+        .counter, .tima, .tma, .tac, .irq(irq_timer), .fall7, .fall12, .rise12
     );
     gb_serial serial (
         .clk, .rst, .m, .fall7,
@@ -216,9 +220,28 @@ module gameboy (
         .irq_vblank, .irq_stat,
         .pix_we, .pix_x, .pix_y, .pix_shade, .frame_end, .lcdc
     );
-    gb_apu_regs apu (
-        .clk, .rst, .m, .wr(io_wr && io >= 8'h10 && io < 8'h40), .reg_sel(apu_sel),
-        .wdata(dout), .rdata(apu_q)
+    // The APU's 2 MHz ticks are the M-cycle's first and third T-cycles, so the
+    // CPU's reads (in the last) and writes (at its end) come between them. A
+    // write's address and data are steady from the clock before it lands (the
+    // CPU and the DMA change only on T-cycles, at least 2 clocks apart), so the
+    // APU takes them registered, off the CPU's paths.
+    logic       apu_wr_q;
+    logic [5:0] apu_sel_q;
+    logic [7:0] apu_wd_q;
+    always_ff @(posedge clk) begin
+        apu_wr_q  <= wr && !conflict && reg_a == R_IO && io >= 8'h10 && io < 8'h40;
+        apu_sel_q <= apu_sel;
+        apu_wd_q  <= dout;
+    end
+    /* verilator lint_off UNUSEDSIGNAL */
+    logic [15:0] apu_levels;
+    logic [3:0]  apu_dac;
+    logic [7:0]  apu_nr50, apu_nr51;
+    /* verilator lint_on UNUSEDSIGNAL */
+    apu_gb apu (
+        .clk, .rst, .t2(ce && !phase[0]), .fs(fall12), .fs_rise(rise12), .div_b12(counter[10]),
+        .wr(m && apu_wr_q), .sel(apu_sel_q), .wdata(apu_wd_q), .rsel(apu_sel), .rdata(apu_q),
+        .levels(apu_levels), .dac(apu_dac), .nr50(apu_nr50), .nr51(apu_nr51), .mix_l(aud_l), .mix_r(aud_r)
     );
 
     logic [7:0] io_q;

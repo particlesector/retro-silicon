@@ -1,9 +1,10 @@
 // SPDX-License-Identifier: Apache-2.0
 // systems/game-boy's gb_sys through its test shell, in the sim: a test ROM of each kind of check in
-// harness/golden/gb_frames_crc32.txt (Mooneye's bytes, blargg's text over the serial port, and a
-// frame) ends as it does in MesenCE, the frame's CRC taken by the system itself, as a board runs
-// them. systems/game-boy's gb_roms_test runs every ROM on the bare system. Skipped when the ROMs
-// aren't fetched (testroms/fetch.py).
+// harness/golden/gb_frames_crc32.txt (Mooneye's bytes, blargg's text over the serial port or his code
+// in cartridge RAM, and a frame) ends as it does in MesenCE, the frame's CRC taken by the system
+// itself, and its sound's CRC is gb_audio_crc32.txt's, as a board runs them. systems/game-boy's
+// gb_roms_test runs every ROM on the bare system, and wrote gb_audio_crc32.txt. Skipped when the
+// ROMs aren't fetched (testroms/fetch.py).
 #include <catch2/catch_test_macros.hpp>
 
 #include <cstdlib>
@@ -31,8 +32,11 @@ void matches_mesen(const std::string& id) {
         if (g.id != id) continue;
         const auto rom = read_file(roms + "/" + g.path);
         if (rom.empty()) SKIP("no " << roms << "/" << g.path);
+        const auto audio = rig::gb::load_audio_golden(RS_GB_AUDIO_GOLDEN);
+        auto a = audio.find(id);
+        REQUIRE(a != audio.end());
         auto link = rig::make_gb_sim();
-        auto r = rig::gb::rom_test(*link, g, rom, boot, RS_GB_BUILD_ID);
+        auto r = rig::gb::rom_test(*link, g, rom, boot, RS_GB_BUILD_ID, a->second);
         INFO(g.id << ": " << r.detail << " (" << r.notes << ")");
         CHECK(r.passed);
         return;
@@ -51,3 +55,7 @@ TEST_CASE("Game Boy through the shell: instr_timing passes (blargg's text) and i
 }
 
 TEST_CASE("Game Boy through the shell: dmg-acid2's frame 300 matches MesenCE's") { matches_mesen("dmg-acid2"); }
+
+TEST_CASE("Game Boy through the shell: dmg_sound-01 passes (blargg's code in cartridge RAM) and its frame matches MesenCE's") {
+    matches_mesen("dmg_sound-01");
+}

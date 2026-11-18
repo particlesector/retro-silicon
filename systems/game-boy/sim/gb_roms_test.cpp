@@ -3,18 +3,25 @@
 // testroms/manifest-gb.toml (harness/golden/gb_frames_crc32.txt): every ROM
 // for the Game Boy (dmg) whose `needs` the system has so far runs from
 // power-up through SameBoy's DMG boot ROM. A ROM with a result of its own
-// (blargg's text over the serial port, or Mooneye's bytes) must end with
+// (blargg's text over the serial port or code in cartridge RAM, or Mooneye's
+// bytes) must end with
 // MesenCE's result (a pass, or a fail where MesenCE's is one) within twice
 // the frames MesenCE took, and its frame 30 frames after the result must be
 // MesenCE's (its CRC: 2 bytes a pixel, the shade then 0, row by row); a
 // frame check's frame is the one MesenCE's list names. A frame ends as
-// VBlank starts, or every 70,224 T-cycles while the LCD is off. Skipped when
-// the ROMs aren't fetched (testroms/fetch.py).
+// VBlank starts, or every 70,224 T-cycles while the LCD is off. The sound's
+// CRC to the end of that frame (the APU's two mixes at each M-cycle's end, as
+// 16-bit little-endian words, left then right: gb_sys's register 30) must be
+// harness/golden/gb_audio_crc32.txt's, which RS_GB_AUDIO_OUT=<file> writes
+// instead (after an intended change to the sound). Skipped when the ROMs
+// aren't fetched (testroms/fetch.py).
 //
 // The ROMs run on up to 6 threads (RS_GB_JOBS=<n> sets how many);
 // RS_GB_ONLY=<id>[,<id>...] runs just those, RS_GB_TRACE=1 prints each
-// opcode fetch's PC and the serial bytes as they come, and RS_GB_DUMP=<dir>
-// writes each ROM's checked frame there as <id>.pgm.
+// opcode fetch's PC and the serial bytes as they come, RS_GB_DUMP=<dir>
+// writes each ROM's checked frame there as <id>.pgm, and RS_GB_AUDIO_DUMP=<dir>
+// the APU's two mixes at each M-cycle's end, to the checked frame, as <id>.mix
+// (two signed 16-bit little-endian words a cycle, left then right).
 #include <catch2/catch_test_macros.hpp>
 
 #include <verilated.h>
@@ -43,7 +50,8 @@ namespace {
 namespace fs = std::filesystem;
 
 // What the system has so far (the manifest's `needs`; harness's rig::gb::system_has() is the same).
-const std::set<std::string> kHas = {"cpu", "serial", "timer", "interrupts", "boot", "ppu", "oam dma"};
+const std::set<std::string> kHas = {"cpu",  "serial",  "timer", "interrupts", "boot",
+                                    "ppu",  "oam dma", "apu",   "cart ram"};
 // ROMs whose result is checked but not their frame, and why (harness's
 // rig::gb::frame_not_checked() has the same list).
 const std::map<std::string, std::string> kFrameNotChecked = {
@@ -172,10 +180,22 @@ struct Outcome {
     std::string text;    // the serial output
     long frames = 0;     // frames ended at the checked frame
     uint32_t crc = 0;    // its CRC
+    uint32_t audio = 0;  // the sound's CRC to its end
     std::vector<uint8_t> frame;
 };
 
-Outcome run(const Rom& rom, const std::vector<uint8_t>& image, const std::vector<uint8_t>& boot, bool trace) {
+// CRC-32 (zlib's), a byte at a time, kept open.
+struct Crc {
+    uint32_t c = 0xFFFFFFFFu;
+    void add(uint8_t v) {
+        c ^= v;
+        for (int k = 0; k < 8; k++) c = c & 1 ? 0xEDB88320u ^ (c >> 1) : c >> 1;
+    }
+    uint32_t value() const { return ~c; }
+};
+
+Outcome run(const Rom& rom, const std::vector<uint8_t>& image, const std::vector<uint8_t>& boot, bool trace,
+            std::FILE* mix) {
     VerilatedContext ctx;
     Vgameboy m{&ctx};
     std::vector<uint8_t> cart = image;
@@ -185,6 +205,7 @@ Outcome run(const Rom& rom, const std::vector<uint8_t>& image, const std::vector
 
     std::vector<uint8_t> screen(kW * kH, 0);
     bool frame_ended = false;
+    Crc audio;
     auto tick = [&](bool ce) {
         m.ce = ce;
         m.clk = 0;
@@ -195,6 +216,19 @@ Outcome run(const Rom& rom, const std::vector<uint8_t>& image, const std::vector
         m.eval();
         if (ce && m.pix_we && m.pix_x < kW && m.pix_y < kH) screen[m.pix_y * kW + m.pix_x] = m.pix_shade;
         if (ce && m.frame_end) frame_ended = true;
+        if (ce && m.m_end) {
+            const uint16_t l = static_cast<uint16_t>(static_cast<int16_t>(m.aud_l << 6) >> 6);
+            const uint16_t r = static_cast<uint16_t>(static_cast<int16_t>(m.aud_r << 6) >> 6);
+            audio.add(l & 0xFF);
+            audio.add(l >> 8);
+            audio.add(r & 0xFF);
+            audio.add(r >> 8);
+            if (mix) {
+                const uint8_t w[4] = {static_cast<uint8_t>(l), static_cast<uint8_t>(l >> 8), static_cast<uint8_t>(r),
+                                      static_cast<uint8_t>(r >> 8)};
+                std::fwrite(w, 1, 4, mix);
+            }
+        }
         m.clk = 1;
         m.eval();
     };
@@ -240,16 +274,23 @@ Outcome run(const Rom& rom, const std::vector<uint8_t>& image, const std::vector
                 if (out.text.find("Failed") != std::string::npos) out.result = "fail";
             } else if (rom.check == "mooneye" && bytes.size() >= 6) {
                 out.result = std::equal(pass.begin(), pass.end(), bytes.begin()) ? "pass" : "fail";
+            } else if (rom.check == "blargg" && cram[1] == 0xDE && cram[2] == 0xB0 && cram[3] == 0x61 &&
+                       cram[0] < 0x80) {
+                // blargg's newer ROMs: the code at $A000 once $A001-$A003 hold their signature, and the text after
+                out.result = cram[0] == 0 ? "pass" : "fail:" + std::to_string(cram[0]);
+                for (size_t i = 4; i < cram.size() && cram[i]; i++) out.text.push_back(static_cast<char>(cram[i]));
             }
             if (!out.result.empty()) want = out.frames + kMargin;
         }
         if (out.frames == want) {
+            out.audio = audio.value();
             out.crc = crc32_frame(screen);
             out.frame = screen;
             return out;
         }
     }
     if (want < 0 || rom.check == "frame") out.result = "timeout";
+    out.audio = audio.value();
     out.crc = crc32_frame(screen);
     out.frame = screen;
     return out;
@@ -262,6 +303,20 @@ TEST_CASE("Game Boy test ROMs end as they do in MesenCE") {
     Manifest man = read_manifest(RS_GB_MANIFEST);
     const auto results = golden_results(RS_GB_GOLDEN);
     const char* dump = std::getenv("RS_GB_DUMP");
+    const char* audio_out = std::getenv("RS_GB_AUDIO_OUT");
+    std::map<std::string, std::pair<long, uint32_t>> audio_golden;  // id: frames, CRC
+    {
+        std::ifstream in(RS_GB_AUDIO_GOLDEN);
+        std::string line;
+        while (std::getline(in, line)) {
+            if (line.empty() || line[0] == '#') continue;
+            std::istringstream s(line);
+            std::string id, frames, crc;
+            s >> id >> frames >> crc;
+            audio_golden[id] = {std::stol(frames), static_cast<uint32_t>(std::stoul(crc, nullptr, 16))};
+        }
+    }
+    std::map<std::string, std::pair<long, uint32_t>> audio_got;
     const fs::path boot_path = roms_dir / man.dmg_boot;
     if (!fs::exists(boot_path)) SKIP(boot_path.string() << " not found: run testroms/fetch.py");
     const auto boot = read_file(boot_path);
@@ -277,7 +332,9 @@ TEST_CASE("Game Boy test ROMs end as they do in MesenCE") {
 
     std::vector<Rom> todo;
     for (auto& r : man.roms) {
-        if (r.model != "dmg" || (r.check != "serial" && r.check != "mooneye" && r.check != "frame")) continue;
+        if (r.model != "dmg" || (r.check != "serial" && r.check != "mooneye" && r.check != "blargg" &&
+                                 r.check != "frame"))
+            continue;
         if (!std::all_of(r.needs.begin(), r.needs.end(), [](auto& n) { return kHas.count(n) != 0; })) continue;
         if (!only.empty() && !only.count(r.id)) continue;
         auto it = results.find(r.id);
@@ -301,7 +358,10 @@ TEST_CASE("Game Boy test ROMs end as they do in MesenCE") {
                 failures.push_back(r.id + ": " + p.string() + " not found");
                 continue;
             }
-            Outcome o = run(r, read_file(p), boot, trace);
+            std::FILE* mix = nullptr;
+            if (const char* ad = std::getenv("RS_GB_AUDIO_DUMP")) mix = std::fopen((fs::path(ad) / (r.id + ".mix")).c_str(), "wb");
+            Outcome o = run(r, read_file(p), boot, trace, mix);
+            if (mix) std::fclose(mix);
             if (dump) {
                 std::ofstream f(fs::path(dump) / (r.id + ".pgm"), std::ios::binary);
                 f << "P5\n" << kW << " " << kH << "\n255\n";
@@ -312,12 +372,21 @@ TEST_CASE("Game Boy test ROMs end as they do in MesenCE") {
             std::snprintf(crcs, sizeof crcs, "0x%08x (MesenCE 0x%08x)", o.crc, r.crc);
             std::printf("%-40s %-7s (MesenCE %s) frame %ld %s\n", r.id.c_str(), o.result.c_str(),
                         r.result.c_str(), o.frames, crcs);
+            audio_got[r.id] = {o.frames, o.audio};
+            auto ag = audio_golden.find(r.id);
             if (o.result != r.result) {
                 std::string t = o.text;
                 std::replace(t.begin(), t.end(), '\n', '|');
                 failures.push_back(r.id + ": " + o.result + ", MesenCE " + r.result + " [" + t + "]");
             } else if (o.crc != r.crc && !kFrameNotChecked.count(r.id)) {
                 failures.push_back(r.id + ": frame " + std::to_string(o.frames) + " " + crcs);
+            } else if (!audio_out && (ag == audio_golden.end() || ag->second.first != o.frames ||
+                                      ag->second.second != o.audio)) {
+                char a[64];
+                std::snprintf(a, sizeof a, "0x%08x", o.audio);
+                failures.push_back(r.id + ": sound to frame " + std::to_string(o.frames) + " " + a +
+                                   (ag == audio_golden.end() ? std::string(", not in the golden list")
+                                                             : ", golden " + std::to_string(ag->second.first)));
             }
         }
     };
@@ -327,6 +396,23 @@ TEST_CASE("Game Boy test ROMs end as they do in MesenCE") {
     for (unsigned i = 0; i < n; i++) threads.emplace_back(worker);
     for (auto& th : threads) th.join();
 
+    if (audio_out) {
+        // Every ROM run, in the manifest's order; with RS_GB_ONLY, the others' lines kept.
+        for (auto& [id, v] : audio_got) audio_golden[id] = v;
+        std::ofstream f(audio_out);
+        f << "# The sound's CRC (gb_sys's register 30: the APU's two mixes at each M-cycle's end, as\n"
+             "# 16-bit little-endian words, left then right, from reset) at each ROM's checked frame of\n"
+             "# gb_frames_crc32.txt, from the sim (gb_roms_test, RS_GB_AUDIO_OUT). Boards must match it;\n"
+             "# MesenCE has no equivalent. Regenerate after an intended change to the sound.\n"
+             "# id  frames  crc32\n";
+        for (auto& r : man.roms) {
+            auto it = audio_golden.find(r.id);
+            if (it == audio_golden.end()) continue;
+            char c[16];
+            std::snprintf(c, sizeof c, "0x%08x", it->second.second);
+            f << r.id << " " << it->second.first << " " << c << "\n";
+        }
+    }
     std::sort(failures.begin(), failures.end());
     std::string report;
     for (auto& f : failures) report += "\n  " + f;

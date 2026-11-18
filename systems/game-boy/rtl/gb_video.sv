@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-// The Game Boy's picture as HDMI at 720p (DVI: no sound until the APU). Each of the 160 x 144
+// The Game Boy's picture and sound as HDMI at 720p. Each of the 160 x 144
 // pixels is 5 display pixels each way, 800 x 720, in the middle of the display, its shade grey: 0
 // white, 1 $AA, 2 $55, 3 black.
 //
@@ -25,9 +25,13 @@
 // working system `late` never moves.
 //
 // The video CRC, for the test shell, is a2600_video's: a toggle of `cap_t` asks for the CRC of the
-// display frame that the next request starts (its TMDS symbols), which comes with a toggle of
+// display frame that the next request starts (its TMDS symbols, the data islands' packets as 0:
+// which line's island carries a sample depends on when it crossed to pclk), which comes with a toggle of
 // `crc_t` and `crc_ok`, whether that frame showed its Game Boy frame whole. `shown` counts display
 // frames whose Game Boy frame started on request.
+//
+// The sound comes as 48 kHz sample pairs (`a_valid`, `a_l`, `a_r`, signed, from gb_sys's
+// resamplers) and goes out in the HDMI audio packets (`video/hdmi`, AUDIO set), as nes_video's.
 //
 // The pixel side resets itself at configuration (common/por on pclk).
 module gb_video #(
@@ -48,6 +52,9 @@ module gb_video #(
     output logic        crc_t,
     output logic [15:0] shown,
     output logic [15:0] late,
+    input  logic        a_valid,     // a sound sample pair
+    input  logic [15:0] a_l,
+    input  logic [15:0] a_r,
 
     // The pixel clock
     input  logic        pclk,
@@ -206,12 +213,32 @@ module gb_video #(
         endcase
     end
 
-    /* verilator lint_off UNUSEDSIGNAL */
     logic packet;
-    /* verilator lint_on UNUSEDSIGNAL */
-    hdmi #(.LATENCY(LATENCY), .AUDIO(1'b0)) u_hdmi (
+    // ---- Sound: each pair crosses to pclk with a toggle, held until the next ----
+    logic [31:0] a_hold, a_p;
+    logic        a_t, a_seen, a_last, a_new;
+    always_ff @(posedge clk)
+        if (rst)
+            a_t <= 1'b0;
+        else if (a_valid) begin
+            a_hold <= {a_r, a_l};
+            a_t    <= !a_t;
+        end
+    cdc_sync u_at (.clk(pclk), .d(a_t), .q(a_seen));
+    always_ff @(posedge pclk) begin
+        a_last <= a_seen;
+        a_new  <= a_seen != a_last;
+        if (a_seen != a_last)
+            a_p <= a_hold;
+        if (prst) begin
+            a_last <= a_seen;
+            a_new  <= 1'b0;
+        end
+    end
+
+    hdmi #(.LATENCY(LATENCY), .AUDIO(1'b1)) u_hdmi (
         .clk(pclk), .rst(prst), .x(hx), .y(hy), .act(hact), .frame(hframe), .line(hline),
-        .rgb(on_d[1] ? rgb : 24'h000000), .aud_valid(1'b0), .aud_l(16'd0), .aud_r(16'd0),
+        .rgb(on_d[1] ? rgb : 24'h000000), .aud_valid(a_new), .aud_l(a_p[15:0]), .aud_r(a_p[31:16]),
         .tmds0, .tmds1, .tmds2, .packet);
 
     // ---- Frame CRC (a2600_video's) ----
@@ -234,7 +261,7 @@ module gb_video #(
 
     always_ff @(posedge pclk) begin
         fd      <= {fd[LATENCY:0], hframe};
-        sym_q   <= {tmds2, tmds1, tmds0};
+        sym_q   <= packet ? '0 : {tmds2, tmds1, tmds0};
         publish <= start && running;
         if (publish) begin
             res    <= vcrc;
