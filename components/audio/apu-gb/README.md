@@ -32,6 +32,10 @@ Module `apu_gb`.
 | --- | --- | --- |
 | `CGB` | 0 | 0, the DMG's quirks: the length counters take writes while the APU is off and keep them through power-on; wave RAM is reachable while the wave channel plays only in the tick it read a byte (else reads give `$FF` and writes are lost); retriggering the wave channel as it reads copies the bytes it was about to read over wave RAM's first; a pulse channel's timer runs on after its length or sweep stops it, until its DAC goes off; the noise counter counts on after its channel stops, and its LFSR takes its feedback as the counter's bit falls; a noise trigger off the 1 MHz phase waits. 1, the Color's: none of those |
 
+## Board notes
+
+- **Tang Nano 20K: no DSP multiply.** The mixes were first `sum x (volume + 1)`, which Yosys mapped to two of the GW2A's `MULT9X9` blocks, signed. On the chip one product came out wrong in `dmg_sound-01`: -1 x 7 gave 505, -7 with its bit 9 lost, while -15 x 8 elsewhere was right, so its sound's CRC wasn't the sim's. The netlist looked right (both operands signed, the low 10 bits taken), so the fault is in the open toolchain's packing of the block's signed mode, or the block itself. The volume is 1 to 8, so the product is now the sum plus up to three shifted copies of it: adders only, on every board. Found by stopping the 20K at T-cycles a binary search chose, comparing its sound's CRC with the sim's, then finding the pair of mixes that gave its CRC at the first M-cycle that differed.
+
 ## What it leaves out
 
 SameBoy models more of the DMG than this does, none of it needed by blargg's `dmg_sound` or, so far, any test here:
@@ -50,6 +54,8 @@ Each top module placed alone by `tools/timing/report.py` (see `docs/timing.md` f
 | Module | Tang Nano 20K (GW2A-18C) | Tang Console 138K (GW5AST-138C) | PYNQ-Z2 (XC7Z020) |
 | --- | --- | --- | --- |
 | `apu_gb` | 118 MHz, 2292 LUTs, 2 DSP | 163 MHz, 2303 LUTs | 97 MHz, 1770 LUTs, 2 DSP |
+
+Measured with the mixes multiplied; they're now added (below), so the DSP blocks are gone and the counts above are a little low. The next `report.py` run will update them.
 
 <!-- end of size and speed -->
 

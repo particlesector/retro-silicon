@@ -231,6 +231,14 @@ module apu_gb #(
     assign nr50   = r50;
     assign nr51   = r51;
 
+    // A side's sum times its volume + 1, in adds: the open toolchain's signed multiply on the
+    // Tang Nano 20K's DSP blocks gave wrong products (-1 x 7 came out as 505).
+    function automatic logic signed [9:0] scale(input logic signed [6:0] v, input logic [2:0] vol);
+        logic signed [9:0] x;
+        x = 10'(v);
+        scale = x + (vol[0] ? x : 10'sd0) + (vol[1] ? x <<< 1 : 10'sd0) + (vol[2] ? x <<< 2 : 10'sd0);
+    endfunction
+
     // The DACs: level 0 gives +15, 15 gives -15 (Pan Docs: digital 0 is analog
     // 1, 15 is -1), an off DAC 0. NR51 pans them, NR50 scales each side by 1 to 8.
     logic signed [6:0] sum_l, sum_r;
@@ -243,8 +251,8 @@ module apu_gb #(
             if (r51[i + 4]) sum_l = sum_l + d[i];
             if (r51[i])     sum_r = sum_r + d[i];
         end
-        mix_l = 10'(sum_l) * 10'(signed'({2'b00, r50[6:4]} + 5'd1));
-        mix_r = 10'(sum_r) * 10'(signed'({2'b00, r50[2:0]} + 5'd1));
+        mix_l = scale(sum_l, r50[6:4]);
+        mix_r = scale(sum_r, r50[2:0]);
     end
 
     // ---- reads ----
