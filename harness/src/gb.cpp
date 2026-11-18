@@ -3,6 +3,7 @@
 
 #include <algorithm>
 #include <chrono>
+#include <cstdlib>
 #include <cstdio>
 #include <fstream>
 #include <sstream>
@@ -40,16 +41,65 @@ uint32_t Console::get32(uint32_t reg) {
 
 void Console::hold_reset() { put32(kCtrl, 2, 1); }
 
-std::optional<std::string> Console::load(const std::vector<uint8_t>& rom, const std::vector<uint8_t>& boot) {
+uint32_t CartConfig::reg() const {
+    return static_cast<uint32_t>(mbc) | (rtc ? 8u : 0u) | (rumble ? 16u : 0u) | static_cast<uint32_t>(rom_log2) << 8 |
+           static_cast<uint32_t>(ram_log2) << 16;
+}
+
+std::optional<CartConfig> cart_config(const std::vector<uint8_t>& rom) {
+    if (rom.size() < 0x150) return std::nullopt;
+    CartConfig c;
+    const uint8_t type = rom[0x147];
+    while ((size_t{1} << c.rom_log2) < rom.size()) c.rom_log2++;
+    static const int kRam[] = {0, 11, 13, 15, 17, 16};
+    c.ram_log2 = rom[0x149] < 6 ? kRam[rom[0x149]] : 0;
+    if (type == 0x00 || type == 0x08 || type == 0x09) {
+        c.mbc = 0;
+        if (type == 0x00) c.ram_log2 = 0;
+    } else if (type >= 0x01 && type <= 0x03) {
+        const bool m =
+            rom.size() > 0x40134 && std::equal(rom.begin() + 0x104, rom.begin() + 0x134, rom.begin() + 0x40104);
+        c.mbc = m ? 2 : 1;
+        if (type == 0x01) c.ram_log2 = 0;
+    } else if (type == 0x05 || type == 0x06) {
+        c.mbc = 3;
+        c.ram_log2 = 9;
+    } else if (type >= 0x0F && type <= 0x13) {
+        c.mbc = 4;
+        c.rtc = type <= 0x10;
+        if (type == 0x0F || type == 0x11) c.ram_log2 = 0;
+    } else if (type >= 0x19 && type <= 0x1E) {
+        c.mbc = 5;
+        c.rumble = type >= 0x1C;
+        if (type == 0x19 || type == 0x1C) c.ram_log2 = 0;
+    } else {
+        return std::nullopt;
+    }
+    if (c.rom_log2 > 23) return std::nullopt;
+    return c;
+}
+
+std::optional<std::string> Console::load(const std::vector<uint8_t>& rom, const std::vector<uint8_t>& boot,
+                                         const std::vector<uint8_t>* ram_in) {
     if (boot.size() != 256) return "a boot ROM of " + std::to_string(boot.size()) + " bytes, not 256";
-    const uint32_t room = 1u << c_.peek(kRegs + kRomRoom, 1)[0];
-    if (rom.size() > room) return std::string(kNoRoom);
+    const auto cfg = cart_config(rom);
+    if (!cfg) return std::string(kNoMbc);
+    const auto room = c_.peek(kRegs + kRomRoom, 2);
+    if (cfg->rom_log2 > room[0] || cfg->ram_log2 > room[1]) return std::string(kNoRoom);
+    put32(kCartCfg, cfg->reg(), 3);
     std::vector<uint8_t> image(rom);
-    image.resize(room, 0xFF);
+    image.resize(size_t{1} << cfg->rom_log2, 0xFF);
     const std::vector<uint8_t>& cart = image;
-    const std::vector<uint8_t> ram(kCartRamSize, 0xFF);
+    // The RAM from ram_in (its first bytes; 0 past them), MBC2's cells with their top 4 bits set, as
+    // MesenCE sets them.
+    std::vector<uint8_t> ram(cfg->ram_log2 ? size_t{1} << cfg->ram_log2 : 0, 0);
+    for (size_t i = 0; i < ram.size(); i++)
+        ram[i] = static_cast<uint8_t>((ram_in && i < ram_in->size() ? (*ram_in)[i] : 0) | (cfg->mbc == 3 ? 0xF0 : 0));
+    const std::vector<uint8_t>& ram_c = ram;
+    const std::vector<uint8_t> clock(kClockSize, 0);
     for (auto [addr, data, what] : {std::tuple{kBoot, &boot, "boot ROM"}, std::tuple{kCart, &cart, "cartridge"},
-                                    std::tuple{kCartRam, &ram, "cartridge RAM"}}) {
+                                    std::tuple{kCartRam, &ram_c, "cartridge RAM"}, std::tuple{kClock, &clock, "clock"}}) {
+        if (data->empty()) continue;
         c_.write(addr, *data);
         Crc32 want;
         want.update(*data);
@@ -109,6 +159,14 @@ void Console::wait_stopped() {
 std::vector<uint8_t> Console::frame() { return c_.read(kFrameBuffer, kWidth * kHeight); }
 uint32_t Console::sound_crc() { return get32(kSoundCrc); }
 uint32_t Console::cart_head() { return get32(kCartHead); }
+uint32_t Console::waits() { return get32(kWaits); }
+
+std::vector<uint8_t> Console::cart_ram(const std::vector<uint8_t>& rom) {
+    const auto cfg = cart_config(rom);
+    if (!cfg || !cfg->ram_log2) return {};
+    hold_reset();
+    return c_.read(kCartRam, 1u << cfg->ram_log2);
+}
 std::pair<uint32_t, uint32_t> Console::pcm() { return {get32(kPcmCrc), get32(kPcmCount)}; }
 
 void Console::pace(bool on) { put32(kVideo, on ? 1 : 0, 1); }
@@ -147,6 +205,13 @@ std::map<std::string, HdmiGolden> load_hdmi_golden(const std::string& file) {
     return out;
 }
 
+uint8_t keys_at(const std::vector<InputEntry>& script, uint32_t frame) {
+    uint8_t k = 0;
+    for (const auto& e : script)
+        if (e.frame <= frame) k = e.keys;
+    return k;
+}
+
 std::vector<Golden> load_golden(const std::string& file) {
     std::ifstream f(file);
     if (!f) throw RigError("can't read " + file);
@@ -161,6 +226,19 @@ std::vector<Golden> load_golden(const std::string& file) {
         if (!s) throw RigError(file + ": bad line: " + line);
         g.crc = static_cast<uint32_t>(std::stoul(crc, nullptr, 16));
         g.path = spaces(g.path);
+        for (std::string opt; s >> opt;) {
+            if (opt == "again") g.again = true;
+            if (opt.rfind("sav=", 0) == 0) g.sav = spaces(opt.substr(4));
+            if (opt.rfind("savcrc=", 0) == 0) g.savcrc = static_cast<uint32_t>(std::stoul(opt.substr(7), nullptr, 16));
+            if (opt.rfind("input=", 0) != 0) continue;
+            std::istringstream e(opt.substr(6));
+            for (std::string entry; std::getline(e, entry, ',');) {
+                const auto c = entry.find(':');
+                if (c == std::string::npos) throw RigError(file + ": bad input entry " + entry);
+                g.input.push_back({static_cast<uint32_t>(std::stoul(entry.substr(0, c))),
+                                   static_cast<uint8_t>(std::stoul(entry.substr(c + 1), nullptr, 0))});
+            }
+        }
         out.push_back(g);
     }
     return out;
@@ -201,8 +279,9 @@ std::map<std::string, std::set<std::string>> load_needs(const std::string& manif
 }
 
 const std::set<std::string>& system_has() {
-    static const std::set<std::string> has = {"cpu", "serial", "timer", "interrupts", "boot",
-                                              "ppu", "oam dma", "apu",   "cart ram"};
+    static const std::set<std::string> has = {"cpu",     "serial",   "timer", "interrupts", "boot",
+                                              "ppu",     "oam dma",  "apu",   "cart ram",   "mbc1",
+                                              "mbc2",    "mbc3",     "mbc5",  "rtc"};
     return has;
 }
 
@@ -232,7 +311,8 @@ const std::map<std::string, std::string>& frame_not_checked() {
 }
 
 TestResult rom_test(Link& link, const Golden& g, const std::vector<uint8_t>& rom, const std::vector<uint8_t>& boot,
-                    std::optional<uint32_t> build_id, std::optional<AudioGolden> audio) {
+                    std::optional<uint32_t> build_id, std::optional<AudioGolden> audio,
+                    const std::vector<uint8_t>* sav) {
     TestResult r;
     r.name = g.id;
     auto t0 = std::chrono::steady_clock::now();
@@ -260,10 +340,32 @@ TestResult rom_test(Link& link, const Golden& g, const std::vector<uint8_t>& rom
         if (build_id && info.build_id != *build_id)
             return finish("build ID " + hex(info.build_id, 8) + ", expected " + hex(*build_id, 8) +
                           ": the wrong bitstream is loaded");
+        // A battery cartridge's RAM: from `sav`, or with `again` what a first run to the checked frame
+        // left, as MesenCE keeps a battery cartridge's between runs.
+        std::vector<uint8_t> ram_in;
+        if (sav) ram_in = *sav;
+        if (g.again) {
+            gb.hold_reset();
+            if (auto e = gb.load(rom, boot, &ram_in)) return finish(*e);
+            gb.set_keys(keys_at(g.input, 0));
+            bool started = false;
+            for (const auto& e : g.input) {
+                if (e.frame == 0 || e.frame >= g.frames) continue;
+                gb.stop_frame(e.frame);
+                if (!started) gb.run();
+                started = true;
+                gb.wait_stopped();
+                gb.set_keys(keys_at(g.input, e.frame));
+            }
+            gb.stop_frame(g.frames);
+            if (!started) gb.run();
+            gb.wait_stopped();
+            ram_in = gb.cart_ram(rom);
+        }
         gb.hold_reset();
-        if (auto e = gb.load(rom, boot)) return finish(*e);
+        if (auto e = gb.load(rom, boot, sav || g.again ? &ram_in : nullptr)) return finish(*e);
         r.bytes = rom.size();
-        gb.set_keys(0);
+        gb.set_keys(keys_at(g.input, 0));
 
         // The result, as gb_roms_test reads it at each frame's end; then the frame 30 on.
         std::string result = g.check == "frame" ? "-" : "";
@@ -271,39 +373,46 @@ TestResult rom_test(Link& link, const Golden& g, const std::vector<uint8_t>& rom
         const uint32_t limit = 2 * g.frames + 60;
         std::vector<uint8_t> bytes;
         const std::vector<uint8_t> pass = {3, 5, 8, 13, 21, 34};
-        uint32_t at = want ? want : 1;
+        // The next frame to stop at after `at`: `to`, or an input script's change before it, where the keys
+        // change at that frame's end as gb_roms_test changes them.
+        auto next_stop = [&](uint32_t at, uint32_t to) {
+            for (const auto& e : g.input)
+                if (e.frame > at && e.frame < to) return e.frame;
+            return to;
+        };
+        uint32_t at = next_stop(0, want ? want : 1);
         for (bool started = false;; started = true) {
             gb.stop_frame(at);
             if (!started) gb.run();
             gb.wait_stopped();
-            if (want) break;
-            auto more = gb.serial(static_cast<uint32_t>(bytes.size()));
-            bytes.insert(bytes.end(), more.begin(), more.end());
-            if (g.check == "serial") {
-                std::string text(bytes.begin(), bytes.end());
-                if (text.find("Passed") != std::string::npos) result = "pass";
-                if (text.find("Failed") != std::string::npos) result = "fail";
-            } else if (g.check == "blargg") {
-                // blargg's newer ROMs: the code at $A000 once $A001-$A003 hold DE B0 61
-                const uint32_t h = gb.cart_head();
-                const unsigned code = h & 0xFF;
-                if ((h >> 8) == 0x61B0DE && code < 0x80) result = code == 0 ? "pass" : "fail:" + std::to_string(code);
-            } else if (bytes.size() >= 6) {
-                result = std::equal(pass.begin(), pass.end(), bytes.begin()) ? "pass" : "fail";
+            gb.set_keys(keys_at(g.input, at));
+            if (want && at == want) break;
+            if (!want) {
+                auto more = gb.serial(static_cast<uint32_t>(bytes.size()));
+                bytes.insert(bytes.end(), more.begin(), more.end());
+                if (g.check == "serial") {
+                    std::string text(bytes.begin(), bytes.end());
+                    if (text.find("Passed") != std::string::npos) result = "pass";
+                    if (text.find("Failed") != std::string::npos) result = "fail";
+                } else if (g.check == "blargg") {
+                    // blargg's newer ROMs: the code at $A000 once $A001-$A003 hold DE B0 61
+                    const uint32_t h = gb.cart_head();
+                    const unsigned code = h & 0xFF;
+                    if ((h >> 8) == 0x61B0DE && code < 0x80)
+                        result = code == 0 ? "pass" : "fail:" + std::to_string(code);
+                } else if (bytes.size() >= 6) {
+                    result = std::equal(pass.begin(), pass.end(), bytes.begin()) ? "pass" : "fail";
+                }
+                if (!result.empty()) want = at + 30;
+                else if (at >= limit) break;
             }
-            if (!result.empty()) {
-                want = at + 30;
-                at = want;
-            } else if (at >= limit) {
-                break;
-            } else {
-                at++;
-            }
+            at = next_stop(at, want ? want : at + 1);
         }
         auto got = gb.frame_crc();
         if (got) r.crc32 = got->first;
         r.notes = std::to_string(gb.frames()) + " frames, " + std::to_string(gb.cycles()) + " T-cycles, " +
-                  std::to_string(gb.serial_count()) + " serial bytes";
+                  std::to_string(gb.serial_count()) + " serial bytes, " + std::to_string(gb.waits()) +
+                  " clocks waited on the ROM";
         if (result.empty()) return finish("no result in " + std::to_string(limit) + " frames");
         if (result != g.result) {
             std::string text(bytes.begin(), bytes.end());
@@ -316,6 +425,19 @@ TestResult rom_test(Link& link, const Golden& g, const std::vector<uint8_t>& rom
                           hex(g.crc, 8));
         const uint32_t sound = gb.sound_crc();
         r.audio_crc32 = sound;
+        // RS_GB_SAV_OUT=<dir>: the cartridge RAM at the end, as <id>.sav (MesenCE's .srm format).
+        if (const char* dir = std::getenv("RS_GB_SAV_OUT")) {
+            const auto ram = gb.cart_ram(rom);
+            std::ofstream(std::string(dir) + "/" + g.id + ".sav", std::ios::binary)
+                .write(reinterpret_cast<const char*>(ram.data()), static_cast<std::streamsize>(ram.size()));
+        }
+        if (g.savcrc) {
+            Crc32 c;
+            c.update(gb.cart_ram(rom));
+            if (c.value() != *g.savcrc)
+                return finish("the cartridge RAM at the end has CRC " + hex(c.value(), 8) + ", MesenCE's " +
+                              hex(*g.savcrc, 8));
+        }
         if (audio && (audio->frames != want || audio->crc != sound))
             return finish("the sound to frame " + std::to_string(want) + " has CRC " + hex(sound, 8) +
                           ", the sim's " + hex(audio->crc, 8) + " (to frame " + std::to_string(audio->frames) + ")");

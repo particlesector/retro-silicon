@@ -1,7 +1,7 @@
 CAPI=2:
 # SPDX-License-Identifier: Apache-2.0
 name: retro-silicon:system:game-boy:0.1.0
-description: The Game Boy (DMG) - the SM83 on the console's memory map with its boot ROM, RAMs, timer, serial port, joypad, OAM DMA and interrupts - the PPU and the APU (audio/apu-gb), with the cartridge outside, and gb_sys, the system under the test shell, with its picture and sound on HDMI (gb_video)
+description: The Game Boy (DMG) - the SM83 on the console's memory map with its boot ROM, RAMs, timer, serial port, joypad, OAM DMA and interrupts - the PPU and the APU (audio/apu-gb), the cartridge's MBCs and RAM (gb_cart; MBC3's clock too), and gb_sys, the system under the test shell, with its picture and sound on HDMI (gb_video); gb_sdram and gb_axi put the cartridge's ROM in an SDRAM or behind AXI
 
 filesets:
   rtl:
@@ -11,8 +11,11 @@ filesets:
       - rtl/gb_joypad.sv
       - rtl/gb_ppu.sv
       - rtl/gameboy.sv
+      - rtl/gb_cart.sv
       - rtl/gb_video.sv
       - rtl/gb_sys.sv
+      - rtl/gb_sdram.sv
+      - rtl/gb_axi.sv
     file_type: systemVerilogSource
     depend:
       - retro-silicon:cpu:sm83
@@ -24,6 +27,10 @@ filesets:
       - retro-silicon:common:cdc
       - retro-silicon:video:hdmi
       - retro-silicon:audio:resampler
+      - retro-silicon:memory:sdram
+      - retro-silicon:memory:axi-bridge
+      - retro-silicon:memory:cache
+      - retro-silicon:memory:port-cdc
 
 targets:
   default: &default

@@ -1,7 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
-// systems/game-boy on the Tang Console 138K, built with Gowin EDA (build.sh), under the test shell
-// (gb_sys: a 32 KB cartridge in block RAM), with its picture on the HDMI connector at 720p
-// (gb_video). Its pins are the 2600's (a2600.cst: the clock, the UART and HDMI).
+// systems/game-boy on the Tang Console 138K, built with Gowin EDA (build.sh), under the test shell,
+// its cartridge's ROM in its SDRAM module (gb_sdram: two W9825G6KH on the SDRAM0 connector,
+// RANKS=2, as the NES's; up to 8 MB, all of it), 32 KB of its RAM in block RAM, with its picture
+// and sound on the HDMI connector at 720p (gb_video). Its pins are the NES's (nes.cst).
 //
 // Clocks, as nes_top's: the PLL makes 371.875 MHz for the serializers and 37.1875 MHz for the
 // system from the 50 MHz oscillator, the system's held off by DCE until the PLL locks; CLKDIV makes
@@ -19,13 +20,26 @@ module gb_top #(
     output logic       tmds_clk_p,
     output logic       tmds_clk_n,
     output logic [2:0] tmds_d_p,
-    output logic [2:0] tmds_d_n
+    output logic [2:0] tmds_d_n,
+
+    output logic        O_sdram_clk,
+    output logic        O_sdram_cs_n,
+    output logic        O_sdram_ras_n,
+    output logic        O_sdram_cas_n,
+    output logic        O_sdram_wen_n,
+    output logic [1:0]  O_sdram_ba,
+    output logic [12:0] O_sdram_addr,
+    output logic [1:0]  O_sdram_dqm,
+    inout  wire  [15:0] IO_sdram_dq
 );
     logic fclk, sclk_u, lock, sclk, pclk;
     /* verilator lint_off UNUSEDSIGNAL */
     logic co1, co3, co4, co5, co6, cfb;
     logic [5:0] led;
+    logic       cke;  // the module ties CKE high
     /* verilator lint_on UNUSEDSIGNAL */
+    logic [15:0] dq_o;
+    logic        dq_oe;
 
     PLL #(
         .FCLKIN("50"), .IDIV_SEL(1), .FBDIV_SEL(1), .MDIV_SEL(14), .MDIV_FRAC_SEL(7),
@@ -46,10 +60,19 @@ module gb_top #(
 
     logic [9:0] tmds0, tmds1, tmds2;
 
-    gb_sys #(.CLKS_PER_BIT(CLKS_PER_BIT), .IDLE_CLKS(371_875), .T_NUM(35), .T_DEN(304), .VIDEO(1'b1),
-             .BUILD_ID(BUILD_ID)) u_sys (
+    // FREQ_MHZ and REFRESH_NS as the NES's (nes_top.sv has why).
+    gb_sdram #(.CLKS_PER_BIT(CLKS_PER_BIT), .IDLE_CLKS(371_875), .T_NUM(35), .T_DEN(304), .VIDEO(1'b1),
+               .FREQ_MHZ(38), .DQ_W(16), .ROW_W(13), .COL_W(9), .RANKS(2), .REFRESH_NS(7_000),
+               .BUILD_ID(BUILD_ID)) u_sys (
         .clk(sclk), .uart_rx, .uart_tx, .led,
+        .sd_cke(cke), .sd_cs_n(O_sdram_cs_n), .sd_ras_n(O_sdram_ras_n), .sd_cas_n(O_sdram_cas_n),
+        .sd_we_n(O_sdram_wen_n), .sd_ba(O_sdram_ba), .sd_addr(O_sdram_addr), .sd_dqm(O_sdram_dqm),
+        .sd_dq_o(dq_o), .sd_dq_oe(dq_oe), .sd_dq_i(IO_sdram_dq),
         .pclk, .tmds0, .tmds1, .tmds2);
+
+    // The SDRAM's clock is the system clock's inverse (see memory/sdram).
+    assign O_sdram_clk = ~sclk;
+    assign IO_sdram_dq = dq_oe ? dq_o : 'z;
 
     tmds_phy u_phy (
         .pclk, .fclk, .rst(!lock), .tmds0, .tmds1, .tmds2,

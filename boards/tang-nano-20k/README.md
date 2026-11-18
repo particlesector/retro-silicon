@@ -29,7 +29,7 @@ openFPGALoader -b tangnano20k build/fpga/uart_echo/uart_echo.fs
 | `shell_sdram_bitstream` | `systems/shell-sdram`, through `rtl/shell_sdram_top.sv` | `uart_echo.cst` | As shell-ram, with the SDRAM |
 | `nes_bitstream` | `systems/nes` on the SDRAM (`nes_sdram`), through `rtl/nes_top.sv` | `nes.cst` | 46.40625 MHz from the PLL; HDMI at 720p (below) |
 | `a2600_bitstream` | `systems/atari-2600`'s `a2600_sys` with HDMI, through `rtl/a2600_top.sv` | `nes.cst` | The NES's clocks (below): 46.40625 MHz, colour clocks at 7/89 (2% fast of NTSC's, to keep pace); HDMI at 720p |
-| `gb_bitstream` | `systems/game-boy`'s `gb_sys` with HDMI, through `rtl/gb_top.sv` | `nes.cst` | The NES's clocks (below): 46.40625 MHz, T-cycles at 7/76 (1.9% fast of the console's, to keep pace); HDMI at 720p |
+| `gb_bitstream` | `systems/game-boy`'s `gb_sys` with HDMI, through `rtl/gb_top.sv` | `nes.cst` | The NES's clocks (below): 46.40625 MHz, T-cycles at 7/76 (1.9% fast of the console's, to keep pace); the cartridge's ROM (up to 8 MB) in the SDRAM (`gb_sdram`), its RAM (32 KB) in block RAM; HDMI at 720p |
 
 ## SDRAM
 
@@ -41,10 +41,11 @@ The NES makes its clocks with the one rPLL from the 27 MHz oscillator: 371.25 MH
 
 The 2600 (`rtl/a2600_top.sv`) uses the same clocks without the SDRAM: its colour clock is 7/89 of the system clock, 3.64986 MHz, 1.96% faster than NTSC's, so a frame of 262 lines takes 98.2% of a display frame and it keeps pace as the NES does.
 
-The Game Boy (`rtl/gb_top.sv`) does too, with its 32 KB cartridge in block RAM: its T-cycle is 7/76 of the system clock, 4.27426 MHz, 1.91% faster than the console's 4.194304, so a frame of 70,224 T-cycles takes 98.6% of a display frame (at the console's rate, 100.5%: it would miss every request).
-- **Block RAM:** 39 of the GW2AR-18's 46. With Yosys, an 8-bit memory whose writing port also reads takes twice the block RAM (`gb_sys`'s README says how its memories avoid that); the first build, with two such, needed 59.
+The Game Boy (`rtl/gb_top.sv`) does too, with its cartridge's ROM in the SDRAM (`gb_sdram`, G6; up to 8 MB) and its RAM in block RAM: its T-cycle is 7/76 of the system clock, 4.27426 MHz, 1.91% faster than the console's 4.194304, so a frame of 70,224 T-cycles takes 98.6% of a display frame (at the console's rate, 100.5%: it would miss every request).
+- **Block RAM:** 35 of the GW2AR-18's 46 with the ROM in the SDRAM and 32 KB of cartridge RAM (G6; 39 with a 32 KB ROM in block RAM before). With Yosys, an 8-bit memory whose writing port also reads takes twice the block RAM (`gb_sys`'s README says how its memories avoid that); the first build, with two such, needed 59.
 - **Timing:** the PPU's step for a dot is one clock's logic, and choosing the next object (the lowest X of ten, then the lowest slot) in it, in a chain of ten comparisons, held the system clock to 30 MHz. The choice is now made a clock ahead, in a tree of four comparisons' depth: 71.2 MHz, against the 46.4 it needs.
 - **The APU (G5):** with it the build first missed timing (43 MHz): the CPU's write address and data ran through the APU's trigger logic in one clock. The APU takes them registered (they're steady the clock before a write lands): 57.3 MHz. Its mixes first scaled by NR50 with a multiply, which Yosys put in two `MULT9X9` blocks, signed; on the chip one product of `dmg_sound-01` came out wrong (-1 x 7 as 505) while the netlist was right, so the mixes now scale with adds (`audio/apu-gb`'s README). All 98 test ROMs then match MesenCE's results and frames and the sim's sound.
+- **The cartridge (G6):** the CPU's ROM reads come from the SDRAM through `gb_sdram`; a T-cycle waits only when a fetch isn't done by the M-cycle's last one (`gb_sys`'s register 54 counts them), and over all 129 test ROMs none waited. Its first build decided that wait from the CPU's address in the same clock, in front of the T-cycle enable, and cost the 138K and the PYNQ-Z2 most of their margin; it's registered now (the address is steady three T-cycles before). The system clock places at 55.6 MHz, 20% over the 46.4 it runs at.
 
 `../gowin/rtl/tmds_phy.sv` serializes each 10-bit TMDS symbol (`OSER10`) onto the connector's pairs as true LVDS (`TLVDS_OBUF`, `LVDS25`). Every HDMI pair here is a true-LVDS pair, where the open flow doesn't allow emulated LVDS, and true LVDS outputs set their bank's I/O standard for the whole bank. So nothing else can share banks 4 and 5 with HDMI: the UART pins moved from 41/42, in bank 4, to 71/72.
 

@@ -9,7 +9,7 @@ rs_component(console_nes_top RTL rtl/nes_top.sv DEPENDS nes_sdram tmds_phy TOPS 
              LINT ${PROJECT_SOURCE_DIR}/boards/gowin/lint/gowin_prims.sv)
 rs_component(console_a2600_top RTL rtl/a2600_top.sv DEPENDS a2600_sys tmds_phy TOPS a2600_top
              LINT ${PROJECT_SOURCE_DIR}/boards/gowin/lint/gowin_prims.sv)
-rs_component(console_gb_top RTL rtl/gb_top.sv DEPENDS gb_sys tmds_phy TOPS gb_top
+rs_component(console_gb_top RTL rtl/gb_top.sv DEPENDS gb_sdram tmds_phy TOPS gb_top
              LINT ${PROJECT_SOURCE_DIR}/boards/gowin/lint/gowin_prims.sv)
 
 if(NOT RS_BITSTREAMS OR NOT DEFINED ENV{RS_GOWIN_EDA})
@@ -45,10 +45,10 @@ rs_board_bitstream(console_a2600 BUILD ${build} VENDOR gowin-eda COMPONENT conso
                    PARAMS BUILD_ID=${a2600_id}
                    SDC nes.sdc
                    OPTIONS timing_driven=1 place_option=2 route_option=2)
-# The Game Boy (rtl/gb_top.sv): its 32 KB cartridge in block RAM, on the NES's clocks (nes.sdc),
-# the 2600's pins.
+# The Game Boy (rtl/gb_top.sv): its cartridge's ROM in the SDRAM module (gb_sdram), on the NES's
+# clocks (nes.sdc) and pins.
 get_property(gb_id GLOBAL PROPERTY RS_GB_BUILD_ID)
-rs_board_bitstream(console_gb BUILD ${build} VENDOR gowin-eda COMPONENT console_gb_top TOP gb_top CST a2600.cst
+rs_board_bitstream(console_gb BUILD ${build} VENDOR gowin-eda COMPONENT console_gb_top TOP gb_top CST nes.cst
                    PARAMS BUILD_ID=${gb_id}
                    SDC nes.sdc
                    OPTIONS timing_driven=1 place_option=2 route_option=2)

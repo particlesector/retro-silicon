@@ -1,9 +1,12 @@
 // SPDX-License-Identifier: Apache-2.0
-// systems/game-boy on the PYNQ-Z2, built with openXC7, under the test shell (gb_sys: a 32 KB
-// cartridge in block RAM), with its picture on the HDMI OUT connector at 720p (gb_video). The
-// Zynq's processor and DDR3 aren't used.
+// systems/game-boy on the PYNQ-Z2, built with openXC7, under the test shell, its cartridge's ROM in
+// the board's DDR3 (gb_axi, through the Zynq's HP0 port, from 0x10000000, behind a read cache; up
+// to 8 MB, all of it) and 32 KB of its RAM in block RAM, with its picture and sound on the HDMI OUT
+// connector at 720p (gb_video). As for the NES, the DDR must be set up first, over JTAG
+// (boards/xilinx/zynq7/ps7_ddr3.py); until HP0 is out of reset the system waits, and HP0 and the
+// AXI bridge run on the 74.25 MHz pixel clock, across memory/port-cdc from the system's 37.125.
 //
-// Clocks, as pynq_a2600_top's: a PLL makes 82.5 MHz from the 125 MHz clock, and from it an MMCM
+// Clocks, as pynq_nes_top's: a PLL makes 82.5 MHz from the 125 MHz clock, and from it an MMCM
 // makes 371.25 MHz for the serializers, 74.25 MHz for the pixels and 37.125 MHz for the system,
 // held off by BUFGCE until the MMCM locks. A UART bit is 25 clocks (1.485 Mbaud). A T-cycle is
 // 35/304 of the system clock, 4.27426 MHz: the system clock is half the pixel clock, as on the Tang
@@ -31,7 +34,6 @@ module pynq_gb_top #(
     /* verilator lint_off UNUSEDSIGNAL */
     logic pll_o1, pll_o2, pll_o3, pll_o4, pll_o5;
     logic mm_o0b, mm_o1b, mm_o2b, mm_o3, mm_o3b, mm_o4, mm_o5, mm_o6, mm_fbb;
-    logic [5:0]  sys_led;          // 4 (stopped at a limit) and 2 (unused) aren't shown
     /* verilator lint_on UNUSEDSIGNAL */
 
     PLLE2_BASE #(
@@ -58,12 +60,42 @@ module pynq_gb_top #(
     BUFG   u_bp (.I(pclk_u), .O(pclk));
     BUFGCE u_bs (.I(sclk_u), .CE(mlock), .O(sclk));
 
+    /* verilator lint_off UNUSEDSIGNAL */
+    logic [5:0] sys_led;  // 4 (stopped at a limit) and 2 (unused) aren't shown
+    /* verilator lint_on UNUSEDSIGNAL */
     logic [9:0] tmds0, tmds1, tmds2;
 
-    gb_sys #(.CLKS_PER_BIT(CLKS_PER_BIT), .IDLE_CLKS(371_250), .T_NUM(35), .T_DEN(304), .VIDEO(1'b1),
-             .BUILD_ID(BUILD_ID)) u_sys (
+    logic        aresetn;
+    logic [31:0] araddr, awaddr;
+    logic        arvalid, arready, rvalid, rready, rlast, awvalid, awready, wvalid, wready, wlast, bvalid, bready;
+    logic [3:0]  arlen, awlen, arcache, awcache;
+    logic [2:0]  arsize, awsize;
+    logic [1:0]  arburst, awburst, rresp, bresp;
+    logic [5:0]  arid, awid, wid;
+    logic [63:0] rdata, wdata;
+    logic [7:0]  wstrb;
+
+    gb_axi #(.CLKS_PER_BIT(CLKS_PER_BIT), .IDLE_CLKS(371_250), .T_NUM(35), .T_DEN(304), .VIDEO(1'b1),
+             .BASE(32'h1000_0000), .ASYNC(1'b1), .BUILD_ID(BUILD_ID)) u_sys (
         .clk(sclk), .uart_rx, .uart_tx, .led(sys_led),
-        .pclk, .tmds0, .tmds1, .tmds2);
+        .pclk, .tmds0, .tmds1, .tmds2, .aclk(pclk), .axi_ready(aresetn),
+        .m_araddr(araddr), .m_arvalid(arvalid), .m_arready(arready), .m_arlen(arlen), .m_arsize(arsize),
+        .m_arburst(arburst), .m_arcache(arcache), .m_arid(arid),
+        .m_rdata(rdata), .m_rvalid(rvalid), .m_rready(rready), .m_rresp(rresp), .m_rlast(rlast),
+        .m_awaddr(awaddr), .m_awvalid(awvalid), .m_awready(awready), .m_awlen(awlen), .m_awsize(awsize),
+        .m_awburst(awburst), .m_awcache(awcache), .m_awid(awid),
+        .m_wdata(wdata), .m_wstrb(wstrb), .m_wlast(wlast), .m_wid(wid), .m_wvalid(wvalid), .m_wready(wready),
+        .m_bresp(bresp), .m_bvalid(bvalid), .m_bready(bready));
+
+    ps7_hp0 u_ps (
+        .aclk(pclk), .aresetn,
+        .m_araddr(araddr), .m_arvalid(arvalid), .m_arready(arready), .m_arlen(arlen), .m_arsize(arsize),
+        .m_arburst(arburst), .m_arcache(arcache), .m_arid(arid),
+        .m_rdata(rdata), .m_rvalid(rvalid), .m_rready(rready), .m_rresp(rresp), .m_rlast(rlast),
+        .m_awaddr(awaddr), .m_awvalid(awvalid), .m_awready(awready), .m_awlen(awlen), .m_awsize(awsize),
+        .m_awburst(awburst), .m_awcache(awcache), .m_awid(awid),
+        .m_wdata(wdata), .m_wstrb(wstrb), .m_wlast(wlast), .m_wid(wid), .m_wvalid(wvalid), .m_wready(wready),
+        .m_bresp(bresp), .m_bvalid(bvalid), .m_bready(bready));
 
     tmds_phy_xc7 u_phy (
         .pclk, .fclk, .rst(!mlock), .tmds0, .tmds1, .tmds2,

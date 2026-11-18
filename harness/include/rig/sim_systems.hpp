@@ -94,5 +94,9 @@ std::unique_ptr<SimLink> make_gb_hdmi_sim(std::function<void(uint32_t)> on_symbo
 // clock), 74.375 MHz pixels; the PYNQ-Z2's is the same at 37.125 and 74.25 MHz. on_symbol as
 // make_gb_hdmi_sim()'s. Reports RS_GB_BUILD_ID.
 std::unique_ptr<SimLink> make_gb_console_sim(std::function<void(uint32_t)> on_symbol = {});
+// The Game Boy as the PYNQ-Z2 builds it, without the display: gb_axi, its cartridge's ROM behind
+// the read cache and the AXI bridge, on the AXI memory model (as make_nes_axi_sim()), the system at
+// 37.125 MHz. Reports RS_GB_AXI_BUILD_ID.
+std::unique_ptr<SimLink> make_gb_axi_sim();
 
 } // namespace rig
