@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
-// The Game Boy (gameboy) under the test shell: a 32 KB cartridge with 8 KB of
-// RAM in block RAM, the boot ROM loaded by the host, run and stop by
+// The Game Boy (gameboy) under the test shell: its cartridge's controller and
+// RAM (gb_cart, set from the cartridge's header by register 50) with the ROM in
+// block RAM or, with ROM_EXT, in an outside memory on `mem_*` (a byte port as
+// memory/sdram's, from address 0), the boot ROM loaded by the host, run and stop by
 // register, and what a board can give the host to check: the serial port's
 // bytes (where blargg's and Mooneye's ROMs report) and the CRC of the frame it
 // stopped on, as gb_frames.py takes MesenCE's, so the host compares it with
@@ -9,7 +11,10 @@
 // T-cycles come at T_NUM/T_DEN of the clock (clock_enable), at least 2
 // clocks apart, while the system runs. It stops between T-cycles, so stopping
 // and starting leave it exactly as if it had run on: the same on any board and
-// in the sim.
+// in the sim. With ROM_EXT, the M-cycle's last T-cycle also waits while the
+// cartridge is fetching a ROM byte its access reads (clock_enable's hold), so
+// only a fetch that isn't done three T-cycles after its address came costs
+// time; register 54 counts the clocks lost.
 //
 // A frame ends as VBlank starts (the PPU's frame_end), or after 70,224
 // T-cycles without one (the LCD off), as gb_roms_test counts them. The frame
@@ -19,12 +24,13 @@
 // until that's done.
 //
 // Shell address map (README.md has the registers):
-//   0x00000000-0x00007FFF  the cartridge's ROM, read while held in reset
+//   0x00000000-...         the cartridge's ROM, 2^ROM_LOG2 bytes, written and read while held in reset
 //   0x01000000-0x0100007F  control and status registers
-//   0x02000000-0x02001FFF  the cartridge's RAM ($A000-$BFFF), written and read while held in reset
+//   0x02000000-...         the cartridge's RAM, 2^CRAM_LOG2 bytes, written and read while held in reset
 //   0x03000000-0x030000FF  the boot ROM
 //   0x04000000-0x040007FF  the serial port's bytes: byte n at n mod 2048
 //   0x05000000-0x050059FF  the frame buffer: y x 160 + x, a shade (0 white to 3) a byte
+//   0x06000000-0x0600000C  the cartridge's clock (MBC3's; gb_cart's shell bytes), while held in reset
 // The sound's CRC (register 30) is of the APU's two mixes at each M-cycle's end since reset, each
 // as a 16-bit little-endian word, left then right, as gb_roms_test takes it. With VIDEO, the mixes
 // go to 48 kHz (audio/resampler: 800 samples a frame of 17,556 M-cycles, against the 60 Hz
@@ -43,6 +49,9 @@ module gb_sys #(
     parameter int          T_NUM        = 65_536,   // T-cycles per T_DEN clocks: the console's
     parameter int          T_DEN        = 421_875,  //   4.194304 MHz from 27 MHz
     parameter bit          VIDEO        = 1'b0,     // HDMI out (gb_video), on pclk
+    parameter int          ROM_LOG2     = 15,       // room for the cartridge's ROM: 2^ROM_LOG2 bytes (up to 23)
+    parameter bit          ROM_EXT      = 1'b0,     // the ROM on mem_*, not in block RAM
+    parameter int          CRAM_LOG2    = 15,       // room for its RAM, in block RAM
     parameter logic [31:0] BUILD_ID     = '0
 ) (
     input  logic       clk,
@@ -54,9 +63,16 @@ module gb_sys #(
     input  logic       pclk,
     output logic [9:0] tmds0,
     output logic [9:0] tmds1,
-    output logic [9:0] tmds2
+    output logic [9:0] tmds2,
+
+    // With ROM_EXT: the memory the ROM is in (memory/sdram's byte port)
+    output logic        mem_req,
+    output logic        mem_we,
+    output logic [22:0] mem_addr,
+    output logic [7:0]  mem_wdata,
+    input  logic        mem_ack,
+    input  logic [7:0]  mem_rdata
 );
-    localparam int ROM_LOG2 = 15;
     localparam int W = 160, H = 144;
     localparam int T_PER_FRAME = 70_224;
 
@@ -79,6 +95,7 @@ module gb_sys #(
     logic [31:0] stop_cycle;  // 04: T-cycles
     logic [31:0] stop_frame;  // 10
     logic [7:0]  keys;        // 24: 1 pressed, gameboy's `keys`
+    logic [20:0] cart_cfg;    // 50: gb_cart's mbc (bits 2-0), rtc (3), rumble (4), rom_log2 (12-8), ram_log2 (20-16)
 
     wire rst = por_rst || ctrl[1];
 
@@ -88,15 +105,13 @@ module gb_sys #(
     wire running  = ctrl[0] && !rst && !scanning && !at_limit && !pace_wait;
 
     // ---- T-cycles ----
-    logic ce;
-    /* verilator lint_off UNUSEDSIGNAL */
-    logic ce_held;
-    /* verilator lint_on UNUSEDSIGNAL */
-    clock_enable #(.NUM(T_NUM), .DEN(T_DEN)) u_ce (.clk, .rst, .en(running), .hold(1'b0), .ce, .held(ce_held));
+    logic ce, ce_held;
+    logic cart_wait;
+    clock_enable #(.NUM(T_NUM), .DEN(T_DEN)) u_ce (.clk, .rst, .en(running), .hold(cart_wait), .ce, .held(ce_held));
 
     // ---- The system ----
     logic [15:0] cart_addr, cpu_pc;
-    logic        cart_rd, cart_wr, m_end, cpu_sync, boot_on;
+    logic        cart_rd, cart_wr, m_end, m_last, cpu_sync, boot_on;
     logic [7:0]  cart_wdata, cart_rdata, ser_tx, lcdc;
     logic        ser_tx_valid;
     logic        boot_we;
@@ -110,7 +125,7 @@ module gb_sys #(
         .cart_addr, .cart_rd, .cart_wr, .cart_wdata, .cart_rdata,
         .boot_we, .boot_addr, .boot_wdata,
         .keys, .ser_tx, .ser_tx_valid,
-        .m_end, .cpu_sync, .cpu_pc, .boot_on, .lcdc,
+        .m_end, .m_last, .cpu_sync, .cpu_pc, .boot_on, .lcdc,
         .pix_we, .pix_x, .pix_y, .pix_shade, .frame_end, .aud_l, .aud_r);
 
     // ---- The sound's CRC ----
@@ -119,47 +134,106 @@ module gb_sys #(
     crc32 #(.W(32)) u_scrc (.clk, .rst, .en(m_tick), .data({16'(aud_r), 16'(aud_l)}),
                             .crc(snd_crc), .st_we(1'b0), .st_wdata(32'd0));
 
-    // ---- The cartridge: 32 KB of ROM and 8 KB of RAM. The system reads both every clock and takes
-    // the one its address held. The shell writes the ROM through a port of its own, and the RAM
-    // through the RAM's one write port while the system is held in reset; it reads both through the
-    // system's port, which it takes while the system is held in reset (when the host loads and
-    // checks them). A port that writes only: with Yosys, an 8-bit memory whose writing port also
-    // reads takes twice the Gowin parts' block RAM.
+    // ---- The cartridge: its controller and RAM (gb_cart), and the ROM ----
     wire sh_rom  = s_req && s_addr[31:24] == 8'h00 && s_addr[23:ROM_LOG2] == '0;
-    wire sh_cram = s_req && s_addr[31:24] == 8'h02 && s_addr[23:13] == '0;
-    logic [7:0]  rom [0:(1 << ROM_LOG2) - 1];
-    logic [7:0]  cram [0:8191];
-    logic [7:0]  rom_q, cram_q, rom_sh, cram_sh;
-    logic        cart_ram_d, cart_hi_d;
-    wire         cart_ram = cart_addr[15:13] == 3'b101;
-    wire [ROM_LOG2-1:0] rom_a = rst ? s_addr[ROM_LOG2-1:0] : cart_addr[ROM_LOG2-1:0];
-    always_ff @(posedge clk) begin
-        rom_q      <= rom[rom_a];
-        cart_ram_d <= cart_ram;
-        cart_hi_d  <= cart_addr[15];
+    wire sh_cram = s_req && s_addr[31:24] == 8'h02 && s_addr[23:CRAM_LOG2] == '0;
+    wire sh_rtc  = s_req && s_addr[31:24] == 8'h06 && s_addr[23:4] == '0;
+    logic [22:0] rom_full;
+    logic [7:0]  rom_q, rom_sh, cart_sh;
+    logic        rom_sh_ack;  // with ROM_EXT, the shell's ROM access is done
+
+    // The shell writes the RAM and clock only while the system is held in reset, through gb_cart's
+    // port; it reads them through the same port then.
+    gb_cart #(.ROM_AW(23), .RAM_AW(CRAM_LOG2)) u_cart (
+        .clk, .rst, .ce,
+        .mbc(cart_cfg[2:0]), .rtc(cart_cfg[3]), .rumble(cart_cfg[4]),
+        .rom_log2(cart_cfg[12:8]), .ram_log2(cart_cfg[20:16]),
+        .addr(cart_addr), .wr(cart_wr), .wdata(cart_wdata), .rdata(cart_rdata),
+        .rom_addr(rom_full), .rom_q,
+        .sh_we(rst && (sh_cram || sh_rtc) && s_we && !s_ack), .sh_rtc(sh_rtc),
+        .sh_addr(17'(s_addr[CRAM_LOG2 > 4 ? CRAM_LOG2 - 1 : 3:0])), .sh_wdata(s_wdata), .sh_q(cart_sh));
+    wire [ROM_LOG2-1:0] rom_a = rom_full[ROM_LOG2-1:0];
+    wire                rom_rd = cart_rd && !cart_addr[15];  // this M-cycle reads the ROM
+
+    if (!ROM_EXT) begin : g_rom_bram
+        // A port that writes only for the shell: with Yosys, an 8-bit memory whose writing port also
+        // reads takes twice the Gowin parts' block RAM.
+        logic [7:0] rom [0:(1 << ROM_LOG2) - 1];
+        always_ff @(posedge clk) begin
+            rom_q <= rom[rst ? s_addr[ROM_LOG2-1:0] : rom_a];
+            if (sh_rom && s_we && !s_ack) rom[s_addr[ROM_LOG2-1:0]] <= s_wdata;
+        end
+        assign rom_sh     = rom_q;
+        assign rom_sh_ack = 1'b0;
+        assign cart_wait  = 1'b0;
+        assign mem_req    = 1'b0;
+        assign mem_we     = 1'b0;
+        assign mem_addr   = '0;
+        assign mem_wdata  = '0;
+        wire unused_mem = &{1'b0, mem_ack, mem_rdata, rom_rd, m_last};
+    end else begin : g_rom_ext
+        // A ROM read's byte, fetched as its address comes and held; the M-cycle's last T-cycle waits
+        // until it has been here a clock (gameboy takes it a clock before that T-cycle ends, and the
+        // DMA at it). The wait is decided from registers (whether the access reads the ROM, and
+        // whether its byte has been here two clocks, as of the clock before), since `ce` reaches
+        // nearly every register: decided from the address, it put the CPU's address decode and the
+        // bank's mux in front of the whole system (the 138K's and PYNQ-Z2's system clocks fell to
+        // within 2% of their rates). A clock old is still exact: the address and `rd` change only
+        // at a T-cycle, at least 2 clocks before the next. The shell's accesses take the port
+        // between fetches. Reset by `por_rst` only: an access the memory has started must finish.
+        logic                busy, for_sh, f_valid, have_q, rd_q, ok_q;
+        logic [ROM_LOG2-1:0] f_ra;
+        wire                 have = f_valid && f_ra == rom_a;
+        always_ff @(posedge clk) begin
+            have_q <= have;
+            rd_q   <= rom_rd;
+            ok_q   <= have && have_q;
+            if (!busy) begin
+                if (sh_rom && !s_ack && !rom_sh_ack) begin
+                    busy      <= 1'b1;
+                    for_sh    <= 1'b1;
+                    mem_we    <= s_we;
+                    mem_addr  <= 23'(s_addr[ROM_LOG2-1:0]);
+                    mem_wdata <= s_wdata;
+                    if (s_we) f_valid <= 1'b0;
+                end else if (!rst && rom_rd && !have) begin
+                    busy     <= 1'b1;
+                    for_sh   <= 1'b0;
+                    mem_we   <= 1'b0;
+                    mem_addr <= 23'(rom_a);
+                end
+            end else if (mem_ack) begin
+                busy <= 1'b0;
+                if (!for_sh) begin
+                    rom_q   <= mem_rdata;
+                    f_ra    <= ROM_LOG2'(mem_addr);
+                    f_valid <= 1'b1;
+                end
+            end
+            if (por_rst) begin
+                busy    <= 1'b0;
+                f_valid <= 1'b0;
+            end
+        end
+        assign mem_req    = busy;
+        assign rom_sh_ack = busy && for_sh && mem_ack;
+        assign rom_sh     = mem_rdata;
+        assign cart_wait  = m_last && rd_q && !ok_q;
     end
-    // The RAM's write port is the shell's while the system is held in reset, the system's
-    // otherwise: the shell writes nothing to it while the system runs.
-    wire        cram_we = rst ? sh_cram && s_we && !s_ack : cart_wr && cart_ram;
-    wire [12:0] cram_a  = rst ? s_addr[12:0] : cart_addr[12:0];
-    wire [7:0]  cram_d  = rst ? s_wdata : cart_wdata;
-    always_ff @(posedge clk) begin
-        if (cram_we) cram[cram_a] <= cram_d;
-        cram_q <= cram[cram_a];
-    end
-    assign cart_rdata = cart_ram_d ? cram_q : cart_hi_d ? 8'hFF : rom_q;
 
     // The first 4 bytes of cartridge RAM as the system last wrote them ($FF from reset), where
     // blargg's newer ROMs report, for the host to read while the system runs (register 44).
     logic [31:0] cram_head;
     always_ff @(posedge clk)
         if (rst) cram_head <= '1;
-        else if (cart_wr && cart_ram && cart_addr[12:2] == '0) cram_head[8 * cart_addr[1:0] +: 8] <= cart_wdata;
+        else if (cart_wr && cart_addr[15:13] == 3'b101 && cart_addr[12:2] == '0)
+            cram_head[8 * cart_addr[1:0] +: 8] <= cart_wdata;
 
+    // The clocks the M-cycles' last T-cycles have waited on the ROM since reset (register 54).
+    logic [31:0] waits;
     always_ff @(posedge clk)
-        if (sh_rom && s_we && !s_ack) rom[s_addr[ROM_LOG2-1:0]] <= s_wdata;
-    assign rom_sh  = rom_q;
-    assign cram_sh = cram_q;
+        if (rst) waits <= '0;
+        else if (ce_held) waits <= waits + 32'd1;
 
     // ---- The boot ROM: written into the system, and kept here for the host to read back ----
     logic [7:0] boot [0:255];
@@ -375,7 +449,7 @@ module gb_sys #(
             5'h08: reg_q = byte_of(ser_count, r[1:0]);
             5'h09: reg_q = byte_of({24'd0, keys}, r[1:0]);
             5'h0A: reg_q = byte_of({cpu_pc, 7'd0, boot_on, lcdc}, r[1:0]);
-            5'h0B: reg_q = byte_of(32'(ROM_LOG2), r[1:0]);
+            5'h0B: reg_q = byte_of({16'd0, 8'(CRAM_LOG2), 8'(ROM_LOG2)}, r[1:0]);
             5'h0C: reg_q = byte_of(snd_crc, r[1:0]);
             5'h0D: reg_q = byte_of({15'd0, vcap_ok, 14'd0, vcap_armed, vid_pace}, r[1:0]);
             5'h0E: reg_q = byte_of(vcap_frame, r[1:0]);
@@ -384,6 +458,8 @@ module gb_sys #(
             5'h11: reg_q = byte_of(cram_head, r[1:0]);
             5'h12: reg_q = byte_of(pcm_crc, r[1:0]);
             5'h13: reg_q = byte_of(pcm_n, r[1:0]);
+            5'h14: reg_q = byte_of({11'd0, cart_cfg}, r[1:0]);
+            5'h15: reg_q = byte_of(waits, r[1:0]);
             default: ;
         endcase
     end
@@ -399,15 +475,21 @@ module gb_sys #(
             vid_pace   <= 1'b0;
             vcap_frame <= '0;
             keys       <= '0;
+            cart_cfg   <= {5'd0, 3'd0, 5'd15, 8'd0};
             sh_wait    <= 1'b0;
         end else if (s_req && !s_ack) begin
-            if (sh_rom || sh_cram || sh_boot || sh_ser || sh_fb) begin
+            if (ROM_EXT && sh_rom) begin
+                if (rom_sh_ack) begin
+                    s_ack   <= 1'b1;
+                    s_rdata <= rom_sh;
+                end
+            end else if (sh_rom || sh_cram || sh_rtc || sh_boot || sh_ser || sh_fb) begin
                 // A frame buffer read the clock after a pixel's write (which took the port) reads
                 // again; writes come at least 2 clocks apart.
                 sh_wait <= sh_wait ? sh_fb && fb_w_d : !(sh_fb && scanning);
                 if (sh_wait && !(sh_fb && fb_w_d)) begin
                     s_ack   <= 1'b1;
-                    s_rdata <= sh_rom ? rom_sh : sh_cram ? cram_sh : sh_boot ? boot_sh : sh_ser ? ser_sh :
+                    s_rdata <= sh_rom ? rom_sh : sh_cram || sh_rtc ? cart_sh : sh_boot ? boot_sh : sh_ser ? ser_sh :
                                {6'd0, fb_q};
                 end
             end else begin
@@ -421,6 +503,7 @@ module gb_sys #(
                         5'h09: if (r[1:0] == 2'd0) keys <= s_wdata;
                         5'h0D: if (r[1:0] == 2'd0) vid_pace <= s_wdata[0];
                         5'h0E: vcap_frame <= set_byte(vcap_frame, r[1:0], s_wdata);
+                        5'h14: if (r[1:0] != 2'd3) cart_cfg <= 21'(set_byte({11'd0, cart_cfg}, r[1:0], s_wdata));
                         default: ;
                     endcase
             end
@@ -444,5 +527,5 @@ module gb_sys #(
         end
     assign led = ~{beat[24], at_limit, running, 1'b0, stalled, bad_frame};
 
-    wire unused = &{1'b0, cart_rd, cpu_sync};
+    wire unused = &{1'b0, cpu_sync, rom_full};
 endmodule

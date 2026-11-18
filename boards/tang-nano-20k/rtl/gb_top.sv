@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
-// systems/game-boy on the Tang Nano 20K, under the test shell (gb_sys: a 32 KB cartridge in block
-// RAM), with its picture on the HDMI connector at 720p (gb_video).
+// systems/game-boy on the Tang Nano 20K, under the test shell, its cartridge's ROM in the SDRAM
+// (gb_sdram: up to 8 MB, all of it) and 32 KB of its RAM in block RAM, with its picture and sound
+// on the HDMI connector at 720p (gb_video).
 //
 // Clocks, as nes_top's: one rPLL makes 371.25 MHz from the 27 MHz oscillator (x55/4), the
 // serializers' clock; its divided output, 371.25 / 8 = 46.40625 MHz, is the system's clock, held
@@ -9,6 +10,10 @@
 // 7/76 of the clock, 4.27426 MHz, 1.91% faster than the console's 4.194304: keeping pace with the
 // display, the Game Boy waits at each frame's end, and a frame of 70,224 T-cycles takes 98.6% of a
 // 60 Hz display frame (at the console's rate it would take 100.5% and miss every request).
+//
+// The SDRAM is wired as nes_top's: the chip inside the package, on ports the toolchain recognises by
+// name, its clock the inverse of the system's, inverted from the PLL's output (not DQCE's, which
+// leaves the chip dead with the open flow).
 module gb_top #(
     parameter int          CLKS_PER_BIT = 31,
     parameter logic [31:0] BUILD_ID     = '0
@@ -17,6 +22,17 @@ module gb_top #(
     input  logic       uart_rx,
     output logic       uart_tx,
     output logic [5:0] led,
+
+    output logic        O_sdram_clk,
+    output logic        O_sdram_cke,
+    output logic        O_sdram_cs_n,
+    output logic        O_sdram_cas_n,
+    output logic        O_sdram_ras_n,
+    output logic        O_sdram_wen_n,
+    output logic [3:0]  O_sdram_dqm,
+    output logic [10:0] O_sdram_addr,
+    output logic [1:0]  O_sdram_ba,
+    inout  wire  [31:0] IO_sdram_dq,
 
     output logic       tmds_clk_p,
     output logic       tmds_clk_n,
@@ -43,12 +59,21 @@ module gb_top #(
 
     CLKDIV #(.DIV_MODE("5")) u_div (.HCLKIN(fclk), .RESETN(lock), .CALIB(1'b0), .CLKOUT(pclk));
 
-    logic [9:0] tmds0, tmds1, tmds2;
+    logic [9:0]  tmds0, tmds1, tmds2;
+    logic [31:0] dq_o;
+    logic        dq_oe;
 
-    gb_sys #(.CLKS_PER_BIT(CLKS_PER_BIT), .IDLE_CLKS(464_063), .T_NUM(7), .T_DEN(76), .VIDEO(1'b1),
-             .BUILD_ID(BUILD_ID)) u_sys (
+    gb_sdram #(.CLKS_PER_BIT(CLKS_PER_BIT), .IDLE_CLKS(464_063), .T_NUM(7), .T_DEN(76), .VIDEO(1'b1),
+               .FREQ_MHZ(47), .BUILD_ID(BUILD_ID)) u_sys (
         .clk(sclk), .uart_rx, .uart_tx, .led,
+        .sd_cke(O_sdram_cke), .sd_cs_n(O_sdram_cs_n), .sd_ras_n(O_sdram_ras_n),
+        .sd_cas_n(O_sdram_cas_n), .sd_we_n(O_sdram_wen_n), .sd_ba(O_sdram_ba),
+        .sd_addr(O_sdram_addr), .sd_dqm(O_sdram_dqm),
+        .sd_dq_o(dq_o), .sd_dq_oe(dq_oe), .sd_dq_i(IO_sdram_dq),
         .pclk, .tmds0, .tmds1, .tmds2);
+
+    assign O_sdram_clk = ~clkd;
+    assign IO_sdram_dq = dq_oe ? dq_o : 'z;
 
     tmds_phy #(.TRUE_LVDS(1'b1)) u_phy (
         .pclk, .fclk, .rst(!lock), .tmds0, .tmds1, .tmds2,

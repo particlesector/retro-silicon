@@ -51,6 +51,7 @@ module gameboy (
     output logic        ser_tx_valid,
 
     output logic        m_end,       // the clock that ends an M-cycle
+    output logic        m_last,      // the next T-cycle is the M-cycle's last (no `ce` in it, for a hold)
     output logic        cpu_sync,    // this M-cycle fetches an opcode
     output logic [15:0] cpu_pc,
     output logic        boot_on,     // the boot ROM is mapped
@@ -69,6 +70,7 @@ module gameboy (
     logic [1:0] phase;
     wire        m = ce && phase == 2'd3;
     assign m_end = m;
+    assign m_last = phase == 2'd3;
     always_ff @(posedge clk)
         if (rst) phase <= '0;
         else if (ce) phase <= phase + 2'd1;

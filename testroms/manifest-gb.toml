@@ -21,6 +21,13 @@
 # frames: for a check with a result, the frame it finishes on in MesenCE
 # (frames ended since power-up, the boot ROM's included); allow at least twice
 # that. gb_frames.py records the frame 30 after it.
+# again: run the ROM twice, the second time from the battery RAM the first
+# left (a cartridge with a battery); its cartridge RAM at the end must be
+# MesenCE's (the golden list's savcrc). sav = { path, sha256 }: a file of
+# battery RAM to power up with, under the same source.
+# input: an input script, "frame:keys, ...": the buttons held from that frame
+# on (frames ended since power-up), as gb_sys's `keys` byte (bit 7 Start,
+# Select, B, A, Down, Up, Left, bit 0 Right: A is 16, Down 8), 0 none.
 
 [sources.blargg-gb]
 # blargg's Game Boy tests, as built by blargg, in a copy on GitHub (his site
@@ -40,6 +47,11 @@ url = "https://github.com/mattcurrie/dmg-acid2/releases/download/v1.0/"
 [sources.cgb-acid2]
 # Matt Currie's cgb-acid2 (MIT).
 url = "https://github.com/mattcurrie/cgb-acid2/releases/download/v1.1/"
+
+[sources.rtc3test]
+# aaaaaa123456789's rtc3test (the Unlicense): MBC3's real-time clock, in three suites picked from a
+# menu (tests.md in its repository describes them).
+url = "https://github.com/aaaaaa123456789/rtc3test/releases/download/v004/"
 
 [sources.sameboy]
 # SameBoy 1.0.5 (Lior Halphon, Expat): its open-source boot ROMs, built from
@@ -1444,6 +1456,7 @@ needs = "cpu, mbc1"
 covers = "Mooneye: emulator-only/mbc1/ram_256kb.gb"
 check = "mooneye"
 frames = 139
+again = true
 
 [[rom]]
 id = "mts-mbc1-ram_64kb"
@@ -1565,6 +1578,7 @@ needs = "cpu, mbc2"
 covers = "Mooneye: emulator-only/mbc2/ram.gb"
 check = "mooneye"
 frames = 112
+again = true
 
 [[rom]]
 id = "mts-mbc2-rom_1Mb"
@@ -1771,3 +1785,38 @@ check = "frame"
 frames = 300
 mesen = "The face, matching cgb-acid2's reference image pixel for pixel"
 
+[[rom]]
+id = "rtc3test-basic"
+source = "rtc3test"
+path = "rtc3test.gb"
+sha256 = "a271013fb37ea1d927b854798401320b220d57abb3ca77f3d318ceb8a9def30d"
+model = "dmg"
+needs = "cpu, ppu, mbc3, rtc"
+covers = "MBC3's clock: running, halting, writes, a second's tick, the carries and the day count's overflow"
+check = "frame"
+input = "300:16, 310:0"
+frames = 1200
+
+[[rom]]
+id = "rtc3test-range"
+source = "rtc3test"
+path = "rtc3test.gb"
+sha256 = "a271013fb37ea1d927b854798401320b220d57abb3ca77f3d318ceb8a9def30d"
+model = "dmg"
+needs = "cpu, ppu, mbc3, rtc"
+covers = "MBC3's clock: each register's bits, out-of-range values and their roll-overs"
+check = "frame"
+input = "300:8, 310:0, 320:16, 330:0"
+frames = 1500
+
+[[rom]]
+id = "rtc3test-subsecond"
+source = "rtc3test"
+path = "rtc3test.gb"
+sha256 = "a271013fb37ea1d927b854798401320b220d57abb3ca77f3d318ceb8a9def30d"
+model = "dmg"
+needs = "cpu, ppu, mbc3, rtc"
+covers = "MBC3's clock: which writes restart the second, and halting partway through one"
+check = "frame"
+input = "300:8, 310:0, 320:8, 330:0, 340:16, 350:0"
+frames = 2400

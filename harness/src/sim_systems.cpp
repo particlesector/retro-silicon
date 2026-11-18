@@ -8,6 +8,7 @@
 #include "Va2600_hdmi_sim.h"
 #include "Va2600_sim.h"
 #include "Va2600_sim___024root.h"
+#include "Vgb_axi_sim.h"
 #include "Vgb_console_sim.h"
 #include "Vgb_hdmi_sim.h"
 #include "Vgb_sim.h"
@@ -204,9 +205,9 @@ using A2600Hdmi = NesHdmiT<Va2600_hdmi_sim>;
 // The NES as the Tang Console 138K runs it with HDMI: its SDRAM module, the
 // system clock at half the pixel clock, both from one PLL: a pixel clock on
 // every system clock's edge, and one between.
-class NesX16Hdmi : public SimModel {
+template <class V> class X16HdmiT : public SimModel {
 public:
-    explicit NesX16Hdmi(std::function<void(uint32_t)> on_symbol) : on_symbol_(std::move(on_symbol)) {}
+    explicit X16HdmiT(std::function<void(uint32_t)> on_symbol) : on_symbol_(std::move(on_symbol)) {}
 
     bool tick(bool rx) override {
         m_.uart_rx = rx;
@@ -231,10 +232,12 @@ private:
         if (on_symbol_) on_symbol_(m_.tmds0 | m_.tmds1 << 10 | static_cast<uint32_t>(m_.tmds2) << 20);
     }
 
-    Vnes_x16_hdmi_sim m_;
+    V m_;
     SdramPair sdram_{kNesX16ClockHz / 1e6, kX16};
     std::function<void(uint32_t)> on_symbol_;
 };
+
+using NesX16Hdmi = X16HdmiT<Vnes_x16_hdmi_sim>;
 
 // The 2600 as the Tang Console 138K runs it with HDMI: the system clock at half the pixel clock,
 // both from one PLL, as NesX16Hdmi's; its cartridge's ROM in block RAM, so no memory to model.
@@ -410,86 +413,24 @@ std::unique_ptr<SimLink> make_nes_lean_sim(std::function<void(uint32_t)> on_symb
 
 namespace {
 
-// The Game Boy with HDMI on the 20K's clocks, as NesHdmiT without the SDRAM: 46.40625 MHz for the
-// system and 74.25 MHz for the pixels, 5 system clocks to 8 pixel clocks.
-class GbHdmi : public SimModel {
-public:
-    explicit GbHdmi(std::function<void(uint32_t)> on_symbol) : on_symbol_(std::move(on_symbol)) {}
-
-    bool tick(bool rx) override {
-        m_.uart_rx = rx;
-        while (t_pix_ < t_sys_) pixel();
-        bool both = t_pix_ == t_sys_;
-        m_.clk = 0;
-        if (both) m_.pclk = 0;
-        m_.eval();
-        m_.clk = 1;
-        if (both) m_.pclk = 1;
-        m_.eval();
-        if (both) after_pixel();
-        t_sys_ += 8;
-        return m_.uart_tx;
-    }
-
-private:
-    void pixel() {
-        m_.pclk = 0;
-        m_.eval();
-        m_.pclk = 1;
-        m_.eval();
-        after_pixel();
-    }
-    void after_pixel() {
-        t_pix_ += 5;
-        if (on_symbol_) on_symbol_(m_.tmds0 | m_.tmds1 << 10 | static_cast<uint32_t>(m_.tmds2) << 20);
-    }
-
-    Vgb_hdmi_sim m_;
-    std::function<void(uint32_t)> on_symbol_;
-    uint64_t t_sys_ = 0, t_pix_ = 0;
-};
-
-// The Game Boy with HDMI on a board whose system clock is half its pixel clock (the 138K and the
-// PYNQ-Z2), as A2600HalfClockHdmi without the outside memory.
-class GbHalfClockHdmi : public SimModel {
-public:
-    explicit GbHalfClockHdmi(std::function<void(uint32_t)> on_symbol) : on_symbol_(std::move(on_symbol)) {}
-
-    bool tick(bool rx) override {
-        m_.uart_rx = rx;
-        m_.clk = 0;
-        m_.pclk = 0;
-        m_.eval();
-        m_.clk = 1;
-        m_.pclk = 1;
-        m_.eval();
-        symbol();
-        m_.pclk = 0;
-        m_.eval();
-        m_.pclk = 1;
-        m_.eval();
-        symbol();
-        return m_.uart_tx;
-    }
-
-private:
-    void symbol() {
-        if (on_symbol_) on_symbol_(m_.tmds0 | m_.tmds1 << 10 | static_cast<uint32_t>(m_.tmds2) << 20);
-    }
-
-    Vgb_console_sim m_;
-    std::function<void(uint32_t)> on_symbol_;
-};
+// The Game Boy with HDMI on the 20K's clocks, its cartridge's ROM in the SDRAM: NesHdmiT's.
+using GbHdmi = NesHdmiT<Vgb_hdmi_sim>;
+// ...and on the Tang Console 138K's, the ROM in its SDRAM module: X16HdmiT's.
+using GbConsoleHdmi = X16HdmiT<Vgb_console_sim>;
 
 } // namespace
 
 std::unique_ptr<SimLink> make_gb_console_sim(std::function<void(uint32_t)> on_symbol) {
-    return std::make_unique<SimLink>(std::make_unique<GbHalfClockHdmi>(std::move(on_symbol)), 25, 64, kNesX16ClockHz);
+    return std::make_unique<SimLink>(std::make_unique<GbConsoleHdmi>(std::move(on_symbol)), 25, 64, kNesX16ClockHz);
 }
 
 std::unique_ptr<SimLink> make_gb_hdmi_sim(std::function<void(uint32_t)> on_symbol) {
     return std::make_unique<SimLink>(std::make_unique<GbHdmi>(std::move(on_symbol)), kNesHdmiClksPerBit, 64,
                                      kNesHdmiClockHz);
+}
+
+std::unique_ptr<SimLink> make_gb_axi_sim() {
+    return std::make_unique<SimLink>(std::make_unique<WithAxiMemory<Vgb_axi_sim>>(), 25, 64, 37'125'000);
 }
 
 std::unique_ptr<SimLink> make_gb_sim() { return std::make_unique<SimLink>(std::make_unique<Verilated<Vgb_sim>>()); }

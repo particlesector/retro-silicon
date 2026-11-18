@@ -8,7 +8,7 @@ rs_component(nes_top RTL rtl/nes_top.sv DEPENDS nes_sdram tmds_phy
              LINT ${PROJECT_SOURCE_DIR}/boards/gowin/lint/gowin_prims.sv)
 rs_component(a2600_top RTL rtl/a2600_top.sv DEPENDS a2600_sdram tmds_phy
              LINT ${PROJECT_SOURCE_DIR}/boards/gowin/lint/gowin_prims.sv)
-rs_component(gb_top RTL rtl/gb_top.sv DEPENDS gb_sys tmds_phy
+rs_component(gb_top RTL rtl/gb_top.sv DEPENDS gb_sdram tmds_phy
              LINT ${PROJECT_SOURCE_DIR}/boards/gowin/lint/gowin_prims.sv)
 
 if(NOT RS_BITSTREAMS)

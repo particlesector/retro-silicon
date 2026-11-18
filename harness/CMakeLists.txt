@@ -23,6 +23,8 @@ get_property(a2600_id GLOBAL PROPERTY RS_A2600_BUILD_ID)
 string(REPLACE "32'h" "0x" a2600_id_c ${a2600_id})
 get_property(gb_id GLOBAL PROPERTY RS_GB_BUILD_ID)
 string(REPLACE "32'h" "0x" gb_id_c ${gb_id})
+get_property(gb_axi_id GLOBAL PROPERTY RS_GB_AXI_BUILD_ID)
+string(REPLACE "32'h" "0x" gb_axi_id_c ${gb_axi_id})
 add_library(rs_sim_link STATIC src/sim_systems.cpp)
 set_source_files_properties(src/sim_systems.cpp PROPERTIES COMPILE_OPTIONS "-Wall;-Wextra")
 target_link_libraries(rs_sim_link PUBLIC rs_harness)
@@ -83,15 +85,22 @@ rs_verilate(rs_sim_link COMPONENT a2600_sys PREFIX Va2600_console_sim
 rs_verilate(rs_sim_link COMPONENT a2600_sys PREFIX Va2600_pynq_sim
             PARAMS CLKS_PER_BIT=25 IDLE_CLKS=371250 CC_NUM=35 CC_DEN=356 VIDEO=1 ROM_LOG2=18 ROM_BANK_LOG2=15
                    BUILD_ID=${a2600_id})
-# The Game Boy at 27 MHz, T-cycles at 65,536/421,875 (the console's 4.194304 MHz).
-rs_verilate(rs_sim_link COMPONENT gb_sys PREFIX Vgb_sim PARAMS CLKS_PER_BIT=18 BUILD_ID=${gb_id})
-# ...and as the Tang Nano 20K runs it, with HDMI (boards/tang-nano-20k/rtl/gb_top.sv's parameters).
-rs_verilate(rs_sim_link COMPONENT gb_sys PREFIX Vgb_hdmi_sim
-            PARAMS CLKS_PER_BIT=31 IDLE_CLKS=464063 T_NUM=7 T_DEN=76 VIDEO=1 BUILD_ID=${gb_id})
-# ...and as the Tang Console 138K and the PYNQ-Z2 run it: the system clock half the pixel clock,
-# T-cycles at 35/304 (the 20K's ratio to the pixel clock).
-rs_verilate(rs_sim_link COMPONENT gb_sys PREFIX Vgb_console_sim
-            PARAMS CLKS_PER_BIT=25 IDLE_CLKS=371875 T_NUM=35 T_DEN=304 VIDEO=1 BUILD_ID=${gb_id})
+# The Game Boy at 27 MHz, T-cycles at 65,536/421,875 (the console's 4.194304 MHz), with room for
+# 8 MB of cartridge ROM in block RAM (the largest Game Boy ROM; a model can, a board can't).
+rs_verilate(rs_sim_link COMPONENT gb_sys PREFIX Vgb_sim PARAMS CLKS_PER_BIT=18 ROM_LOG2=23 BUILD_ID=${gb_id})
+# ...and as the Tang Nano 20K runs it, with HDMI (boards/tang-nano-20k/rtl/gb_top.sv's parameters):
+# the cartridge's ROM in its SDRAM (gb_sdram).
+rs_verilate(rs_sim_link COMPONENT gb_sdram PREFIX Vgb_hdmi_sim
+            PARAMS CLKS_PER_BIT=31 IDLE_CLKS=464063 T_NUM=7 T_DEN=76 VIDEO=1 FREQ_MHZ=47 BUILD_ID=${gb_id})
+# ...and as the Tang Console 138K runs it: the system clock half the pixel clock, T-cycles at 35/304
+# (the 20K's ratio to the pixel clock), the ROM in its SDRAM module (two 16M x 16 chips on one bus).
+rs_verilate(rs_sim_link COMPONENT gb_sdram PREFIX Vgb_console_sim
+            PARAMS CLKS_PER_BIT=25 IDLE_CLKS=371875 T_NUM=35 T_DEN=304 VIDEO=1 FREQ_MHZ=38
+                   DQ_W=16 ROW_W=13 COL_W=9 RANKS=2 REFRESH_NS=7000 BUILD_ID=${gb_id})
+# ...and as the PYNQ-Z2 builds it (boards/pynq-z2/rtl/pynq_gb_top.sv), without the display: the ROM
+# in DDR3 behind the read cache and the AXI bridge (gb_axi), on the AXI memory model.
+rs_verilate(rs_sim_link COMPONENT gb_axi PREFIX Vgb_axi_sim
+            PARAMS CLKS_PER_BIT=25 IDLE_CLKS=371250 T_NUM=35 T_DEN=304 BUILD_ID=${gb_axi_id})
 target_include_directories(rs_sim_link PRIVATE ${PROJECT_SOURCE_DIR}/components/memory/sdram/sim
                                                ${PROJECT_SOURCE_DIR}/components/memory/axi-bridge/sim)
 # The build IDs the models and bitstreams report, for runners to check.
@@ -101,7 +110,8 @@ target_compile_definitions(rs_sim_link PUBLIC RS_SHELL_RAM_BUILD_ID=${shell_ram_
                                               RS_NES_AXI_BUILD_ID=${nes_axi_id_c}
                                               RS_NES_BUILD_ID=${nes_id_c}
                                               RS_A2600_BUILD_ID=${a2600_id_c}
-                                              RS_GB_BUILD_ID=${gb_id_c})
+                                              RS_GB_BUILD_ID=${gb_id_c}
+                                              RS_GB_AXI_BUILD_ID=${gb_axi_id_c})
 
 rs_sim_test(harness_test SOURCES tests/echo_test_test.cpp tests/sim_link_test.cpp tests/shell_test.cpp
                                tests/sdram_test.cpp tests/nes_test.cpp tests/hdmi_test.cpp tests/a2600_test.cpp

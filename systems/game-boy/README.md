@@ -1,8 +1,8 @@
 # Game Boy
 
-The Game Boy (DMG): the SM83 (`cpu/sm83`) on the console's memory map, with its boot ROM, video RAM, work RAM, OAM, high RAM, timer, serial port, joypad, OAM DMA and interrupt registers, and the cartridge outside the core.
+The Game Boy (DMG): the SM83 (`cpu/sm83`) on the console's memory map, with its boot ROM, video RAM, work RAM, OAM, high RAM, timer, serial port, joypad, OAM DMA and interrupt registers, and the cartridge outside the core; and the cartridge's memory controllers (`gb_cart`).
 
-Module `gameboy`. **In progress** (G5 of the rig's Game Boy roadmap): it draws its picture with the PPU (`gb_ppu`), a pixel at a time, and makes its sound with the APU ([`audio/apu-gb`](../../components/audio/apu-gb/)); the cartridge is a plain 32 KB ROM in the tests, with no MBC. It runs from power-up through [SameBoy](https://github.com/LIJI32/SameBoy)'s open DMG boot ROM, and runs blargg's CPU and timing ROMs, Mooneye's CPU, timer, interrupt, OAM DMA and PPU tests and dmg-acid2 to MesenCE's result and frame in the sim (below).
+Module `gameboy`. **In progress** (G6 of the rig's Game Boy roadmap): it draws its picture with the PPU (`gb_ppu`), a pixel at a time, and makes its sound with the APU ([`audio/apu-gb`](../../components/audio/apu-gb/)); `gb_cart` is the cartridge's MBC (none, MBC1 and its multicart wiring, MBC2, MBC3 with its clock, MBC5) and RAM. It runs from power-up through [SameBoy](https://github.com/LIJI32/SameBoy)'s open DMG boot ROM, and runs blargg's CPU, timing and sound ROMs, Mooneye's CPU, timer, interrupt, OAM DMA, PPU and MBC tests, rtc3test and dmg-acid2 to MesenCE's result and frame in the sim (below).
 
 ## Timing
 
@@ -79,6 +79,7 @@ The cartridge and work RAM share the external bus; video RAM has its own.
 | `keys` | in | 8 | Keys down (1 pressed): Start, Select, B, A, down, up, left, right (bit 7 to 0) |
 | `ser_tx`, `ser_tx_valid` | out | 8, 1 | A serial transfer of `ser_tx` starts |
 | `m_end` | out | 1 | The clock that ends an M-cycle |
+| `m_last` | out | 1 | The next T-cycle is the M-cycle's last (from the phase alone, for a hold on `ce`) |
 | `cpu_sync`, `cpu_pc` | out | 1, 16 | This M-cycle fetches an opcode, at this PC (for traces) |
 | `boot_on` | out | 1 | The boot ROM is mapped |
 | `lcdc` | out | 8 | LCDC |
@@ -86,11 +87,32 @@ The cartridge and work RAM share the external bus; video RAM has its own.
 | `frame_end` | out | 1 | VBlank starts: the frame is out |
 | `aud_l`, `aud_r` | out | 10 | The APU's mixes, signed (-480 to 480), held from an M-cycle's end |
 
+## The cartridge (`gb_cart`)
+
+`gb_cart` is a cartridge's controller and RAM, the ROM outside it: it gives the address in the ROM a read of `$0000-$7FFF` reaches (`rom_addr`) and takes its byte back (`rom_q`) a clock later, as block RAM would, and keeps the RAM (up to 2^`RAM_AW` bytes) in block RAM. The host picks the controller from the cartridge's header, as MesenCE does (`rig::gb::cart_config()`): its type byte (`$147`) gives the MBC, the file's size (to a power of 2) the ROM's, `$149` the RAM's; an MBC1 with the boot logo at `$40104` as well as `$104` is a multicart (MBC1M). They're held while the system runs. Banks past the ROM's or RAM's size wrap around them.
+
+| MBC | Banking |
+| --- | --- |
+| none | 32 KB of ROM; RAM, if the header has any, always there |
+| MBC1 | RAM enable (`$0000`, `$xA`), BANK1 (`$2000`, 5 bits, 0 read as 1), BANK2 (`$4000`, 2 bits), mode (`$6000`): `$4000-$7FFF` is bank BANK2:BANK1; in mode 1, `$0000-$3FFF` is bank BANK2:0 and the RAM's bank is BANK2 |
+| MBC1M | MBC1 wired for multicarts: BANK2 comes in at bank bit 4, BANK1's top bit left out (its 0-as-1 rule still on all 5) |
+| MBC2 | From `$0000-$3FFF`: RAM enable with address bit 8 low, the bank (4 bits, 0 as 1) with it high. Its RAM is 512 4-bit cells, repeated through `$A000-$BFFF`, read with the top 4 bits set |
+| MBC3 | RAM enable, the bank (`$2000`, 7 bits, 0 as 1; 8 on the MBC30, a cartridge with 64 KB of RAM or more), RAM banks 0-3 (0-7) or the clock's registers 8-`$C` (`$4000`), and the clock's latch (`$6000`) |
+| MBC5 | RAM enable (exactly `$0A`), the bank's low 8 bits (`$2000`) and bit 8 (`$3000`), bank 0 allowed, RAM banks 0-15 (`$4000`; with rumble, 0-7, bit 3 the motor, which isn't here) |
+
+Disabled RAM reads `$FF`. These are MesenCE's and SameBoy's behaviours, which agree with Pan Docs for all of it but two details no test here reaches: MBC1M's RAM bank in mode 1 (MesenCE BANK2, SameBoy 0; multicarts have no RAM) and MBC3's bank beyond 7 bits (MesenCE keeps 8, SameBoy 7, the same for every ROM up to 2 MB).
+
+**MBC3's clock** (with `rtc`): seconds, minutes, hours and a 9-bit day count with halt and carry bits, counting emulated time as MesenCE does, so a board's clock is the sim's: a prescaler of 128 T-cycles (32,768 Hz from 4,194,304) that always counts, and a count of its ticks, held while the clock is halted, that adds a second at 32,768. A write to the seconds clears both. 59 seconds, 59 minutes and 23 hours carry; a register at its bits' limit wraps to 0 without a carry (seconds 63, say); past 511 days the count wraps and sets the carry bit, which stays until written. Only the registers' bits are kept (seconds and minutes 6, hours 5, the day's high byte bits 0, 6 and 7). Any write to `$6000-$7FFF` latches the registers, which the bus reads (as MesenCE and SameBoy both do; Pan Docs describes writing 0 then 1, which a game does either way). Neither the clock nor the RAM is cleared by `rst`: they'd keep a battery's charge, and the host loads both.
+
+**The shell's port**, while the system is held in reset (when it has the RAM's port): the RAM's bytes, or the clock's 13 bytes (0-4 the registers, 5-9 the latched copy, 10-12 the tick count and prescaler), a clock after their address.
+
 ## gb_sys, under the test shell
 
 `gb_sys` puts the Game Boy behind `debug/test-shell`, as `systems/atari-2600`'s `a2600_sys` does the 2600, so the host (`harness`'s `rig::gb`) can run a test ROM on a board or in the sim and check it over the link.
 
-- **Cartridge:** 32 KB of ROM and 8 KB of RAM at `$A000-$BFFF`, in block RAM; no MBC yet (G6).
+- **Cartridge:** `gb_cart`, set by register `50` from the cartridge's header, with room for 2^`CRAM_LOG2` bytes of RAM (default 32 KB, every Game Boy cartridge's but MBC5's largest) and 2^`ROM_LOG2` of ROM (up to 8 MB, the largest). The ROM is in block RAM, or with `ROM_EXT` in an outside memory on the `mem_*` port (`memory/sdram`'s byte port), from address 0.
+- **ROM outside (`ROM_EXT`):** a ROM read's byte is fetched as its address comes and held. The M-cycle's last T-cycle waits (`clock_enable`'s hold) until the byte has been there a clock, since the console takes it a clock before that T-cycle ends (and OAM DMA at it). The address is there from the M-cycle's start, so a fetch has three T-cycles before anything waits: about 32 clocks at the boards' rates, against an SDRAM read's 8 or so, so a wait comes only when a refresh or a cache miss is in the way. Register `54` counts the clocks waited. The shell's accesses to the ROM take the port between fetches.
+- **Wrappers:** `gb_sdram` is `gb_sys` with its ROM in an SDRAM (`memory/sdram`; the Tang Nano 20K's chip, or with the geometry parameters the Tang Console 138K's module). `gb_axi` has it behind an AXI slave, through a read cache (`memory/cache`, prefetching the next line after a miss) and `memory/axi-bridge`, as `systems/nes`'s `nes_axi` has the NES's: the PYNQ-Z2's DDR3 through HP0.
 - **Boot ROM:** the host writes it, as it does the cartridge.
 - **T-cycles:** at `T_NUM`/`T_DEN` of the clock (the console's 4.194304 MHz from 27 MHz is 65,536/421,875), only while it runs. It stops between T-cycles, so a run stopped and started again is the same as one left to run, on any board and in the sim.
 - **Frames:** a frame ends as VBlank starts, or after 70,224 T-cycles without one (the LCD off), as `gb_roms_test` counts them. The frame buffer holds each pixel's shade as the PPU last drew it.
@@ -99,12 +121,13 @@ The cartridge and work RAM share the external bus; video RAM has its own.
 
 | Address | What |
 | --- | --- |
-| `0x00000000-0x00007FFF` | The cartridge's ROM (read only while the system is held in reset) |
+| `0x00000000-...` | The cartridge's ROM, 2^`ROM_LOG2` bytes (written and read only while the system is held in reset) |
 | `0x01000000-0x0100007F` | Registers, below |
-| `0x02000000-0x02001FFF` | The cartridge's RAM (written and read only while the system is held in reset) |
+| `0x02000000-...` | The cartridge's RAM, 2^`CRAM_LOG2` bytes (written and read only while the system is held in reset) |
 | `0x03000000-0x030000FF` | The boot ROM |
 | `0x04000000-0x040007FF` | The serial port's bytes: byte n at n mod 2,048 |
 | `0x05000000-0x050059FF` | The frame buffer: y × 160 + x, a shade (0 white to 3) a byte |
+| `0x06000000-0x0600000C` | The cartridge's clock (MBC3's): `gb_cart`'s 13 shell bytes (only while the system is held in reset) |
 
 **HDMI (`VIDEO`, `gb_video`):** the picture at 720p, each pixel 5 display pixels each way (800 × 720, from x = 240), its shades grey (0 white, 1 `$AA`, 2 `$55`, 3 black), and the sound: each mix through `audio/resampler` to 48 kHz (800 samples a frame of 17,556 M-cycles, against the 60 Hz display the system keeps pace with) and out in HDMI's audio packets, as the NES's. The video CRC counts the packets' symbols as 0, since which line's packet carries a sample depends on when it crossed to the pixel clock.
 
@@ -114,7 +137,7 @@ The cartridge and work RAM share the external bus; video RAM has its own.
 - **Checks:** the display checks each line as it starts showing it: a count of lines whole, from the T-cycles, must have reached it, or it counts in `late`. A display frame whose system wasn't waiting at its request (stopped, or late) is drawn black, so the last lit picture a capture sees is the frame the system stopped on.
 - **Video CRC:** as the 2600's: of the TMDS symbols of the display frame that shows frame `vcap_frame` + 1, with whether it showed it whole.
 
-**Block RAM:** each memory's ports are written so Yosys maps them to the Gowin parts' block RAM at their size: with Yosys, an 8-bit memory whose writing port also reads takes twice as much, so the shell's port to the cartridge's ROM only writes, and the shell reads the ROM and RAM through the system's port while the system is held in reset. The cartridge's RAM has one write port, the shell's in reset and the system's otherwise (two writers aren't mapped at all).
+**Block RAM:** each memory's ports are written so Yosys maps them to the Gowin parts' block RAM at their size: with Yosys, an 8-bit memory whose writing port also reads takes twice as much, so the shell's port to the cartridge's ROM (in block RAM) only writes, and the shell reads the ROM and RAM through the system's port while the system is held in reset. The cartridge's RAM has one write port, the shell's in reset and the system's otherwise (two writers aren't mapped at all).
 
 | Register | Bytes | Meaning |
 | --- | --- | --- |
@@ -131,7 +154,8 @@ The cartridge and work RAM share the external bus; video RAM has its own.
 | `28` | 1 | LCDC (read-only) |
 | `29` | 1 | Bit 0: the boot ROM is mapped (read-only) |
 | `2A` | 2 | The CPU's PC (read-only) |
-| `2C` | 1 | The room for ROM, log2 (read-only) |
+| `2C` | 1 | The room for the cartridge's ROM, log2 (read-only) |
+| `2D` | 1 | ...and for its RAM (read-only) |
 | `30` | 4 | The sound's CRC since reset (read-only) |
 | `34` | 1 | With `VIDEO`: bit 0 keep pace with the display; write bit 1 to take the video CRC |
 | `36` | 1 | Bit 0: the video CRC's display frame showed its frame whole (read-only) |
@@ -142,32 +166,41 @@ The cartridge and work RAM share the external bus; video RAM has its own.
 | `44` | 4 | Cartridge RAM's first 4 bytes as the system last wrote them, `$A000` in the low byte, `$FF` from reset (read-only): where blargg's newer ROMs report |
 | `48` | 4 | With `VIDEO`: the CRC-32 of the sample pairs sent to HDMI, left then right, each 16-bit little-endian (read-only) |
 | `4C` | 4 | With `VIDEO`: how many (read-only) |
+| `50` | 3 | The cartridge: `gb_cart`'s `mbc` (bits 2-0: 0 none, 1 MBC1, 2 MBC1M, 3 MBC2, 4 MBC3, 5 MBC5), `rtc` (3), `rumble` (4), `rom_log2` (12-8) and `ram_log2` (20-16: 0 none, 9 MBC2's). 32 KB of ROM and no MBC or RAM at power-up |
+| `54` | 4 | With `ROM_EXT`: clocks the system has waited on the ROM since reset (read-only) |
 
 ## Tests
 
-`gb_roms_test` runs the test ROMs of `testroms/manifest-gb.toml` that the system has the parts for, through SameBoy's DMG boot ROM. These are the ROMs for the Game Boy (dmg) whose `needs` are among cpu, serial, timer, interrupts, boot, ppu, oam dma, apu and cart ram (the 8 KB of cartridge RAM, which the system leaves enabled: blargg's newer ROMs, MBC1 cartridges of 32 KB, need only that of their MBC1).
+`gb_roms_test` runs the test ROMs of `testroms/manifest-gb.toml` that the system has the parts for, through SameBoy's DMG boot ROM, on `gameboy` with `gb_cart` (`sim/gb_cart_top.sv`; the test serves the ROM). These are the ROMs for the Game Boy (dmg) whose `needs` are among cpu, serial, timer, interrupts, boot, ppu, oam dma, apu, cart ram, mbc1, mbc2, mbc3, mbc5 and rtc. The cartridge is set from its header as the host sets it, its RAM starting as zeros, as MesenCE's does.
 
 - **Results:** a ROM with a result of its own (blargg's text over the serial port or his code in cartridge RAM, or Mooneye's bytes) must end with MesenCE's (`harness/golden/gb_frames_crc32.txt`) within twice MesenCE's frames.
 - **Frames:** its frame 30 frames after the result must be MesenCE's too, by CRC (2 bytes a pixel, the shade then 0, row by row, as `tools/mesen/gb_frames.py` takes it). A frame check (dmg-acid2) has its frame at the number the list gives. A frame ends as VBlank starts, or every 70,224 T-cycles while the LCD is off.
 - **Expected fails:** MesenCE fails three Mooneye tests through SameBoy's boot ROM, which takes a different time from Nintendo's (`boot_div`, `boot_hwio` and `serial-boot_sclk_align`). The system must fail them too.
 - **One frame not compared:** `serial-boot_sclk_align`'s fail screen shows counts that depend on the serial clock's phase from power-up, which nothing settles for this boot ROM. Ours differ from MesenCE's, and SameBoy's from ours by one (its DIV runs 4 T-cycles ahead).
+- **Input:** a ROM's input script (the golden list's `input=`: the keys held from a frame on) is played at those frames' ends, as MesenCE's runner plays it; rtc3test's three suites are picked from its menu so.
+- **Battery RAM:** a ROM with `again` runs twice, the second time from the cartridge RAM the first left (as MesenCE keeps a battery cartridge's), and its RAM at the end must have MesenCE's CRC (`savcrc=`); `sav=` powers it up with a file's.
 - **Sound:** the sound's CRC to the checked frame (as register `30` takes it) must be `harness/golden/gb_audio_crc32.txt`'s, which `RS_GB_AUDIO_OUT=<file>` writes instead, after an intended change to the sound. MesenCE has no equivalent: the sound's second opinion is SameBoy's, M-cycle by M-cycle (`audio/apu-gb`'s README).
 - **Options:** `RS_GB_ONLY=<id>,...` runs some of them, `RS_GB_JOBS=<n>` sets the threads (default up to 6), `RS_GB_TRACE=1` prints each opcode fetch and serial byte, `RS_GB_DUMP=<dir>` writes each ROM's checked frame there as a PGM, and `RS_GB_AUDIO_DUMP=<dir>` the mixes at each M-cycle as `<id>.mix`.
 
 `harness`'s `harness_test` also runs the 20K's build with HDMI (`make_gb_hdmi_sim`): a receiver decodes every pixel clock as a sink does, and the display frame showing dmg-acid2's frame 300 and `ei_sequence`'s pass screen must show it, with the video CRC of `harness/golden/gb_hdmi_crc32.txt`, and every sample pair `gb_sys` sent must arrive in order; and a frame must take at most 98.7% of a display frame.
 
-`harness`'s `harness_test` runs four of them through `gb_sys`'s shell in the sim, as a board will (`rig::gb::rom_test`), each with its sound's CRC: `ei_sequence` (Mooneye's bytes), `instr_timing` (blargg's text), `dmg_sound-01` (blargg's code in cartridge RAM) and dmg-acid2 (a frame). It also runs `dmg_sound-10` then `dmg_sound-11` through one `gb_sys`, as a board runs ROM after ROM: the second's sound must be as if it ran alone (wave RAM, which powering the APU off leaves alone, clears on reset). The host steps the system a frame at a time, reading the serial port's bytes at each frame's end as `gb_roms_test` does, until the result; then it runs to the frame 30 on and checks the CRC the system took.
+`gb_cart_test` checks `gb_cart` alone where Mooneye's MBC tests don't reach: MBC3's and MBC30's banks, MBC5's ninth bank bit and rumble, MBC1M, MBC2's address bit 8, and the clock: a second per 4,194,304 T-cycles from a write to the seconds, halting, the carries and the day count's overflow, the registers' bits and the latch.
+
+`harness`'s `harness_test` runs some of them through `gb_sys`'s shell in the sim, as a board will (`rig::gb::rom_test`), each with its sound's CRC: `ei_sequence` (Mooneye's bytes), `instr_timing` (blargg's text), `dmg_sound-01` (blargg's code in cartridge RAM), dmg-acid2 (a frame) and `mbc2-ram` (run twice, its RAM's CRC MesenCE's); and an MBC5 cartridge on each board's build of the ROM's memory (block RAM, the 20K's SDRAM, the 138K's SDRAM module, the PYNQ-Z2's DDR3 through AXI and the read cache). It also runs ROMs in turn through one `gb_sys`, as a board runs ROM after ROM, each of which must end as if it ran alone: `dmg_sound-10` then `dmg_sound-11` (wave RAM, which powering the APU off leaves alone, clears on reset), and `mbc1-ram_64kb` then `dmg_sound-01` (the cartridge's setup comes from register 50 each time). The host steps the system a frame at a time, reading the serial port's bytes at each frame's end as `gb_roms_test` does, until the result; then it runs to the frame 30 on and checks the CRC the system took.
 
 ## Status
 
-- **Passing:** 98 test ROMs end as they do in MesenCE, with its frame (one frame not compared, above), and with the sim's sound.
+- **Passing:** 129 test ROMs end as they do in MesenCE, with its frame (one frame not compared, above), and with the sim's sound.
   - blargg's `cpu_instrs` (all 11), `instr_timing`, `mem_timing` and `mem_timing-2` (all 3 of each), and `dmg_sound` (all 12).
   - Mooneye's CPU, interrupt, HALT, EI and DI tests, its per-instruction timing tests, all 13 of its timer tests, `bits` and `boot_regs`.
   - Mooneye's 12 PPU tests and 6 OAM DMA tests, `di_timing` and `halt_ime1_timing2`.
+  - Mooneye's 28 MBC tests (MBC1, its multicart wiring, MBC2 and MBC5, up to 8 MB of ROM and 32 KB of RAM), two of them run twice with their RAM's CRC MesenCE's.
+  - rtc3test's three suites (MBC3's clock), each pass and timing as MesenCE shows it.
   - dmg-acid2.
 - **Gaps:**
   - The sound's analogue side (`audio/apu-gb`'s README lists what it leaves out), and the Color's sound registers (G7).
-  - MBCs and cartridge RAM (G6), and with MBC1, blargg's `oam_bug` ROMs: the OAM bug (`cpu/sm83`'s README).
+  - blargg's `oam_bug` ROMs: the OAM bug (`cpu/sm83`'s README).
+  - MBC5's 128 KB of RAM on a board (the room is 32 KB; such a cartridge is skipped), HuC1, HuC3, MMM01, MBC6, MBC7 and the Camera.
   - The PPU's rarer edges: the window's pixel-insertion glitch, WX=166, writes to LCDC's object bit during an object's fetch, and OAM DMA's effect on the OAM scan beyond its bus.
 
 ## References
@@ -177,3 +210,5 @@ The cartridge and work RAM share the external bus; video RAM has its own.
 - [SameBoy](https://github.com/LIJI32/SameBoy): the serial clock's flip-flop, the PPU's dot-by-dot timing (its `display.c`), the access conflicts on the PPU's registers and when a halted CPU sees an interrupt, read for facts; its traces, run beside the sim's, found where the timing parted.
 - [dmg-acid2](https://github.com/mattcurrie/dmg-acid2): the PPU's rendering, against MesenCE's frame.
 - [Mooneye's test suite](https://github.com/Gekkio/mooneye-test-suite): what each test measures, read for facts.
+- [rtc3test](https://github.com/aaaaaa123456789/rtc3test) (the Unlicense): MBC3's clock, its `tests.md`.
+- MesenCE's and SameBoy's MBCs and MBC3 clock (`Core/Gameboy/Carts`, SameBoy's `memory.c` and `mbc.c`), read for facts.
