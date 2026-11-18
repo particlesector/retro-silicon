@@ -156,7 +156,7 @@ The cartridge and work RAM share the external bus; video RAM has its own.
 
 `harness`'s `harness_test` also runs the 20K's build with HDMI (`make_gb_hdmi_sim`): a receiver decodes every pixel clock as a sink does, and the display frame showing dmg-acid2's frame 300 and `ei_sequence`'s pass screen must show it, with the video CRC of `harness/golden/gb_hdmi_crc32.txt`, and every sample pair `gb_sys` sent must arrive in order; and a frame must take at most 98.7% of a display frame.
 
-`harness`'s `harness_test` runs four of them through `gb_sys`'s shell in the sim, as a board will (`rig::gb::rom_test`), each with its sound's CRC: `ei_sequence` (Mooneye's bytes), `instr_timing` (blargg's text), `dmg_sound-01` (blargg's code in cartridge RAM) and dmg-acid2 (a frame). The host steps the system a frame at a time, reading the serial port's bytes at each frame's end as `gb_roms_test` does, until the result; then it runs to the frame 30 on and checks the CRC the system took.
+`harness`'s `harness_test` runs four of them through `gb_sys`'s shell in the sim, as a board will (`rig::gb::rom_test`), each with its sound's CRC: `ei_sequence` (Mooneye's bytes), `instr_timing` (blargg's text), `dmg_sound-01` (blargg's code in cartridge RAM) and dmg-acid2 (a frame). It also runs `dmg_sound-10` then `dmg_sound-11` through one `gb_sys`, as a board runs ROM after ROM: the second's sound must be as if it ran alone (wave RAM, which powering the APU off leaves alone, clears on reset). The host steps the system a frame at a time, reading the serial port's bytes at each frame's end as `gb_roms_test` does, until the result; then it runs to the frame 30 on and checks the CRC the system took.
 
 ## Status
 

@@ -292,7 +292,11 @@ module apu_gb #(
 
     always_ff @(posedge clk) begin
         if (rst || (wr && sel == 6'h16 && !wdata[7] && on)) begin
-            // reset, or power off: every register but wave RAM clears, and all the state
+            // reset, or power off: every register but wave RAM clears, and all the state; a reset
+            // clears wave RAM too, so it holds nothing from before (the DMG's powers up holding
+            // something of its own)
+            if (rst)
+                for (int k = 0; k < 16; k++) wave[k] <= '0;
             on <= 1'b0;
             nr10 <= '0;
             nr11 <= '0;

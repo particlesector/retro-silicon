@@ -15,7 +15,7 @@ Module `apu_gb`.
 
 | Port | Dir | Width | Meaning |
 | --- | --- | --- | --- |
-| `clk`, `rst` | in | 1 | Clock; synchronous reset (the APU off, its registers 0) |
+| `clk`, `rst` | in | 1 | Clock; synchronous reset (the APU off, its registers and wave RAM 0) |
 | `t2` | in | 1 | A 2 MHz tick |
 | `fs`, `fs_rise` | in | 1 | The system counter's bit 12 falls, or rises |
 | `div_b12` | in | 1 | That bit now |
