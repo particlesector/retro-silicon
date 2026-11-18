@@ -1,9 +1,10 @@
 // SPDX-License-Identifier: Apache-2.0
 // systems/game-boy's HDMI output (gb_video) as the Tang Nano 20K runs it (make_gb_hdmi_sim): a
-// receiver decodes every pixel clock, and each display frame must have 720p's timing (DVI: no
-// sound until the APU), and the frame that shows a ROM's checked frame must show it, 5 times its
-// size each way, its shades grey, black around it, with the video CRC of
-// harness/golden/gb_hdmi_crc32.txt. Skipped when the ROMs aren't fetched.
+// receiver decodes every pixel clock as a sink does, and each display frame must have 720p's
+// timing, the frame that shows a ROM's checked frame must show it, 5 times its size each way, its
+// shades grey, black around it, with the video CRC of harness/golden/gb_hdmi_crc32.txt, and the
+// sound's samples must all arrive, in order: the ones gb_sys counted and took the CRC of. Skipped
+// when the ROMs aren't fetched.
 #include <catch2/catch_test_macros.hpp>
 
 #include <cstdint>
@@ -24,10 +25,11 @@
 
 namespace {
 
-// A DVI receiver for 1280x720 at 60 Hz: it decodes each pixel clock, finds the frames, and checks
-// each against CEA-861's layout. With `expect` set it also checks the picture: the Game Boy's
-// frame 5 times its size from (240, 0), shade 0 white to 3 black, black around it. It takes each
-// frame's CRC as gb_video does.
+// An HDMI receiver for 1280x720 at 60 Hz: it decodes each pixel clock (tmds::HdmiDecoder, which
+// keeps the audio and checks every packet), finds the frames, and checks each against CEA-861's
+// layout. With `expect` set it also checks the picture: the Game Boy's frame 5 times its size from
+// (240, 0), shade 0 white to 3 black, black around it. It takes each frame's CRC as gb_video does,
+// the data islands' packets as 0.
 class Receiver {
 public:
     static constexpr unsigned kH = 1650, kV = 750, kHa = 1280, kVa = 720, kX0 = 240, kY0 = 0;
@@ -40,28 +42,30 @@ public:
     };
     std::vector<Result> frames;
     const std::vector<uint8_t>* expect = nullptr;
+    tmds::HdmiDecoder dec;
 
     void operator()(uint32_t sym) {
-        auto s0 = tmds::decode(static_cast<uint16_t>(sym & 0x3ff));
-        auto s1 = tmds::decode(static_cast<uint16_t>((sym >> 10) & 0x3ff));
-        auto s2 = tmds::decode(static_cast<uint16_t>(sym >> 20));
-        const bool video = !s0.control;
+        auto px = dec(static_cast<uint16_t>(sym & 0x3ff), static_cast<uint16_t>((sym >> 10) & 0x3ff),
+                      static_cast<uint16_t>(sym >> 20));
+        using tmds::Period;
         if (idx_ < 0) {  // finding the first frame: the first picture after a vertical sync
-            if (s0.control && (s0.c & 2)) seen_vsync_ = true;
-            if (!seen_vsync_ || !video) return;
+            bool vs = px.period != Period::Video && px.period != Period::VideoGuard && (px.sync & 2);
+            if (vs) seen_vsync_ = true;
+            if (!seen_vsync_ || px.period != Period::Video) return;
             idx_ = 0;
             cur_ = Result{};
             crc_ = 0xFFFFFFFFu;
         }
+        uint32_t csym = px.period == Period::Island ? 0 : sym;
         for (int b = 0; b < 30; b++) {
-            bool fb = (crc_ ^ (sym >> b)) & 1;
+            bool fb = (crc_ ^ (csym >> b)) & 1;
             crc_ = (crc_ >> 1) ^ (fb ? 0xEDB88320u : 0);
         }
         unsigned x = static_cast<unsigned>(idx_) % kH, y = static_cast<unsigned>(idx_) / kH;
         bool act = x < kHa && y < kVa;
-        if (act != video || s1.control == act || s2.control == act) cur_.timing = false;
+        if (act != (px.period == Period::Video)) cur_.timing = false;
         if (act) {
-            uint32_t rgb = static_cast<uint32_t>(s2.d) << 16 | s1.d << 8 | s0.d;
+            uint32_t rgb = static_cast<uint32_t>(px.d[2]) << 16 | px.d[1] << 8 | px.d[0];
             bool pic = x >= kX0 && x < kX0 + 800 && y >= kY0 && y < kY0 + 720;
             if (!pic) {
                 if (rgb != 0) cur_.timing = false;
@@ -71,7 +75,16 @@ public:
         } else {
             unsigned vline = x >= 1390 ? y : (y == 0 ? kV - 1 : y - 1);
             unsigned want = (vline >= 725 && vline < 730) << 1 | (x >= 1390 && x < 1430);
-            if (s0.c != want || s1.c != 0 || s2.c != 0) cur_.timing = false;
+            if (px.period != Period::VideoGuard && px.sync != want) cur_.timing = false;
+            bool next_pic = y + 1 < kVa || y == kV - 1;
+            Period p = x >= 1284 && x < 1292   ? Period::IslandPreamble
+                       : x >= 1292 && x < 1294 ? Period::IslandGuard
+                       : x >= 1294 && x < 1358 ? Period::Island
+                       : x >= 1358 && x < 1360 ? Period::IslandGuard
+                       : next_pic && x >= kH - 10 && x < kH - 2 ? Period::VideoPreamble
+                       : next_pic && x >= kH - 2               ? Period::VideoGuard
+                                                                : Period::Control;
+            if (px.period != p) cur_.timing = false;
         }
         if (++idx_ == static_cast<long>(kH * kV)) {
             cur_.crc = ~crc_;
@@ -169,6 +182,22 @@ void matches_golden(const std::string& id, const MakeHdmi& make = rig::make_gb_h
     CHECK(matched >= 1);
     INFO("video CRC 0x" << std::hex << res.crc32);
     CHECK(res.crc32 == want.crc);
+    // The sound: every sample pair gb_sys sent, in order.
+    rig::shell::Client client(*link);
+    rig::gb::Console gb(client);
+    auto [pcm_crc, pcm_n] = gb.pcm();
+    INFO((rx.dec.errors.empty() ? std::string("no HDMI errors") : rx.dec.errors[0]));
+    CHECK(rx.dec.errors.empty());
+    CHECK(rx.dec.n == 6144);
+    CHECK(pcm_n > 800 * (want.frame - 2));
+    REQUIRE(rx.dec.samples.size() == pcm_n);
+    rig::Crc32 c;
+    for (auto [l, rr] : rx.dec.samples) {
+        const uint16_t ul = static_cast<uint16_t>(l), ur = static_cast<uint16_t>(rr);
+        c.update(std::vector<uint8_t>{static_cast<uint8_t>(ul), static_cast<uint8_t>(ul >> 8),
+                                      static_cast<uint8_t>(ur), static_cast<uint8_t>(ur >> 8)});
+    }
+    CHECK(c.value() == pcm_crc);
 }
 
 } // namespace

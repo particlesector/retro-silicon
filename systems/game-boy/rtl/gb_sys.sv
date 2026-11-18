@@ -25,6 +25,10 @@
 //   0x03000000-0x030000FF  the boot ROM
 //   0x04000000-0x040007FF  the serial port's bytes: byte n at n mod 2048
 //   0x05000000-0x050059FF  the frame buffer: y x 160 + x, a shade (0 white to 3) a byte
+// The sound's CRC (register 30) is of the APU's two mixes at each M-cycle's end since reset, each
+// as a 16-bit little-endian word, left then right, as gb_roms_test takes it. With VIDEO, the mixes
+// go to 48 kHz (audio/resampler: 800 samples a frame of 17,556 M-cycles, against the 60 Hz
+// display the system keeps pace with) and out with the picture.
 // With VIDEO set, the picture goes out as HDMI at 720p (gb_video, on `pclk`), and with pacing on
 // (register 34) the system keeps pace with the display: it waits at each frame's end until the
 // display asks for the next, a stop between T-cycles like the others. The video CRC is of the
@@ -100,13 +104,20 @@ module gb_sys #(
     logic        pix_we, frame_end;
     logic [7:0]  pix_x, pix_y;
     logic [1:0]  pix_shade;
+    logic signed [9:0] aud_l, aud_r;
     gameboy u_gb (
         .clk, .rst, .ce,
         .cart_addr, .cart_rd, .cart_wr, .cart_wdata, .cart_rdata,
         .boot_we, .boot_addr, .boot_wdata,
         .keys, .ser_tx, .ser_tx_valid,
         .m_end, .cpu_sync, .cpu_pc, .boot_on, .lcdc,
-        .pix_we, .pix_x, .pix_y, .pix_shade, .frame_end);
+        .pix_we, .pix_x, .pix_y, .pix_shade, .frame_end, .aud_l, .aud_r);
+
+    // ---- The sound's CRC ----
+    logic [31:0] snd_crc;
+    wire         m_tick = ce && m_end;
+    crc32 #(.W(32)) u_scrc (.clk, .rst, .en(m_tick), .data({16'(aud_r), 16'(aud_l)}),
+                            .crc(snd_crc), .st_we(1'b0), .st_wdata(32'd0));
 
     // ---- The cartridge: 32 KB of ROM and 8 KB of RAM. The system reads both every clock and takes
     // the one its address held. The shell writes the ROM through a port of its own, and the RAM
@@ -137,6 +148,13 @@ module gb_sys #(
         cram_q <= cram[cram_a];
     end
     assign cart_rdata = cart_ram_d ? cram_q : cart_hi_d ? 8'hFF : rom_q;
+
+    // The first 4 bytes of cartridge RAM as the system last wrote them ($FF from reset), where
+    // blargg's newer ROMs report, for the host to read while the system runs (register 44).
+    logic [31:0] cram_head;
+    always_ff @(posedge clk)
+        if (rst) cram_head <= '1;
+        else if (cart_wr && cart_ram && cart_addr[12:2] == '0) cram_head[8 * cart_addr[1:0] +: 8] <= cart_wdata;
 
     always_ff @(posedge clk)
         if (sh_rom && s_we && !s_ack) rom[s_addr[ROM_LOG2-1:0]] <= s_wdata;
@@ -233,6 +251,15 @@ module gb_sys #(
             end
         end
 
+    // ---- The sound sent to HDMI: the CRC of its sample pairs (left then right, each 16-bit
+    // little-endian) and their count since reset, registers 48 and 4C (0 without VIDEO) ----
+    logic        pcm_v;
+    logic [31:0] pcm_lr, pcm_crc, pcm_n;
+    crc32 #(.W(32)) u_pcrc (.clk, .rst, .en(pcm_v), .data(pcm_lr), .crc(pcm_crc), .st_we(1'b0), .st_wdata(32'd0));
+    always_ff @(posedge clk)
+        if (rst) pcm_n <= '0;
+        else if (pcm_v) pcm_n <= pcm_n + 32'd1;
+
     // ---- Display pacing and the video CRC (a2600_sys's) ----
     logic        vid_pace, vcap_armed, vcap_wait, vcap_valid, vcap_ok, v_crc_seen, v_cap_t;
     logic [31:0] vcap_frame, vcrc;
@@ -283,8 +310,24 @@ module gb_sys #(
         logic [1:0]  v_q;
         always_ff @(posedge pclk)
             v_q <= fb[v_ra];
+        // The mixes, -480 to 480, to 48 kHz: unsigned for the resampler, which centres them.
+        logic        a_vl;
+        logic [15:0] a_l, a_r;
+        /* verilator lint_off UNUSEDSIGNAL */
+        logic        a_vr, a_bl, a_br;   // the right side's resampler keeps step with the left's
+        logic [31:0] a_stl, a_str;
+        /* verilator lint_on UNUSEDSIGNAL */
+        resampler #(.NUM(200), .DEN(4389), .SAVE_STATE(1'b0)) u_rsl (
+            .clk, .rst, .ce(m_tick), .in(16'((16'(aud_l) + 16'sd512) << 6)), .valid(a_vl), .busy(a_bl), .out(a_l),
+            .st_addr(2'd0), .st_rdata(a_stl), .st_we(1'b0), .st_wdata(32'd0));
+        resampler #(.NUM(200), .DEN(4389), .SAVE_STATE(1'b0)) u_rsr (
+            .clk, .rst, .ce(m_tick), .in(16'((16'(aud_r) + 16'sd512) << 6)), .valid(a_vr), .busy(a_br), .out(a_r),
+            .st_addr(2'd0), .st_rdata(a_str), .st_we(1'b0), .st_wdata(32'd0));
+        assign pcm_v  = a_vl;
+        assign pcm_lr = {a_r, a_l};
         gb_video u_video (
             .clk, .rst, .ce, .frame_done, .fb_ra(v_ra), .fb_q(v_q),
+            .a_valid(a_vl), .a_l, .a_r,
             .waiting(v_waiting), .req(v_req),
             .cap_t(v_cap_t), .crc(v_crc), .crc_ok(v_crc_ok), .crc_t(v_crc_t),
             .shown(v_shown), .late(v_late),
@@ -295,6 +338,8 @@ module gb_sys #(
         assign v_crc_ok = 1'b0;
         assign v_crc_t  = 1'b0;
         assign v_shown  = '0;
+        assign pcm_v    = 1'b0;
+        assign pcm_lr   = '0;
         assign v_late   = '0;
         assign tmds0    = '0;
         assign tmds1    = '0;
@@ -331,10 +376,14 @@ module gb_sys #(
             5'h09: reg_q = byte_of({24'd0, keys}, r[1:0]);
             5'h0A: reg_q = byte_of({cpu_pc, 7'd0, boot_on, lcdc}, r[1:0]);
             5'h0B: reg_q = byte_of(32'(ROM_LOG2), r[1:0]);
+            5'h0C: reg_q = byte_of(snd_crc, r[1:0]);
             5'h0D: reg_q = byte_of({15'd0, vcap_ok, 14'd0, vcap_armed, vid_pace}, r[1:0]);
             5'h0E: reg_q = byte_of(vcap_frame, r[1:0]);
             5'h0F: reg_q = byte_of(vcrc, r[1:0]);
             5'h10: reg_q = byte_of({v_late, v_shown}, r[1:0]);
+            5'h11: reg_q = byte_of(cram_head, r[1:0]);
+            5'h12: reg_q = byte_of(pcm_crc, r[1:0]);
+            5'h13: reg_q = byte_of(pcm_n, r[1:0]);
             default: ;
         endcase
     end
@@ -395,5 +444,5 @@ module gb_sys #(
         end
     assign led = ~{beat[24], at_limit, running, 1'b0, stalled, bad_frame};
 
-    wire unused = &{1'b0, cart_rd, m_end, cpu_sync};
+    wire unused = &{1'b0, cart_rd, cpu_sync};
 endmodule

@@ -42,6 +42,7 @@ enum Reg : uint32_t {
     kBootOn = 0x29,     // read-only: bit 0, the boot ROM is mapped
     kPc = 0x2A,         // 2 bytes, read-only: the CPU's PC
     kRomRoom = 0x2C,    // read-only: the room for ROM, log2
+    kSoundCrc = 0x30,   // 4 bytes, read-only: CRC-32 of the APU's mixes at each M-cycle's end since reset
     // With a display (gb_sys's VIDEO):
     kVideo = 0x34,      // bit 0 keep pace with the display; write bit 1 to take the video CRC
     kVideoWhole = 0x36,  // bit 0: the video CRC's display frame showed its frame whole
@@ -49,6 +50,9 @@ enum Reg : uint32_t {
     kVideoCrc = 0x3C,   // 4 bytes, read-only
     kVideoShown = 0x40,  // 2 bytes, read-only: display frames whose frame started on request
     kVideoLate = 0x42,  // 2 bytes, read-only: lines late
+    kCartHead = 0x44,   // 4 bytes, read-only: cartridge RAM's first 4 bytes as the system last wrote them
+    kPcmCrc = 0x48,     // 4 bytes, read-only: CRC-32 of the sample pairs sent to HDMI (left then right)
+    kPcmCount = 0x4C,   // 4 bytes, read-only: how many
 };
 
 enum Status : uint8_t { kStopped = 1, kRunning = 2, kCrcValid = 4, kScanning = 8, kVideoCrcValid = 16 };
@@ -90,12 +94,15 @@ public:
     // The serial port's bytes from byte `from` (the last kSerialSize at most).
     std::vector<uint8_t> serial(uint32_t from);
     std::vector<uint8_t> frame();  // the frame buffer: 160 x 144 shades
+    uint32_t sound_crc();
+    uint32_t cart_head();  // cartridge RAM's first 4 bytes, $A000 in the low byte
 
     // With a display:
     void pace(bool on);
     // Keeps pace and takes the video CRC of the display frame showing frame `index` + 1.
     void arm_video_crc(uint32_t index);
     Video video();
+    std::pair<uint32_t, uint32_t> pcm();  // {CRC, count} of the sound's sample pairs sent to HDMI
 
 private:
     shell::Client& c_;
@@ -121,16 +128,26 @@ std::vector<Golden> load_golden(const std::string& file);
 std::map<std::string, std::set<std::string>> load_needs(const std::string& manifest);
 const std::set<std::string>& system_has();
 
+// A line of harness/golden/gb_audio_crc32.txt (gb_roms_test's RS_GB_AUDIO_OUT): the sound's CRC
+// (register 30) at a ROM's checked frame, from the sim.
+struct AudioGolden {
+    uint32_t frames = 0;
+    uint32_t crc = 0;
+};
+std::map<std::string, AudioGolden> load_audio_golden(const std::string& file);
+
 // ROMs whose result is checked but not their frame, and why: systems/game-boy's gb_roms_test has
 // the same list.
 const std::map<std::string, std::string>& frame_not_checked();
 
 // A test ROM run from power-up through `boot`, as gb_roms_test runs it. A ROM with a result of its
-// own (check serial or mooneye) must end with MesenCE's within twice the frames MesenCE took (and
-// 60), and its frame 30 frames after the result must have MesenCE's CRC; a frame check's frame is
-// MesenCE's. The result's CRC32 is the checked frame's.
+// own (check serial, blargg or mooneye) must end with MesenCE's within twice the frames MesenCE took
+// (and 60), and its frame 30 frames after the result must have MesenCE's CRC; a frame check's frame
+// is MesenCE's. Given `audio`, the sound's CRC at that frame must be audio->crc. The result's CRC32
+// is the checked frame's, its audio CRC32 the sound's.
 TestResult rom_test(Link& link, const Golden& g, const std::vector<uint8_t>& rom, const std::vector<uint8_t>& boot,
-                    std::optional<uint32_t> build_id = std::nullopt);
+                    std::optional<uint32_t> build_id = std::nullopt,
+                    std::optional<AudioGolden> audio = std::nullopt);
 
 // The ROM on HDMI: runs it from power-up, keeping pace with the display, to frame `frame` (where
 // rom_test checks it, from gb_hdmi_crc32.txt) and returns the video CRC of the display frame that

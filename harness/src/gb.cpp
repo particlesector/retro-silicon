@@ -107,6 +107,9 @@ void Console::wait_stopped() {
 }
 
 std::vector<uint8_t> Console::frame() { return c_.read(kFrameBuffer, kWidth * kHeight); }
+uint32_t Console::sound_crc() { return get32(kSoundCrc); }
+uint32_t Console::cart_head() { return get32(kCartHead); }
+std::pair<uint32_t, uint32_t> Console::pcm() { return {get32(kPcmCrc), get32(kPcmCount)}; }
 
 void Console::pace(bool on) { put32(kVideo, on ? 1 : 0, 1); }
 
@@ -198,8 +201,27 @@ std::map<std::string, std::set<std::string>> load_needs(const std::string& manif
 }
 
 const std::set<std::string>& system_has() {
-    static const std::set<std::string> has = {"cpu", "serial", "timer", "interrupts", "boot", "ppu", "oam dma"};
+    static const std::set<std::string> has = {"cpu", "serial", "timer", "interrupts", "boot",
+                                              "ppu", "oam dma", "apu",   "cart ram"};
     return has;
+}
+
+std::map<std::string, AudioGolden> load_audio_golden(const std::string& file) {
+    std::ifstream f(file);
+    if (!f) throw RigError("can't read " + file);
+    std::map<std::string, AudioGolden> out;
+    std::string line;
+    while (std::getline(f, line)) {
+        if (line.empty() || line[0] == '#') continue;
+        std::istringstream s(line);
+        std::string id, crc;
+        AudioGolden g;
+        s >> id >> g.frames >> crc;
+        if (!s) throw RigError(file + ": bad line: " + line);
+        g.crc = static_cast<uint32_t>(std::stoul(crc, nullptr, 16));
+        out[id] = g;
+    }
+    return out;
 }
 
 const std::map<std::string, std::string>& frame_not_checked() {
@@ -210,7 +232,7 @@ const std::map<std::string, std::string>& frame_not_checked() {
 }
 
 TestResult rom_test(Link& link, const Golden& g, const std::vector<uint8_t>& rom, const std::vector<uint8_t>& boot,
-                    std::optional<uint32_t> build_id) {
+                    std::optional<uint32_t> build_id, std::optional<AudioGolden> audio) {
     TestResult r;
     r.name = g.id;
     auto t0 = std::chrono::steady_clock::now();
@@ -229,7 +251,7 @@ TestResult rom_test(Link& link, const Golden& g, const std::vector<uint8_t>& rom
 
     try {
         if (g.model != "dmg") return finish("a ROM for the " + g.model + ": the system is a Game Boy (dmg)");
-        if (g.check != "serial" && g.check != "mooneye" && g.check != "frame")
+        if (g.check != "serial" && g.check != "mooneye" && g.check != "blargg" && g.check != "frame")
             return finish("the " + g.check + " check isn't supported");
         auto info = client.info();
         if (info.version != shell::kVersion)
@@ -261,6 +283,11 @@ TestResult rom_test(Link& link, const Golden& g, const std::vector<uint8_t>& rom
                 std::string text(bytes.begin(), bytes.end());
                 if (text.find("Passed") != std::string::npos) result = "pass";
                 if (text.find("Failed") != std::string::npos) result = "fail";
+            } else if (g.check == "blargg") {
+                // blargg's newer ROMs: the code at $A000 once $A001-$A003 hold DE B0 61
+                const uint32_t h = gb.cart_head();
+                const unsigned code = h & 0xFF;
+                if ((h >> 8) == 0x61B0DE && code < 0x80) result = code == 0 ? "pass" : "fail:" + std::to_string(code);
             } else if (bytes.size() >= 6) {
                 result = std::equal(pass.begin(), pass.end(), bytes.begin()) ? "pass" : "fail";
             }
@@ -287,6 +314,11 @@ TestResult rom_test(Link& link, const Golden& g, const std::vector<uint8_t>& rom
         if (got->first != g.crc && !frame_not_checked().count(g.id))
             return finish("frame " + std::to_string(want) + " has CRC " + hex(got->first, 8) + ", MesenCE's " +
                           hex(g.crc, 8));
+        const uint32_t sound = gb.sound_crc();
+        r.audio_crc32 = sound;
+        if (audio && (audio->frames != want || audio->crc != sound))
+            return finish("the sound to frame " + std::to_string(want) + " has CRC " + hex(sound, 8) +
+                          ", the sim's " + hex(audio->crc, 8) + " (to frame " + std::to_string(audio->frames) + ")");
         return finish("");
     } catch (const shell::StatusError& e) {
         return finish(e.what());

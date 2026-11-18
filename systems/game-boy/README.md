@@ -2,7 +2,7 @@
 
 The Game Boy (DMG): the SM83 (`cpu/sm83`) on the console's memory map, with its boot ROM, video RAM, work RAM, OAM, high RAM, timer, serial port, joypad, OAM DMA and interrupt registers, and the cartridge outside the core.
 
-Module `gameboy`. **In progress** (G3 of the rig's Game Boy roadmap): it draws its picture with the PPU (`gb_ppu`), a pixel at a time; the sound is, until G5, its registers only (`gb_apu_regs`), so nothing is heard yet; the cartridge is a plain 32 KB ROM in the tests, with no MBC. It runs from power-up through [SameBoy](https://github.com/LIJI32/SameBoy)'s open DMG boot ROM, and runs blargg's CPU and timing ROMs, Mooneye's CPU, timer, interrupt, OAM DMA and PPU tests and dmg-acid2 to MesenCE's result and frame in the sim (below).
+Module `gameboy`. **In progress** (G5 of the rig's Game Boy roadmap): it draws its picture with the PPU (`gb_ppu`), a pixel at a time, and makes its sound with the APU ([`audio/apu-gb`](../../components/audio/apu-gb/)); the cartridge is a plain 32 KB ROM in the tests, with no MBC. It runs from power-up through [SameBoy](https://github.com/LIJI32/SameBoy)'s open DMG boot ROM, and runs blargg's CPU and timing ROMs, Mooneye's CPU, timer, interrupt, OAM DMA and PPU tests and dmg-acid2 to MesenCE's result and frame in the sim (below).
 
 ## Timing
 
@@ -61,9 +61,10 @@ The cartridge and work RAM share the external bus; video RAM has its own.
   - Video RAM reads $FF and takes no writes in mode 3; OAM in modes 2 and 3 (on the DMG, from just before mode 2).
   - A write to SCX, SCY, LCDC, the palettes, LYC, WY, WX or STAT lands at the dot SameBoy's access conflicts put it at, which Mooneye's lcdon tests pin down.
   - It reads video RAM and OAM through ports of their own (OAM 16 bits wide).
-- **Sound, for now (`gb_apu_regs`):** its registers only.
-  - They read back with the DMG's unreadable bits set, and NR52's power bit clears them.
-  - The wave RAM reads and writes.
+- **Sound ([`audio/apu-gb`](../../components/audio/apu-gb/)):** the four channels and their registers, the DMG's.
+  - Its 2 MHz ticks are each M-cycle's first and third T-cycles, so the CPU's reads (in the last) and writes (at its end) come between them.
+  - Its frame sequencer steps as the system counter's bit 12 falls (`gb_timer`'s `fall12`, a DIV write's too), and its envelopes reload as the bit rises (`rise12`).
+  - Its two mixes come out at each M-cycle's end (`aud_l`, `aud_r`).
 
 ## Ports
 
@@ -83,6 +84,7 @@ The cartridge and work RAM share the external bus; video RAM has its own.
 | `lcdc` | out | 8 | LCDC |
 | `pix_we`, `pix_x`, `pix_y`, `pix_shade` | out | 1, 8, 8, 2 | A pixel of the picture, shade 0 (white) to 3 |
 | `frame_end` | out | 1 | VBlank starts: the frame is out |
+| `aud_l`, `aud_r` | out | 10 | The APU's mixes, signed (-480 to 480), held from an M-cycle's end |
 
 ## gb_sys, under the test shell
 
@@ -104,7 +106,9 @@ The cartridge and work RAM share the external bus; video RAM has its own.
 | `0x04000000-0x040007FF` | The serial port's bytes: byte n at n mod 2,048 |
 | `0x05000000-0x050059FF` | The frame buffer: y × 160 + x, a shade (0 white to 3) a byte |
 
-**HDMI (`VIDEO`, `gb_video`):** the picture at 720p, each pixel 5 display pixels each way (800 × 720, from x = 240), its shades grey (0 white, 1 `$AA`, 2 `$55`, 3 black); DVI only, until the APU (G5).
+**HDMI (`VIDEO`, `gb_video`):** the picture at 720p, each pixel 5 display pixels each way (800 × 720, from x = 240), its shades grey (0 white, 1 `$AA`, 2 `$55`, 3 black), and the sound: each mix through `audio/resampler` to 48 kHz (800 samples a frame of 17,556 M-cycles, against the 60 Hz display the system keeps pace with) and out in HDMI's audio packets, as the NES's. The video CRC counts the packets' symbols as 0, since which line's packet carries a sample depends on when it crossed to the pixel clock.
+
+**Sound CRC:** register `30` is the CRC-32 of the APU's two mixes at each M-cycle's end since reset, each as a 16-bit little-endian word, left then right (`gb_roms_test` takes it the same way); with `VIDEO`, registers `48` and `4C` are the CRC and count of the sample pairs sent to HDMI.
 - **What it shows:** the frame buffer itself, through a second port on the pixel clock, not a ring of lines as the 2600's and NES's: the Game Boy can turn its LCD off and draw nothing while its frames go on, and then the screen is the buffer as the PPU last left it, as the golden frames are.
 - **Keeping pace:** with pacing on (register `34`), the system waits at each frame's end until the display asks for the next, at the start of its line 690. A frame starts as VBlank does, so its line y is whole 11 + y lines after the request; at 2% fast a line takes 4.8 display lines, so line 0 is whole 7 display lines before the display shows it, and each line after comes a little sooner than its turn.
 - **Checks:** the display checks each line as it starts showing it: a count of lines whole, from the T-cycles, must have reached it, or it counts in `late`. A display frame whose system wasn't waiting at its request (stopped, or late) is drawn black, so the last lit picture a capture sees is the frame the system stopped on.
@@ -128,36 +132,41 @@ The cartridge and work RAM share the external bus; video RAM has its own.
 | `29` | 1 | Bit 0: the boot ROM is mapped (read-only) |
 | `2A` | 2 | The CPU's PC (read-only) |
 | `2C` | 1 | The room for ROM, log2 (read-only) |
+| `30` | 4 | The sound's CRC since reset (read-only) |
 | `34` | 1 | With `VIDEO`: bit 0 keep pace with the display; write bit 1 to take the video CRC |
 | `36` | 1 | Bit 0: the video CRC's display frame showed its frame whole (read-only) |
 | `38` | 4 | The video CRC is of the display frame showing frame this + 1 |
 | `3C` | 4 | The video CRC (read-only) |
 | `40` | 2 | Display frames whose frame started on request (read-only) |
 | `42` | 2 | Lines late (read-only) |
+| `44` | 4 | Cartridge RAM's first 4 bytes as the system last wrote them, `$A000` in the low byte, `$FF` from reset (read-only): where blargg's newer ROMs report |
+| `48` | 4 | With `VIDEO`: the CRC-32 of the sample pairs sent to HDMI, left then right, each 16-bit little-endian (read-only) |
+| `4C` | 4 | With `VIDEO`: how many (read-only) |
 
 ## Tests
 
-`gb_roms_test` runs the test ROMs of `testroms/manifest-gb.toml` that the system has the parts for, through SameBoy's DMG boot ROM. These are the ROMs for the Game Boy (dmg) whose `needs` are among cpu, serial, timer, interrupts, boot, ppu and oam dma.
+`gb_roms_test` runs the test ROMs of `testroms/manifest-gb.toml` that the system has the parts for, through SameBoy's DMG boot ROM. These are the ROMs for the Game Boy (dmg) whose `needs` are among cpu, serial, timer, interrupts, boot, ppu, oam dma, apu and cart ram (the 8 KB of cartridge RAM, which the system leaves enabled: blargg's newer ROMs, MBC1 cartridges of 32 KB, need only that of their MBC1).
 
-- **Results:** a ROM with a result of its own (blargg's text over the serial port, or Mooneye's bytes) must end with MesenCE's (`harness/golden/gb_frames_crc32.txt`) within twice MesenCE's frames.
+- **Results:** a ROM with a result of its own (blargg's text over the serial port or his code in cartridge RAM, or Mooneye's bytes) must end with MesenCE's (`harness/golden/gb_frames_crc32.txt`) within twice MesenCE's frames.
 - **Frames:** its frame 30 frames after the result must be MesenCE's too, by CRC (2 bytes a pixel, the shade then 0, row by row, as `tools/mesen/gb_frames.py` takes it). A frame check (dmg-acid2) has its frame at the number the list gives. A frame ends as VBlank starts, or every 70,224 T-cycles while the LCD is off.
 - **Expected fails:** MesenCE fails three Mooneye tests through SameBoy's boot ROM, which takes a different time from Nintendo's (`boot_div`, `boot_hwio` and `serial-boot_sclk_align`). The system must fail them too.
 - **One frame not compared:** `serial-boot_sclk_align`'s fail screen shows counts that depend on the serial clock's phase from power-up, which nothing settles for this boot ROM. Ours differ from MesenCE's, and SameBoy's from ours by one (its DIV runs 4 T-cycles ahead).
-- **Options:** `RS_GB_ONLY=<id>,...` runs some of them, `RS_GB_JOBS=<n>` sets the threads (default up to 6), `RS_GB_TRACE=1` prints each opcode fetch and serial byte, and `RS_GB_DUMP=<dir>` writes each ROM's checked frame there as a PGM.
+- **Sound:** the sound's CRC to the checked frame (as register `30` takes it) must be `harness/golden/gb_audio_crc32.txt`'s, which `RS_GB_AUDIO_OUT=<file>` writes instead, after an intended change to the sound. MesenCE has no equivalent: the sound's second opinion is SameBoy's, M-cycle by M-cycle (`audio/apu-gb`'s README).
+- **Options:** `RS_GB_ONLY=<id>,...` runs some of them, `RS_GB_JOBS=<n>` sets the threads (default up to 6), `RS_GB_TRACE=1` prints each opcode fetch and serial byte, `RS_GB_DUMP=<dir>` writes each ROM's checked frame there as a PGM, and `RS_GB_AUDIO_DUMP=<dir>` the mixes at each M-cycle as `<id>.mix`.
 
-`harness`'s `harness_test` also runs the 20K's build with HDMI (`make_gb_hdmi_sim`): a receiver decodes every pixel clock, and the display frame showing dmg-acid2's frame 300 and `ei_sequence`'s pass screen must show it, with the video CRC of `harness/golden/gb_hdmi_crc32.txt`; and a frame must take at most 98.7% of a display frame.
+`harness`'s `harness_test` also runs the 20K's build with HDMI (`make_gb_hdmi_sim`): a receiver decodes every pixel clock as a sink does, and the display frame showing dmg-acid2's frame 300 and `ei_sequence`'s pass screen must show it, with the video CRC of `harness/golden/gb_hdmi_crc32.txt`, and every sample pair `gb_sys` sent must arrive in order; and a frame must take at most 98.7% of a display frame.
 
-`harness`'s `harness_test` runs three of them through `gb_sys`'s shell in the sim, as a board will (`rig::gb::rom_test`): `ei_sequence` (Mooneye's bytes), `instr_timing` (blargg's text) and dmg-acid2 (a frame). The host steps the system a frame at a time, reading the serial port's bytes at each frame's end as `gb_roms_test` does, until the result; then it runs to the frame 30 on and checks the CRC the system took.
+`harness`'s `harness_test` runs four of them through `gb_sys`'s shell in the sim, as a board will (`rig::gb::rom_test`), each with its sound's CRC: `ei_sequence` (Mooneye's bytes), `instr_timing` (blargg's text), `dmg_sound-01` (blargg's code in cartridge RAM) and dmg-acid2 (a frame). It also runs `dmg_sound-10` then `dmg_sound-11` through one `gb_sys`, as a board runs ROM after ROM: the second's sound must be as if it ran alone (wave RAM, which powering the APU off leaves alone, clears on reset). The host steps the system a frame at a time, reading the serial port's bytes at each frame's end as `gb_roms_test` does, until the result; then it runs to the frame 30 on and checks the CRC the system took.
 
 ## Status
 
-- **Passing:** 83 test ROMs end as they do in MesenCE, with its frame (one frame not compared, above).
-  - blargg's `cpu_instrs` (all 11), `instr_timing` and `mem_timing` (all 3).
+- **Passing:** 98 test ROMs end as they do in MesenCE, with its frame (one frame not compared, above), and with the sim's sound.
+  - blargg's `cpu_instrs` (all 11), `instr_timing`, `mem_timing` and `mem_timing-2` (all 3 of each), and `dmg_sound` (all 12).
   - Mooneye's CPU, interrupt, HALT, EI and DI tests, its per-instruction timing tests, all 13 of its timer tests, `bits` and `boot_regs`.
   - Mooneye's 12 PPU tests and 6 OAM DMA tests, `di_timing` and `halt_ime1_timing2`.
   - dmg-acid2.
 - **Gaps:**
-  - The sound (G5).
+  - The sound's analogue side (`audio/apu-gb`'s README lists what it leaves out), and the Color's sound registers (G7).
   - MBCs and cartridge RAM (G6), and with MBC1, blargg's `oam_bug` ROMs: the OAM bug (`cpu/sm83`'s README).
   - The PPU's rarer edges: the window's pixel-insertion glitch, WX=166, writes to LCDC's object bit during an object's fetch, and OAM DMA's effect on the OAM scan beyond its bus.
 

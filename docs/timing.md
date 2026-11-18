@@ -11,6 +11,7 @@ How to read it:
 | Module | Component | Tang Nano 20K (GW2A-18C) | Tang Console 138K (GW5AST-138C) | PYNQ-Z2 (XC7Z020) |
 | --- | --- | --- | --- | --- |
 | `apu_2a03` | `components/audio/apu-2a03` | 107 MHz, 2995 LUTs | 120 MHz, 2854 LUTs | 89 MHz, 2183 LUTs |
+| `apu_gb` | `components/audio/apu-gb` | 118 MHz, 2292 LUTs, 2 DSP | 163 MHz, 2303 LUTs | 97 MHz, 1770 LUTs, 2 DSP |
 | `apu_mixer` | `components/audio/apu-2a03` | 216 MHz, 143 LUTs, 1 BRAM | 230 MHz, 131 LUTs, 1 BRAM | 212 MHz, 196 LUTs |
 | `axi_bridge` | `components/memory/axi-bridge` | 613 MHz, 144 LUTs | 239 MHz, 146 LUTs | 265 MHz, 111 LUTs |
 | `cdc_sync` | `components/common/cdc` | 3759 MHz, 0 LUTs | 3759 MHz, 0 LUTs | — |
