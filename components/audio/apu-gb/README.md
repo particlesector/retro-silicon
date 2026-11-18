@@ -55,7 +55,7 @@ Each top module placed alone by `tools/timing/report.py` (see `docs/timing.md` f
 | --- | --- | --- | --- |
 | `apu_gb` | 118 MHz, 2292 LUTs, 2 DSP | 163 MHz, 2303 LUTs | 97 MHz, 1770 LUTs, 2 DSP |
 
-Measured with the mixes multiplied; they're now added (below), so the DSP blocks are gone and the counts above are a little low. The next `report.py` run will update them.
+Measured with the mixes multiplied; they're now added (see Board notes), so the DSP blocks are gone and the counts above are a little low. The next `report.py` run will update them.
 
 <!-- end of size and speed -->
 
