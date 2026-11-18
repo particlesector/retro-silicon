@@ -3,6 +3,7 @@
 
 #include <algorithm>
 #include <chrono>
+#include <cstdlib>
 #include <cstdio>
 #include <fstream>
 #include <sstream>
@@ -424,6 +425,12 @@ TestResult rom_test(Link& link, const Golden& g, const std::vector<uint8_t>& rom
                           hex(g.crc, 8));
         const uint32_t sound = gb.sound_crc();
         r.audio_crc32 = sound;
+        // RS_GB_SAV_OUT=<dir>: the cartridge RAM at the end, as <id>.sav (MesenCE's .srm format).
+        if (const char* dir = std::getenv("RS_GB_SAV_OUT")) {
+            const auto ram = gb.cart_ram(rom);
+            std::ofstream(std::string(dir) + "/" + g.id + ".sav", std::ios::binary)
+                .write(reinterpret_cast<const char*>(ram.data()), static_cast<std::streamsize>(ram.size()));
+        }
         if (g.savcrc) {
             Crc32 c;
             c.update(gb.cart_ram(rom));
