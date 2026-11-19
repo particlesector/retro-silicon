@@ -1,7 +1,8 @@
 # The Game Boy on HDMI at 720p (systems/game-boy's gb_video): id, the frame gb::rom_test checks
 # (where its result is, + 30, on this system; a frame check's own), and the CRC-32 of the TMDS
 # symbols of the display frame showing it, the HDMI data islands' packets as 0, from the sim of
-# the Tang Nano 20K's build (make_gb_hdmi_sim). Every board must give these.
+# the Tang Nano 20K's build (make_gb_hdmi_sim); a Color ROM's (cgb) from the Tang Console 138K's
+# (make_gb_console_sim), as the 20K is built without the Color. Every board that runs it must give these.
 dmg-acid2 300 0x8abb87bf
 mts-ei_sequence 126 0x0c5b481b
-cgb-acid2 300 0x00000000
+cgb-acid2 300 0x5ed60b7b
