@@ -1,6 +1,6 @@
 CAPI=2:
 # SPDX-License-Identifier: Apache-2.0
-name: retro-silicon:audio:apu-gb:0.1.0
+name: retro-silicon:audio:apu-gb:0.2.0
 description: The Game Boy's APU - two pulse channels (one with a sweep), the wave and noise channels, the frame sequencer and the mixer - the DMG's by default
 
 filesets:

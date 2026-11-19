@@ -57,7 +57,7 @@ namespace fs = std::filesystem;
 
 // What the system has so far (the manifest's `needs`; harness's rig::gb::system_has() is the same).
 const std::set<std::string> kHas = {"cpu",     "serial", "timer", "interrupts", "boot", "ppu", "oam dma",
-                                    "apu",     "cart ram", "mbc1", "mbc2",     "mbc3", "mbc5", "rtc"};
+                                    "apu",     "cart ram", "mbc1", "mbc2",     "mbc3", "mbc5", "rtc", "cgb"};
 // ROMs whose result is checked but not their frame, and why (harness's
 // rig::gb::frame_not_checked() has the same list).
 const std::map<std::string, std::string> kFrameNotChecked = {
@@ -112,7 +112,7 @@ std::string unquote(const std::string& v) {
 struct Manifest {
     std::vector<Rom> roms;
     std::map<std::string, std::string> sources_dir;  // [sources.X] -> X
-    std::string dmg_boot;                           // source/path
+    std::string dmg_boot, cgb_boot;                 // source/path
 };
 
 Manifest read_manifest(const std::string& file) {
@@ -124,6 +124,7 @@ Manifest read_manifest(const std::string& file) {
     auto flush = [&] {
         if (table == "rom" && !r.id.empty()) m.roms.push_back(r);
         if (table == "boot" && boot_id == "dmg") m.dmg_boot = boot_src + "/" + boot_path;
+        if (table == "boot" && boot_id == "cgb") m.cgb_boot = boot_src + "/" + boot_path;
         r = Rom{};
         boot_id.clear();
     };
@@ -232,7 +233,9 @@ std::optional<CartConfig> cart_config(const std::vector<uint8_t>& rom) {
     return c;
 }
 
-uint32_t crc32_frame(const std::vector<uint8_t>& shades) {
+// The frame as gb_frames.py takes MesenCE's: 2 bytes a pixel, little-endian (a shade, or the Color's
+// 15-bit colour).
+uint32_t crc32_frame(const std::vector<uint16_t>& pixels) {
     static const auto table = [] {
         std::array<uint32_t, 256> t{};
         for (uint32_t i = 0; i < 256; i++) {
@@ -243,9 +246,9 @@ uint32_t crc32_frame(const std::vector<uint8_t>& shades) {
         return t;
     }();
     uint32_t c = 0xFFFFFFFFu;
-    for (uint8_t v : shades) {
+    for (uint16_t v : pixels) {
         c = table[(c ^ v) & 0xFF] ^ (c >> 8);
-        c = table[c & 0xFF] ^ (c >> 8);
+        c = table[(c ^ (v >> 8)) & 0xFF] ^ (c >> 8);
     }
     return ~c;
 }
@@ -270,7 +273,7 @@ struct Outcome {
     long frames = 0;     // frames ended at the checked frame
     uint32_t crc = 0;    // its CRC
     uint32_t audio = 0;  // the sound's CRC to its end
-    std::vector<uint8_t> frame;
+    std::vector<uint16_t> frame;
     std::vector<uint8_t> ram;  // the cartridge's RAM at the end
 };
 
@@ -295,7 +298,7 @@ Outcome run(const Rom& rom, const std::vector<uint8_t>& image, const std::vector
     // The cartridge RAM's first bytes as the system wrote them, where blargg's newer ROMs report.
     std::array<uint8_t, 0x2000> cram{};
 
-    std::vector<uint8_t> screen(kW * kH, 0);
+    std::vector<uint16_t> screen(kW * kH, 0);
     bool frame_ended = false;
     Crc audio;
     auto tick = [&](bool ce) {
@@ -305,7 +308,7 @@ Outcome run(const Rom& rom, const std::vector<uint8_t>& image, const std::vector
         const uint16_t a = m.cart_addr;
         if (m.cart_wr && a >= 0xA000 && a < 0xC000) cram[a & 0x1FFF] = m.cart_wdata;
         const uint32_t ra = m.rom_addr;
-        if (ce && m.pix_we && m.pix_x < kW && m.pix_y < kH) screen[m.pix_y * kW + m.pix_x] = m.pix_shade;
+        if (m.pix_we && m.pix_x < kW && m.pix_y < kH) screen[m.pix_y * kW + m.pix_x] = m.pix_color;
         if (ce && m.frame_end) frame_ended = true;
         if (ce && m.m_end) {
             const uint16_t l = static_cast<uint16_t>(static_cast<int16_t>(m.aud_l << 6) >> 6);
@@ -325,6 +328,7 @@ Outcome run(const Rom& rom, const std::vector<uint8_t>& image, const std::vector
         m.rom_q = cart[ra & (cart.size() - 1)];  // a clock after its address, as block RAM gives it
     };
     m.rst = 1;
+    m.cgb_hw = rom.model == "cgb";
     m.keys = keys_at(rom.input, 0);
     m.mbc = cc.mbc;
     m.rtc = cc.rtc;
@@ -351,7 +355,7 @@ Outcome run(const Rom& rom, const std::vector<uint8_t>& image, const std::vector
     m.sh_rtc = 0;
     for (size_t i = 0; i < boot.size(); i++) {
         m.boot_we = 1;
-        m.boot_addr = static_cast<uint8_t>(i);
+        m.boot_addr = static_cast<uint16_t>(i);
         m.boot_wdata = boot[i];
         tick(false);
     }
@@ -435,10 +439,12 @@ TEST_CASE("Game Boy test ROMs end as they do in MesenCE") {
         }
     }
     std::map<std::string, std::pair<long, uint32_t>> audio_got;
-    const fs::path boot_path = roms_dir / man.dmg_boot;
+    const fs::path boot_path = roms_dir / man.dmg_boot, cgb_boot_path = roms_dir / man.cgb_boot;
     if (!fs::exists(boot_path)) SKIP(boot_path.string() << " not found: run testroms/fetch.py");
-    const auto boot = read_file(boot_path);
-    REQUIRE(boot.size() == 256);
+    if (!fs::exists(cgb_boot_path)) SKIP(cgb_boot_path.string() << " not found: run testroms/fetch.py");
+    const auto dmg_boot = read_file(boot_path), cgb_boot = read_file(cgb_boot_path);
+    REQUIRE(dmg_boot.size() == 256);
+    REQUIRE(cgb_boot.size() == 2304);
 
     std::set<std::string> only;
     if (const char* o = std::getenv("RS_GB_ONLY")) {
@@ -450,8 +456,8 @@ TEST_CASE("Game Boy test ROMs end as they do in MesenCE") {
 
     std::vector<Rom> todo;
     for (auto& r : man.roms) {
-        if (r.model != "dmg" || (r.check != "serial" && r.check != "mooneye" && r.check != "blargg" &&
-                                 r.check != "frame"))
+        if ((r.model != "dmg" && r.model != "cgb") ||
+            (r.check != "serial" && r.check != "mooneye" && r.check != "blargg" && r.check != "frame"))
             continue;
         if (!std::all_of(r.needs.begin(), r.needs.end(), [](auto& n) { return kHas.count(n) != 0; })) continue;
         if (!only.empty() && !only.count(r.id)) continue;
@@ -491,13 +497,19 @@ TEST_CASE("Game Boy test ROMs end as they do in MesenCE") {
             // A battery cartridge's RAM: from `sav`, or with `again` what a first run left.
             std::vector<uint8_t> ram_in;
             if (!r.sav.empty()) ram_in = read_file(roms_dir / r.sav);
+            const auto& boot = r.model == "cgb" ? cgb_boot : dmg_boot;
             if (r.again) ram_in = run(r, image, boot, false, nullptr, nullptr).ram;
             Outcome o = run(r, image, boot, trace, r.again || !r.sav.empty() ? &ram_in : nullptr, mix);
             if (mix) std::fclose(mix);
             if (dump) {
-                std::ofstream f(fs::path(dump) / (r.id + ".pgm"), std::ios::binary);
-                f << "P5\n" << kW << " " << kH << "\n255\n";
-                for (uint8_t v : o.frame) f.put(static_cast<char>(255 - v * 85));
+                // A PPM: the Game Boy's shades as greys, the Color's 15-bit colours scaled to 8 bits.
+                std::ofstream f(fs::path(dump) / (r.id + ".ppm"), std::ios::binary);
+                f << "P6\n" << kW << " " << kH << "\n255\n";
+                for (uint16_t v : o.frame)
+                    for (int ch = 0; ch < 3; ch++) {
+                        const int c5 = (v >> (5 * ch)) & 0x1F;
+                        f.put(static_cast<char>(r.model == "cgb" ? (c5 << 3) | (c5 >> 2) : 255 - (v & 3) * 85));
+                    }
             }
             std::lock_guard<std::mutex> g(mu);
             char crcs[64];

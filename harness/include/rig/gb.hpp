@@ -20,9 +20,9 @@ namespace rig::gb {
 constexpr uint32_t kCart = 0x00000000;      // the cartridge's ROM, up to 2^(kRomRoom) bytes
 constexpr uint32_t kRegs = 0x01000000;
 constexpr uint32_t kCartRam = 0x02000000;   // the cartridge's RAM, up to 2^(kRamRoom) bytes
-constexpr uint32_t kBoot = 0x03000000;      // 256 bytes
+constexpr uint32_t kBoot = 0x03000000;      // 256 bytes, or the Color's 2,304
 constexpr uint32_t kSerial = 0x04000000;    // the serial port's bytes: byte n at n mod kSerialSize
-constexpr uint32_t kFrameBuffer = 0x05000000;  // y x 160 + x, a shade a byte
+constexpr uint32_t kFrameBuffer = 0x05000000;  // y x 160 + x, 2 bytes a pixel: a shade, or the Color's colour
 constexpr uint32_t kClock = 0x06000000;     // the cartridge's clock (MBC3's): gb_cart's 13 shell bytes
 constexpr uint32_t kClockSize = 13;
 constexpr uint32_t kSerialSize = 2048;
@@ -85,6 +85,10 @@ struct Video {
 // The boot ROM gb_frames.py runs through, SameBoy's for the Game Boy (testroms/manifest-gb.toml's
 // [[boot]] dmg), under the test-ROM directory.
 inline constexpr const char* kDmgBoot = "sameboy/build/bin/BootROMs/dmg_boot.bin";
+// ...and the Game Boy Color's (2,304 bytes: loading it makes the system a Color)
+inline constexpr const char* kCgbBoot = "sameboy/build/bin/BootROMs/cgb_boot.bin";
+// The boot ROM for a golden line's model (dmg or cgb)
+inline const char* boot_for(const std::string& model) { return model == "cgb" ? kCgbBoot : kDmgBoot; }
 
 // gb_sys through its test shell. Every call is an absolute register write or read.
 class Console {
@@ -96,11 +100,12 @@ public:
     // bytes), the cartridge's ROM (filled with $FF to its power-of-2 size), its RAM and its clock (0s,
     // as MesenCE's RAM starts), and checks they read back; an error message if they don't. A
     // cartridge whose ROM or RAM is bigger than the system's room gives kNoRoom, one whose controller
-    // gb_cart hasn't got kNoMbc.
+    // gb_cart hasn't got kNoMbc, and the Color's boot ROM on a system built without the Color kNoColor.
     std::optional<std::string> load(const std::vector<uint8_t>& rom, const std::vector<uint8_t>& boot,
                                     const std::vector<uint8_t>* ram = nullptr);
     static constexpr const char* kNoRoom = "the system has no room for this cartridge";
     static constexpr const char* kNoMbc = "the system hasn't got this cartridge's controller";
+    static constexpr const char* kNoColor = "the system is built without the Game Boy Color";
     uint32_t waits();      // clocks the system waited on the ROM since reset
     // The cartridge's RAM as `rom`'s header sizes it, read with the system held in reset (which this
     // does).
@@ -118,7 +123,7 @@ public:
     uint32_t serial_count();
     // The serial port's bytes from byte `from` (the last kSerialSize at most).
     std::vector<uint8_t> serial(uint32_t from);
-    std::vector<uint8_t> frame();  // the frame buffer: 160 x 144 shades
+    std::vector<uint16_t> frame();  // the frame buffer: 160 x 144 shades, or the Color's 15-bit colours
     uint32_t sound_crc();
     uint32_t cart_head();  // cartridge RAM's first 4 bytes, $A000 in the low byte
 

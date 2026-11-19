@@ -16,18 +16,17 @@
 // down, 15 going up), when it stops until the channel is triggered again. A
 // register write (`wr`) lands on its own clock, never with `t2` or `fs`.
 //
-// With CGB clear (the default) it's the DMG's: the length counters take
+// With `cgb` low it's the DMG's (the Game Boy Color's otherwise, picked at run time): the length counters take
 // writes while the APU is off (and keep them through power-on); wave RAM is
 // reachable while the wave channel plays only in the tick it read a byte
 // (else reads give $FF and writes are lost); retriggering the wave channel
 // as it reads copies the bytes it was about to read over wave RAM's first;
 // and a pulse channel's timer runs on after its length or sweep stops it,
 // until its DAC goes off.
-module apu_gb #(
-    parameter bit CGB = 1'b0
-) (
+module apu_gb (
     input  logic        clk,
     input  logic        rst,
+    input  logic        cgb,        // the Game Boy Color's APU (steady from reset)
     input  logic        t2,         // a 2 MHz tick
     input  logic        fs,         // the frame sequencer's clock: the system counter's bit 12 falls
     input  logic        fs_rise,    // ...and rises
@@ -172,7 +171,7 @@ module apu_gb #(
     wire        ns_fb   = ~(ns_lfsr[0] ^ ns_lfsr[1]);
     wire [5:0]  ns_cde  = ns_cd == 0 ? ns_div(nr43[2:0]) : ns_cd;   // a count of 0 reloads first
     wire        ns_dac  = nr42[7:3] != 0;
-    wire        ns_late = !CGB && al[1];                         // a trigger now waits 6 ticks
+    wire        ns_late = !cgb && al[1];                         // a trigger now waits 6 ticks
 
     // A trigger's start (on the 1 MHz phase): the counter's count to its next step, depending on the
     // divisor and on whether it was counting already; a count about to step steps at once.
@@ -279,7 +278,7 @@ module apu_gb #(
         endcase
         if (rsel >= 6'h20) begin
             if (!wv_act) rdata = wave[rsel[3:0]];
-            else if (CGB || wv_just) rdata = wave[wv_pos[4:1]];
+            else if (cgb || wv_just) rdata = wave[wv_pos[4:1]];
         end
     end
 
@@ -370,7 +369,7 @@ module apu_gb #(
                 al <= al + 2'd1;
                 for (int i = 0; i < 2; i++) begin
                     sq_just[i] <= 1'b0;
-                    if (sq_act[i] || (!CGB && sq_run[i])) begin
+                    if (sq_act[i] || (!cgb && sq_run[i])) begin
                         if (sq_cd[i] == 0) begin
                             sq_cd[i]   <= sq_reload(i == 0 ? sq_f0 : sq_f1);
                             sq_pos[i]  <= sq_pos[i] + 3'd1;
@@ -391,15 +390,15 @@ module apu_gb #(
                     end else
                         wv_cd <= wv_cd - 12'd1;
                 end
-                if (ns_on || (!CGB && ns_bg)) begin
+                if (ns_on || (!cgb && ns_bg)) begin
                     if (ns_cde == 6'd1) begin
                         ns_cd  <= ns_div(nr43[2:0]);
                         ns_cnt <= ns_cnt1;
                         ns_did <= 1'b1;
                         if (ns_act && ns_bit && !ns_bit1) ns_fbl <= ns_fb;
                         if (ns_act && !ns_bit && ns_bit1) begin
-                            ns_lfsr <= {CGB ? ns_fb : ns_fbl, ns_lfsr[14:1]};
-                            if (nr43[3]) ns_lfsr[6] <= CGB ? ns_fb : ns_fbl;
+                            ns_lfsr <= {cgb ? ns_fb : ns_fbl, ns_lfsr[14:1]};
+                            if (nr43[3]) ns_lfsr[6] <= cgb ? ns_fb : ns_fbl;
                         end
                     end else
                         ns_cd <= ns_cde - 6'd1;
@@ -490,7 +489,7 @@ module apu_gb #(
             if (wr) begin
                 if (sel >= 6'h20) begin
                     if (!wv_act) wave[sel[3:0]] <= wdata;
-                    else if (CGB || wv_just) wave[wv_pos[4:1]] <= wdata;
+                    else if (cgb || wv_just) wave[wv_pos[4:1]] <= wdata;
                 end else if (sel == 6'h16) begin
                     if (wdata[7] && !on) begin
                         // power on: the frame sequencer from step 0, skipping its next clock
@@ -502,7 +501,7 @@ module apu_gb #(
                     end
                 end else if (!on) begin
                     // off: on the DMG, the length counters still take writes
-                    if (!CGB) case (sel)
+                    if (!cgb) case (sel)
                         6'h01: begin sq_len[0] <= 7'd64 - {1'b0, wdata[5:0]}; nr11 <= {2'b00, wdata[5:0]}; end
                         6'h06: begin sq_len[1] <= 7'd64 - {1'b0, wdata[5:0]}; nr21 <= {2'b00, wdata[5:0]}; end
                         6'h0B: wv_len <= 9'd256 - {1'b0, wdata};
@@ -572,7 +571,7 @@ module apu_gb #(
                         nr34 <= wdata;
                         if (wdata[7]) begin
                             // retriggered as it reads: wave RAM's first bytes take those it was about to read
-                            if (!CGB && wv_act && wv_cd == 0) begin
+                            if (!cgb && wv_act && wv_cd == 0) begin
                                 if (wv_off < 4'd4)
                                     wave[0] <= wave[wv_off];
                                 else
@@ -596,7 +595,7 @@ module apu_gb #(
                             if (ns_act && nr43[2:0] != 0 && ns_cd <= 6'd2) ns_cnt <= ns_cnt1;
                             ns_act <= 1'b0;
                             ns_on  <= 1'b0;
-                            if (!CGB) ns_bg <= 1'b0;
+                            if (!cgb) ns_bg <= 1'b0;
                         end
                     end
                     6'h12: nr43 <= wdata;

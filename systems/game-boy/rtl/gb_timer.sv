@@ -15,9 +15,13 @@
 // then TIMA takes TMA and `irq` pulses, unless the CPU wrote TIMA during
 // cycle A, which cancels both. In the next M-cycle (cycle B) a write to TIMA
 // is lost and a write to TMA goes to TIMA as well.
+//
+// In the Game Boy Color's double speed (`dbl`) the counter runs twice as fast with the CPU, and the
+// APU's frame sequencer follows bit 13 rather than 12, so it keeps its rate.
 module gb_timer (
     input  logic        clk,
     input  logic        rst,
+    input  logic        dbl,        // the Color's double speed
     input  logic        tick,       // the M-cycle's third T-cycle
     input  logic        m,          // its last: the CPU's writes land
     input  logic        wr_div,     // with m: the CPU writes these
@@ -31,7 +35,7 @@ module gb_timer (
     output logic [7:0]  tac,        // as read: bits 7-3 read 1
     output logic        irq,        // with tick: request the timer interrupt (at this edge)
     output logic        fall7,      // the counter's T-cycle bit 7 falls at this edge (the serial clock)
-    output logic        fall12,     // its bit 12 falls at this edge (the APU's frame sequencer)
+    output logic        fall12,     // its bit 12 (13 in double speed) falls at this edge (the APU's frame sequencer)
     output logic        rise12      // ...or rises (the APU's envelopes)
 );
     logic [2:0] tac_r;
@@ -62,8 +66,10 @@ module gb_timer (
     assign tac = {5'b11111, tac_r};
     assign irq = tick && ovf;
     assign fall7  = (tick || m) && counter[5] && !cnt_n[5];
-    assign fall12 = (tick || m) && counter[10] && !cnt_n[10];
-    assign rise12 = (tick || m) && !counter[10] && cnt_n[10];
+    wire fs_o = dbl ? counter[11] : counter[10];
+    wire fs_n = dbl ? cnt_n[11] : cnt_n[10];
+    assign fall12 = (tick || m) && fs_o && !fs_n;
+    assign rise12 = (tick || m) && !fs_o && fs_n;
 
     always_ff @(posedge clk) begin
         if (rst) begin

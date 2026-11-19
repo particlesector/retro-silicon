@@ -10,6 +10,7 @@ module gb_sdram #(
     parameter int          T_NUM        = 65_536,
     parameter int          T_DEN        = 421_875,
     parameter bit          VIDEO        = 1'b0,
+    parameter bit          CGB          = 1'b1,
     parameter int          ROM_LOG2     = 23,
     parameter int          CRAM_LOG2    = 15,
     parameter int          FREQ_MHZ     = 27,
@@ -60,7 +61,7 @@ module gb_sdram #(
             $error("gb_sdram: the SDRAM is smaller than the room for ROM");
 
     gb_sys #(.CLKS_PER_BIT(CLKS_PER_BIT), .IDLE_CLKS(IDLE_CLKS), .T_NUM(T_NUM), .T_DEN(T_DEN), .VIDEO(VIDEO),
-             .ROM_LOG2(ROM_LOG2), .ROM_EXT(1'b1), .CRAM_LOG2(CRAM_LOG2), .BUILD_ID(BUILD_ID)) u_sys (
+             .CGB(CGB), .ROM_LOG2(ROM_LOG2), .ROM_EXT(1'b1), .CRAM_LOG2(CRAM_LOG2), .BUILD_ID(BUILD_ID)) u_sys (
         .clk, .uart_rx, .uart_tx, .led, .pclk, .tmds0, .tmds1, .tmds2,
         .mem_req(req), .mem_we(we), .mem_addr(addr), .mem_wdata(wdata), .mem_ack(ack), .mem_rdata(rdata));
 

@@ -1,8 +1,8 @@
 # Game Boy
 
-The Game Boy (DMG): the SM83 (`cpu/sm83`) on the console's memory map, with its boot ROM, video RAM, work RAM, OAM, high RAM, timer, serial port, joypad, OAM DMA and interrupt registers, and the cartridge outside the core; and the cartridge's memory controllers (`gb_cart`).
+The Game Boy (DMG) and the Game Boy Color (CGB): the SM83 (`cpu/sm83`) on the console's memory map, with its boot ROM, video RAM, work RAM, OAM, high RAM, timer, serial port, joypad, OAM DMA and interrupt registers, and the cartridge outside the core; and the cartridge's memory controllers (`gb_cart`).
 
-Module `gameboy`. **In progress** (G6 of the rig's Game Boy roadmap): it draws its picture with the PPU (`gb_ppu`), a pixel at a time, and makes its sound with the APU ([`audio/apu-gb`](../../components/audio/apu-gb/)); `gb_cart` is the cartridge's MBC (none, MBC1 and its multicart wiring, MBC2, MBC3 with its clock, MBC5) and RAM. It runs from power-up through [SameBoy](https://github.com/LIJI32/SameBoy)'s open DMG boot ROM, and runs blargg's CPU, timing and sound ROMs, Mooneye's CPU, timer, interrupt, OAM DMA, PPU and MBC tests, rtc3test and dmg-acid2 to MesenCE's result and frame in the sim (below).
+Module `gameboy`. **In progress** (G7 of the rig's Game Boy roadmap): it draws its picture with the PPU (`gb_ppu`), a pixel at a time, and makes its sound with the APU ([`audio/apu-gb`](../../components/audio/apu-gb/)); `gb_cart` is the cartridge's MBC (none, MBC1 and its multicart wiring, MBC2, MBC3 with its clock, MBC5) and RAM. Built with `CGB` (the default), it is a Game Boy Color too, picked at reset (below). It runs from power-up through [SameBoy](https://github.com/LIJI32/SameBoy)'s open boot ROMs, and runs blargg's CPU, timing and sound ROMs, Mooneye's CPU, timer, interrupt, OAM DMA, PPU, MBC and Color tests, rtc3test, dmg-acid2 and cgb-acid2 to MesenCE's result and frame in the sim (below).
 
 ## Timing
 
@@ -24,10 +24,10 @@ The CPU decides on an interrupt at an instruction's end, from IF as it is then. 
 
 | Address | Holds |
 | --- | --- |
-| `$0000-$00FF` | The boot ROM, until a non-zero write to `$FF50` (`boot_*` loads it) |
+| `$0000-$00FF` | The boot ROM, until a non-zero write to `$FF50` (`boot_*` loads it); the Color's at `$0200-$08FF` too |
 | `$0000-$7FFF`, `$A000-$BFFF` | The cartridge (`cart_*`) |
-| `$8000-$9FFF` | Video RAM, 8 KB |
-| `$C000-$DFFF` | Work RAM, 8 KB, echoed at `$E000-$FDFF` |
+| `$8000-$9FFF` | Video RAM, 8 KB (the Color's: 2 banks, VBK) |
+| `$C000-$DFFF` | Work RAM, 8 KB, echoed at `$E000-$FDFF` (the Color's: `$D000-$DFFF` one of 7 more 4 KB banks, SVBK) |
 | `$FE00-$FE9F` | OAM; `$FEA0-$FEFF` read 0 |
 | `$FF00-$FF7F` | I/O; unused registers read `$FF` |
 | `$FF80-$FFFE` | High RAM |
@@ -61,7 +61,7 @@ The cartridge and work RAM share the external bus; video RAM has its own.
   - Video RAM reads $FF and takes no writes in mode 3; OAM in modes 2 and 3 (on the DMG, from just before mode 2).
   - A write to SCX, SCY, LCDC, the palettes, LYC, WY, WX or STAT lands at the dot SameBoy's access conflicts put it at, which Mooneye's lcdon tests pin down.
   - It reads video RAM and OAM through ports of their own (OAM 16 bits wide).
-- **Sound ([`audio/apu-gb`](../../components/audio/apu-gb/)):** the four channels and their registers, the DMG's.
+- **Sound ([`audio/apu-gb`](../../components/audio/apu-gb/)):** the four channels and their registers, the DMG's or the Color's (its `cgb`).
   - Its 2 MHz ticks are each M-cycle's first and third T-cycles, so the CPU's reads (in the last) and writes (at its end) come between them.
   - Its frame sequencer steps as the system counter's bit 12 falls (`gb_timer`'s `fall12`, a DIV write's too), and its envelopes reload as the bit rises (`rise12`).
   - Its two mixes come out at each M-cycle's end (`aud_l`, `aud_r`).
@@ -71,19 +71,21 @@ The cartridge and work RAM share the external bus; video RAM has its own.
 | Port | Dir | Width | Meaning |
 | --- | --- | --- | --- |
 | `clk`, `rst`, `ce` | in | 1 | Clock, synchronous reset, one T-cycle |
-| `cart_addr` | out | 16 | The external bus's address: the CPU's, or the DMA's while it copies from there |
-| `cart_rd` | out | 1 | This M-cycle reads the cartridge |
+| `cgb_hw_in` | in | 1 | The Game Boy Color (with `CGB`), steady from reset |
+| `cart_addr` | out | 16 | The external bus's address: the CPU's, or a DMA's while it copies from there |
+| `cart_rd` | out | 1 | This M-cycle (or the Color's DMA to video RAM) reads the cartridge |
 | `cart_wr`, `cart_wdata` | out | 1, 8 | Write `cart_wdata` at `cart_addr` at this clock |
 | `cart_rdata` | in | 8 | The cartridge's data, needed a clock before the M-cycle's last T-cycle ends |
-| `boot_we`, `boot_addr`, `boot_wdata` | in | 1, 8, 8 | Write the boot ROM |
+| `boot_we`, `boot_addr`, `boot_wdata` | in | 1, 12, 8 | Write the boot ROM (256 bytes, the Color's 2,304) |
+| `boot_q` | out | 8 | In reset, the boot ROM's byte at `boot_addr`, a clock later |
 | `keys` | in | 8 | Keys down (1 pressed): Start, Select, B, A, down, up, left, right (bit 7 to 0) |
 | `ser_tx`, `ser_tx_valid` | out | 8, 1 | A serial transfer of `ser_tx` starts |
 | `m_end` | out | 1 | The clock that ends an M-cycle |
-| `m_last` | out | 1 | The next T-cycle is the M-cycle's last (from the phase alone, for a hold on `ce`) |
+| `m_last` | out | 1 | The next T-cycle ends an access to the external bus: the M-cycle's last, or a byte of the Color's DMA to video RAM (from registers, for a hold on `ce`) |
 | `cpu_sync`, `cpu_pc` | out | 1, 16 | This M-cycle fetches an opcode, at this PC (for traces) |
 | `boot_on` | out | 1 | The boot ROM is mapped |
 | `lcdc` | out | 8 | LCDC |
-| `pix_we`, `pix_x`, `pix_y`, `pix_shade` | out | 1, 8, 8, 2 | A pixel of the picture, shade 0 (white) to 3 |
+| `pix_we`, `pix_x`, `pix_y`, `pix_color` | out | 1, 8, 8, 15 | A pixel of the picture (a clock after its dot): the Color's 15-bit colour (red in bits 4-0), or the Game Boy's shade, 0 (white) to 3 |
 | `frame_end` | out | 1 | VBlank starts: the frame is out |
 | `aud_l`, `aud_r` | out | 10 | The APU's mixes, signed (-480 to 480), held from an M-cycle's end |
 
@@ -106,6 +108,21 @@ Disabled RAM reads `$FF`. These are MesenCE's and SameBoy's behaviours, which ag
 
 **The shell's port**, while the system is held in reset (when it has the RAM's port): the RAM's bytes, or the clock's 13 bytes (0-4 the registers, 5-9 the latched copy, 10-12 the tick count and prescaler), a clock after their address.
 
+## The Game Boy Color
+
+With `CGB` set (the default), `cgb_hw` makes the system a Game Boy Color from reset; with it clear the Color isn't built at all (the Tang Nano 20K's Game Boy, which hasn't the block RAM for it: G7), and the memories are the Game Boy's. What the Color adds:
+
+- **Two modes.** Its boot ROM (SameBoy's, 2,304 bytes at `$0000-$00FF` and `$0200-$08FF`) reads the cartridge's header and writes KEY0 (`$FF4C`) before it unmaps itself: a Color game (header byte `$143` bit 7) runs in the Color's own mode, any other in its Game Boy mode, where the Color's registers mostly read `$FF` and the PPU colours the Game Boy's four shades through palettes the boot ROM chose. KEY0 can only be written while the boot ROM is mapped.
+- **Memory.** 32 KB of work RAM, `$D000-$DFFF` banked by SVBK (`$FF70`, 0 picks 1), and 16 KB of video RAM in two banks (VBK, `$FF4F`), which the PPU reads together, 16 bits at a time: a tile's number from bank 0 and its attributes from bank 1 in one access, as SameBoy says the hardware does.
+- **The PPU in the Color's mode.** A background or window tile's attributes give its palette (8), its bank, its flips and its priority over objects; an object's give its palette (8) and bank. LCDC bit 0 takes away the background's priority rather than the background, and objects overlap by OAM order (or by X, as the Game Boy's, with OPRI `$FF6C` bit 0, which the boot ROM sets for Game Boy games). The palettes' RAM (`$FF68-$FF6B`, 64 bytes each for the background and objects, with an index that can step itself) can't be reached in mode 3: reads give `$FF` and writes are lost, though the index still steps. Each pixel comes out as its 15-bit colour (`pix_color`) a clock after its dot, looked up in that RAM; on the Game Boy it is the shade.
+- **The DMA to video RAM** (`$FF51-$FF55`). Written with bit 7 clear, a general DMA copies its blocks of 16 bytes at once; with bit 7 set, one block each HBlank (or one at once with the LCD off), until the length runs out or a write with bit 7 clear stops it. Each block stops the CPU: it starts at an M-cycle's end, takes 4 T-cycles to set up (2 in double speed), then 2 a byte, so the CPU's next M-cycle waits for it. The source is read on the external bus (`$8000-$9FFF` and `$E000` and above read `$FF`), and an HBlank block waits while the CPU is halted. This is MesenCE's model of it, but for starting at the M-cycle's end, where MesenCE stops the CPU mid-M-cycle.
+- **Double speed** (KEY1, `$FF4D`, then STOP). The CPU, the timer, the serial port and OAM DMA run an M-cycle every 2 T-cycles (`phase` steps 1, 3), while the PPU, the APU and the DMA to video RAM keep their rate (dots); the APU's frame sequencer follows DIV's bit 13 instead of 12, so it keeps its rate too. The switch stops the CPU for 33,941 M-cycles at the old speed with DIV held at 0, as MesenCE times it (its own note says it's likely not exact; it matches its `speed_switch_timing_stat`), then the new speed starts at an M-cycle's end.
+- **The APU** in its Color form (`audio/apu-gb`'s `cgb`), and PCM12 and PCM34 (`$FF76`, `$FF77`), the channels' levels.
+- **Register writes' timing** follows SameBoy's map for the Color (its CGB-E): LCDC, SCX, SCY and WY land as the M-cycle ends (the Game Boy's land sooner), BGP, OBP0 and OBP1 2 T-cycles before, LYC and WX a T-cycle after; STAT's write has no all-ones T-cycle, but keeps its LYC interrupt's enable for one.
+- **The registers** read and write as SameBoy has them where MesenCE differs (Mooneye's `boot_hwio-C` and `unused_hwio-C`, whose expected results come from SameBoy and the hardware): VBK, BCPS and OCPS read on the Color in either mode; SC's fast-clock bit, KEY1, SVBK, HDMA5 and RP only in its own mode; `$FF72`, `$FF73` and `$FF75` are plain registers (`$FF75` bits 7 and 3-0 read 1), `$FF74` only in the Color's mode.
+
+Not here yet: the serial port's fast clock (SC bit 1 is kept and read back, but the clock's speed doesn't follow it), the infrared port beyond its register, the Color's timing differences in mode 3 (SameBoy's `cgb_wx_glitch`, the window's position on the Color, the tile-select glitch of LCDC bit 4), and the speed switch's exact length.
+
 ## gb_sys, under the test shell
 
 `gb_sys` puts the Game Boy behind `debug/test-shell`, as `systems/atari-2600`'s `a2600_sys` does the 2600, so the host (`harness`'s `rig::gb`) can run a test ROM on a board or in the sim and check it over the link.
@@ -115,8 +132,9 @@ Disabled RAM reads `$FF`. These are MesenCE's and SameBoy's behaviours, which ag
 - **Wrappers:** `gb_sdram` is `gb_sys` with its ROM in an SDRAM (`memory/sdram`; the Tang Nano 20K's chip, or with the geometry parameters the Tang Console 138K's module). `gb_axi` has it behind an AXI slave, through a read cache (`memory/cache`, prefetching the next line after a miss) and `memory/axi-bridge`, as `systems/nes`'s `nes_axi` has the NES's: the PYNQ-Z2's DDR3 through HP0.
 - **Boot ROM:** the host writes it, as it does the cartridge.
 - **T-cycles:** at `T_NUM`/`T_DEN` of the clock (the console's 4.194304 MHz from 27 MHz is 65,536/421,875), only while it runs. It stops between T-cycles, so a run stopped and started again is the same as one left to run, on any board and in the sim.
-- **Frames:** a frame ends as VBlank starts, or after 70,224 T-cycles without one (the LCD off), as `gb_roms_test` counts them. The frame buffer holds each pixel's shade as the PPU last drew it.
-- **Frame CRC:** when the system stops at a limit, it takes the CRC of the frame buffer (2 bytes a pixel, the shade then 0, as `gb_frames.py` takes MesenCE's), in about 23,000 clocks, before it runs again.
+- **Frames:** a frame ends as VBlank starts, or after 70,224 T-cycles without one (the LCD off), as `gb_roms_test` counts them. The frame buffer holds each pixel's shade, or the Color's 15-bit colour, as the PPU last drew it (2 bits a pixel without `CGB`).
+- **Frame CRC:** when the system stops at a limit, it takes the CRC of the frame buffer (2 bytes a pixel, little-endian: the shade then 0, or the colour, as `gb_frames.py` takes MesenCE's), in about 23,000 clocks, before it runs again.
+- **The Color:** with `CGB` (the default), register `50`'s bit 5 makes the system a Game Boy Color from the next reset, and register `2C`'s byte 2 reads 1.
 - **Serial port:** every byte the game sends is kept (the last 2,048), with a count, for blargg's and Mooneye's reports.
 
 | Address | What |
@@ -124,12 +142,12 @@ Disabled RAM reads `$FF`. These are MesenCE's and SameBoy's behaviours, which ag
 | `0x00000000-...` | The cartridge's ROM, 2^`ROM_LOG2` bytes (written and read only while the system is held in reset) |
 | `0x01000000-0x0100007F` | Registers, below |
 | `0x02000000-...` | The cartridge's RAM, 2^`CRAM_LOG2` bytes (written and read only while the system is held in reset) |
-| `0x03000000-0x030000FF` | The boot ROM |
+| `0x03000000-0x03000FFF` | The boot ROM: 256 bytes, or the Color's 2,304 (written and read while held in reset) |
 | `0x04000000-0x040007FF` | The serial port's bytes: byte n at n mod 2,048 |
-| `0x05000000-0x050059FF` | The frame buffer: y × 160 + x, a shade (0 white to 3) a byte |
+| `0x05000000-0x0500B3FF` | The frame buffer: 2 bytes a pixel at 2 × (y × 160 + x), little-endian, a shade (0 white to 3) or the Color's colour |
 | `0x06000000-0x0600000C` | The cartridge's clock (MBC3's): `gb_cart`'s 13 shell bytes (only while the system is held in reset) |
 
-**HDMI (`VIDEO`, `gb_video`):** the picture at 720p, each pixel 5 display pixels each way (800 × 720, from x = 240), its shades grey (0 white, 1 `$AA`, 2 `$55`, 3 black), and the sound: each mix through `audio/resampler` to 48 kHz (800 samples a frame of 17,556 M-cycles, against the 60 Hz display the system keeps pace with) and out in HDMI's audio packets, as the NES's. The video CRC counts the packets' symbols as 0, since which line's packet carries a sample depends on when it crossed to the pixel clock.
+**HDMI (`VIDEO`, `gb_video`):** the picture at 720p, each pixel 5 display pixels each way (800 × 720, from x = 240), its shades grey (0 white, 1 `$AA`, 2 `$55`, 3 black) or the Color's colours corrected as SameBoy's "modern balanced" colour correction does (`gb_color`, from `tools/gb/color_table.py`: each channel through the Color LCD's curve, green mixed with some blue), and the sound: each mix through `audio/resampler` to 48 kHz (800 samples a frame of 17,556 M-cycles, against the 60 Hz display the system keeps pace with) and out in HDMI's audio packets, as the NES's. The video CRC counts the packets' symbols as 0, since which line's packet carries a sample depends on when it crossed to the pixel clock.
 
 **Sound CRC:** register `30` is the CRC-32 of the APU's two mixes at each M-cycle's end since reset, each as a 16-bit little-endian word, left then right (`gb_roms_test` takes it the same way); with `VIDEO`, registers `48` and `4C` are the CRC and count of the sample pairs sent to HDMI.
 - **What it shows:** the frame buffer itself, through a second port on the pixel clock, not a ring of lines as the 2600's and NES's: the Game Boy can turn its LCD off and draw nothing while its frames go on, and then the screen is the buffer as the PPU last left it, as the golden frames are.
@@ -154,7 +172,7 @@ Disabled RAM reads `$FF`. These are MesenCE's and SameBoy's behaviours, which ag
 | `28` | 1 | LCDC (read-only) |
 | `29` | 1 | Bit 0: the boot ROM is mapped (read-only) |
 | `2A` | 2 | The CPU's PC (read-only) |
-| `2C` | 1 | The room for the cartridge's ROM, log2 (read-only) |
+| `2C` | 1 | The room for the cartridge's ROM, log2 (read-only); byte 2 (`2E`): 1 if the Color is built |
 | `2D` | 1 | ...and for its RAM (read-only) |
 | `30` | 4 | The sound's CRC since reset (read-only) |
 | `34` | 1 | With `VIDEO`: bit 0 keep pace with the display; write bit 1 to take the video CRC |
@@ -166,7 +184,7 @@ Disabled RAM reads `$FF`. These are MesenCE's and SameBoy's behaviours, which ag
 | `44` | 4 | Cartridge RAM's first 4 bytes as the system last wrote them, `$A000` in the low byte, `$FF` from reset (read-only): where blargg's newer ROMs report |
 | `48` | 4 | With `VIDEO`: the CRC-32 of the sample pairs sent to HDMI, left then right, each 16-bit little-endian (read-only) |
 | `4C` | 4 | With `VIDEO`: how many (read-only) |
-| `50` | 3 | The cartridge: `gb_cart`'s `mbc` (bits 2-0: 0 none, 1 MBC1, 2 MBC1M, 3 MBC2, 4 MBC3, 5 MBC5), `rtc` (3), `rumble` (4), `rom_log2` (12-8) and `ram_log2` (20-16: 0 none, 9 MBC2's). 32 KB of ROM and no MBC or RAM at power-up |
+| `50` | 3 | The cartridge: `gb_cart`'s `mbc` (bits 2-0: 0 none, 1 MBC1, 2 MBC1M, 3 MBC2, 4 MBC3, 5 MBC5), `rtc` (3), `rumble` (4), the Game Boy Color (5; with `CGB`), `rom_log2` (12-8) and `ram_log2` (20-16: 0 none, 9 MBC2's). 32 KB of ROM and no MBC or RAM at power-up |
 | `54` | 4 | With `ROM_EXT`: clocks the system has waited on the ROM since reset (read-only) |
 
 ## Tests
@@ -190,15 +208,17 @@ Disabled RAM reads `$FF`. These are MesenCE's and SameBoy's behaviours, which ag
 
 ## Status
 
-- **Passing:** 129 test ROMs end as they do in MesenCE, with its frame (one frame not compared, above), and with the sim's sound.
+- **Passing:** 148 test ROMs end as they do in MesenCE, with its frame (one frame not compared, above), and with the sim's sound: 129 on the Game Boy and 19 on the Color.
   - blargg's `cpu_instrs` (all 11), `instr_timing`, `mem_timing` and `mem_timing-2` (all 3 of each), and `dmg_sound` (all 12).
   - Mooneye's CPU, interrupt, HALT, EI and DI tests, its per-instruction timing tests, all 13 of its timer tests, `bits` and `boot_regs`.
   - Mooneye's 12 PPU tests and 6 OAM DMA tests, `di_timing` and `halt_ime1_timing2`.
   - Mooneye's 28 MBC tests (MBC1, its multicart wiring, MBC2 and MBC5, up to 8 MB of ROM and 32 KB of RAM), two of them run twice with their RAM's CRC MesenCE's.
   - rtc3test's three suites (MBC3's clock), each pass and timing as MesenCE shows it.
   - dmg-acid2.
+  - On the Color: cgb-acid2; Mooneye's `boot_regs-cgb`, `boot_div-cgbABCDE`, `boot_hwio-C` and `unused_hwio-C` (these two with SameBoy's result, the hardware's, where MesenCE's is wrong) and `vblank_stat_intr-C`; blargg's `cgb_sound` (all 12) and `interrupt_time` (double speed).
 - **Gaps:**
-  - The sound's analogue side (`audio/apu-gb`'s README lists what it leaves out), and the Color's sound registers (G7).
+  - The sound's analogue side (`audio/apu-gb`'s README lists what it leaves out).
+  - The Color's: its mode 3 timing where it differs from the Game Boy's, the serial port's fast clock, and the speed switch's exact length (above); Color games against MesenCE (G7's last check).
   - blargg's `oam_bug` ROMs: the OAM bug (`cpu/sm83`'s README).
   - MBC5's 128 KB of RAM on a board (the room is 32 KB; such a cartridge is skipped), HuC1, HuC3, MMM01, MBC6, MBC7 and the Camera.
   - Commercial games, beyond the test ROMs (G8). The rig's battery check on 45 battery games (each played to frame 1500, then powered up again with the RAM it left: its frame and RAM must be MesenCE's) passes 31 on every board, 14 of them with a save the game wrote. 14 fail alike on all three boards: 11 of those already differ from MesenCE on their title or play frame without a save (among them Pokémon Red and Blue, Link's Awakening, Super Mario Land 2, Wario Land and Metroid II), so the save isn't the cause; in Kirby's Dream Land 2, and likely Mario's Picross, the frames match and only a counter in the RAM differs (in Kirby's, 2 bytes: ours at frame 1500 is MesenCE's at 1499, a write landing a few T-cycles apart around VBlank's start). Which is right isn't settled: MesenCE is the reference, not the hardware. The plan for G8 is to run these games, with the same input scripts and saves, in SameBoy, the second opinion (`sameboy-frames` would need input scripts and cartridge RAM first): where SameBoy agrees with this core, MesenCE's line gets an override, as the test ROMs' do; where it agrees with MesenCE, SameBoy's trace finds the difference. A test with Nintendo's own boot ROM wouldn't settle it: MesenCE and this core both start from SameBoy's, so a different boot ROM shifts both alike, and there's no dump of the Game Boy's on hand.
@@ -209,7 +229,8 @@ Disabled RAM reads `$FF`. These are MesenCE's and SameBoy's behaviours, which ag
 - Pan Docs (gbdev.io/pandocs): the memory map, I/O registers, timer, serial port, joypad and OAM DMA.
 - Gekkio, *Game Boy: Complete Technical Reference*: the timer's overflow and reload.
 - [SameBoy](https://github.com/LIJI32/SameBoy): the serial clock's flip-flop, the PPU's dot-by-dot timing (its `display.c`), the access conflicts on the PPU's registers and when a halted CPU sees an interrupt, read for facts; its traces, run beside the sim's, found where the timing parted.
-- [dmg-acid2](https://github.com/mattcurrie/dmg-acid2): the PPU's rendering, against MesenCE's frame.
+- [dmg-acid2](https://github.com/mattcurrie/dmg-acid2) and [cgb-acid2](https://github.com/mattcurrie/cgb-acid2) (MIT): the PPU's rendering, against MesenCE's frame.
+- MesenCE's Color (`Core/Gameboy`: `GbPpu`, `GbDmaController`, `GbMemoryManager`, `GbCpu`'s speed switch) and SameBoy's (`display.c`, `memory.c`, `sm83_cpu.c`'s conflict maps, its colour correction), read for facts.
 - [Mooneye's test suite](https://github.com/Gekkio/mooneye-test-suite): what each test measures, read for facts.
 - [rtc3test](https://github.com/aaaaaa123456789/rtc3test) (the Unlicense): MBC3's clock, its `tests.md`.
 - MesenCE's and SameBoy's MBCs and MBC3 clock (`Core/Gameboy/Carts`, SameBoy's `memory.c` and `mbc.c`), read for facts.

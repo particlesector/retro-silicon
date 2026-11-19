@@ -10,12 +10,16 @@
 // the external clock, a transfer waits forever, as it does with no cable.
 // This is SameBoy's model of the DMG's serial clock.
 //
+// On the Game Boy Color in its own mode (`cgb_hw`), SC's bit 1 (the fast clock) is kept and read back; the
+// clock's speed doesn't follow it yet.
+//
 // `tx`/`tx_valid`: the byte in SB when a write to SC sets bits 7 and 0, the
 // stream blargg's and Mooneye's test ROMs report on (as MesenCE's test
 // script takes it).
 module gb_serial (
     input  logic        clk,
     input  logic        rst,
+    input  logic        cgb_hw,     // the Game Boy Color in its own mode: SC bit 1 is there
     input  logic        m,          // the M-cycle's last T-cycle, where the CPU's writes land
     input  logic        fall7,      // the system counter's bit 7 falls at this edge
     input  logic        wr_sb,      // with m
@@ -27,7 +31,7 @@ module gb_serial (
     output logic [7:0]  tx,
     output logic        tx_valid    // a transfer of `tx` starts (the clock after the write)
 );
-    logic       busy, int_clk, sclk;
+    logic       busy, int_clk, sclk, fast;
     logic [2:0] bits;
 
     // The clock's falling edge, and whether it shifts a bit.
@@ -35,7 +39,7 @@ module gb_serial (
     wire fall    = sclk && (fall7 || wr_sc_m);
     wire shift   = fall && busy && int_clk;
 
-    assign sc  = {busy, 6'b111111, int_clk};
+    assign sc  = {busy, 5'b11111, fast || !cgb_hw, int_clk};
     assign irq = shift && !wr_sc_m && bits == 3'd7;
 
     always_ff @(posedge clk) begin
@@ -44,6 +48,7 @@ module gb_serial (
             sb      <= '0;
             busy    <= 1'b0;
             int_clk <= 1'b0;
+            fast    <= 1'b0;
             bits    <= '0;
             sclk    <= 1'b0;
         end else begin
@@ -52,6 +57,7 @@ module gb_serial (
             if (wr_sc_m) begin
                 busy    <= wdata[7];
                 int_clk <= wdata[0];
+                fast    <= wdata[1] && cgb_hw;
                 bits    <= shift ? 3'd1 : 3'd0;
                 if (wdata[7] && wdata[0]) begin
                     tx       <= wr_sb ? wdata : sb;

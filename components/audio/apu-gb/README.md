@@ -16,6 +16,7 @@ Module `apu_gb`.
 | Port | Dir | Width | Meaning |
 | --- | --- | --- | --- |
 | `clk`, `rst` | in | 1 | Clock; synchronous reset (the APU off, its registers and wave RAM 0) |
+| `cgb` | in | 1 | Steady from reset. 0, the DMG's quirks: the length counters take writes while the APU is off and keep them through power-on; wave RAM is reachable while the wave channel plays only in the tick it read a byte (else reads give `$FF` and writes are lost); retriggering the wave channel as it reads copies the bytes it was about to read over wave RAM's first; a pulse channel's timer runs on after its length or sweep stops it, until its DAC goes off; the noise counter counts on after its channel stops, and its LFSR takes its feedback as the counter's bit falls; a noise trigger off the 1 MHz phase waits. 1, the Game Boy Color's: none of those (a port since 0.2.0, the `CGB` parameter before, so one build can be either) |
 | `t2` | in | 1 | A 2 MHz tick |
 | `fs`, `fs_rise` | in | 1 | The system counter's bit 12 falls, or rises |
 | `div_b12` | in | 1 | That bit now |
@@ -25,12 +26,6 @@ Module `apu_gb`.
 | `dac` | out | 4 | Each channel's DAC is on |
 | `nr50`, `nr51` | out | 8 | The volume and panning registers |
 | `mix_l`, `mix_r` | out | 10 | The mixes, signed: each DAC's output (15 - 2 x level when on, else 0: Pan Docs has digital 0 as analog 1, 15 as -1) where NR51 pans it, times NR50's volume plus 1. -480 to 480 |
-
-## Parameters
-
-| Parameter | Default | Meaning |
-| --- | --- | --- |
-| `CGB` | 0 | 0, the DMG's quirks: the length counters take writes while the APU is off and keep them through power-on; wave RAM is reachable while the wave channel plays only in the tick it read a byte (else reads give `$FF` and writes are lost); retriggering the wave channel as it reads copies the bytes it was about to read over wave RAM's first; a pulse channel's timer runs on after its length or sweep stops it, until its DAC goes off; the noise counter counts on after its channel stops, and its LFSR takes its feedback as the counter's bit falls; a noise trigger off the 1 MHz phase waits. 1, the Color's: none of those |
 
 ## Board notes
 
