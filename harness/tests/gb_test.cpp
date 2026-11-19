@@ -130,3 +130,70 @@ TEST_CASE("Game Boy Color through the shell: the model changes with each ROM's b
     // A Game Boy ROM, a Color ROM, then the Game Boy again: register 50's bit 5 each time.
     match_in_turn({"dmg-acid2", "cgb-acid2", "dmg-acid2"});
 }
+
+namespace {
+
+// A 32 KB ROM of our own (no Nintendo logo; SameBoy's boot ROMs don't check it): it clears
+// $C100-$C19F, starts an OAM DMA from $C100, and while it runs reads $0200 ($5A) from the ROM and
+// sends it over the serial port. A ROM read that conflicts with the DMA reads the DMA's byte ($00, a
+// NOP) instead, the fetches too: the CPU runs on through NOPs into a part that sends $EE.
+std::vector<uint8_t> dma_bus_rom() {
+    std::vector<uint8_t> rom(0x8000, 0x00);
+    const uint8_t entry[] = {0x00, 0xC3, 0x50, 0x01};  // NOP; JP $0150
+    std::copy(std::begin(entry), std::end(entry), rom.begin() + 0x100);
+    rom[0x143] = 0x80;  // for the Color, and the Game Boy too
+    uint8_t x = 0;
+    for (int i = 0x134; i <= 0x14C; i++) x = static_cast<uint8_t>(x - rom[i] - 1);
+    rom[0x14D] = x;
+    const uint8_t code[] = {
+        0x31, 0xFE, 0xFF,  // LD SP,$FFFE
+        0x21, 0x00, 0xC1,  // LD HL,$C100
+        0xAF,              // XOR A
+        0x06, 0xA0,        // LD B,160
+        0x22,              // .clear: LD (HL+),A
+        0x05,              //         DEC B
+        0x20, 0xFC,        //         JR NZ,.clear
+        0x3E, 0xC1,        // LD A,$C1
+        0xE0, 0x46,        // LDH ($46),A: the DMA, from $C100
+        0xFA, 0x00, 0x02,  // LD A,($0200), from the ROM, as the DMA runs
+        0xE0, 0x01,        // LDH ($01),A
+        0x3E, 0x81,        // LD A,$81
+        0xE0, 0x02,        // LDH ($02),A: send it
+        0x18, 0xFE,        // JR @
+    };
+    std::copy(std::begin(code), std::end(code), rom.begin() + 0x150);
+    const uint8_t fail[] = {0x3E, 0xEE, 0xE0, 0x01, 0x3E, 0x81, 0xE0, 0x02, 0x18, 0xFE};  // send $EE
+    std::copy(std::begin(fail), std::end(fail), rom.begin() + 0x150 + sizeof code + 256);
+    rom[0x200] = 0x5A;
+    return rom;
+}
+
+// The byte dma_bus_rom() sends, through `boot`.
+uint8_t dma_bus_byte(const std::vector<uint8_t>& boot) {
+    auto link = rig::make_gb_sim();
+    rig::shell::Client client(*link);
+    rig::gb::Console gb(client);
+    gb.hold_reset();
+    REQUIRE_FALSE(gb.load(dma_bus_rom(), boot));
+    for (uint32_t f = 20; f <= 600 && gb.serial_count() == 0; f += 20) {
+        gb.stop_frame(f);
+        gb.run();
+        gb.wait_stopped();
+    }
+    REQUIRE(gb.serial_count() == 1);
+    return gb.serial(0)[0];
+}
+
+}  // namespace
+
+TEST_CASE("Game Boy Color through the shell: an OAM DMA from work RAM leaves the ROM's bus free, as MesenCE has it") {
+    // The Color's work RAM has its own bus: a DMA from it conflicts with $A000-$FDFF only (MesenCE's
+    // three buses; SameBoy's agree here). The Game Boy's work RAM and cartridge share one bus.
+    const char* env = std::getenv("RS_TESTROMS");
+    const std::string roms = env ? env : RS_TESTROMS;
+    const auto cgb = read_file(roms + "/" + rig::gb::boot_for("cgb"));
+    const auto dmg = read_file(roms + "/" + rig::gb::boot_for("dmg"));
+    if (cgb.empty() || dmg.empty()) SKIP("the boot ROMs aren't fetched");
+    CHECK(dma_bus_byte(cgb) == 0x5A);
+    CHECK(dma_bus_byte(dmg) == 0xEE);
+}

@@ -180,8 +180,18 @@ module gameboy #(
         else if (a != 16'hFFFF) reg_a = R_HRAM;
         else reg_a = R_IE;
     end
+    // An access on the bus the OAM DMA is reading from gets its byte, and its write is lost. The
+    // Game Boy's cartridge and work RAM share one bus; the Color's work RAM has its own, and as
+    // MesenCE has it, a DMA from $0000-$7FFF conflicts with that range only, one from $A000-$FDFF
+    // with that range only (SameBoy's buses agree where games go: a DMA from work RAM leaves the
+    // ROM free, so code can run from it while the DMA runs).
     wire on_ext   = reg_a == R_CART || reg_a == R_WRAM;
-    wire conflict = on_ext && dma_ext || reg_a == R_VRAM && dma_vram;
+    wire cgb_rom  = !a[15];                                  // $0000-$7FFF
+    wire cgb_ram  = a[15:13] == 3'b101 || reg_a == R_WRAM;   // $A000-$FDFF
+    wire dma_lo   = !dma_hi[7];                              // a DMA from $0000-$7FFF
+    wire dma_ram  = dma_hi >= 8'hA0 && dma_hi <= 8'hFD;      // from $A000-$FDFF
+    wire conflict = (cgb_hw ? dma_on && (cgb_rom && dma_lo || cgb_ram && dma_ram) : on_ext && dma_ext) ||
+                    reg_a == R_VRAM && dma_vram;
     wire oam_busy = dma_on;
     wire cpu_wr   = cm && wr && !conflict;
     wire io_wr    = cpu_wr && reg_a == R_IO;
@@ -198,11 +208,14 @@ module gameboy #(
     wire  [2:0] wbank = cgb_en && svbk != 3'd0 ? svbk : 3'd1;
 
     // ---- the external bus: the cartridge and work RAM ----
-    // (the Color's DMA to video RAM reads it while a block runs)
-    wire [15:0] ext_addr = blk ? hd_addr : dma_ext ? dma_addr : a;
+    // (the Color's DMA to video RAM reads it while a block runs). On the Color, work RAM is on a bus
+    // of its own: an OAM DMA from it reads it at its own address, and the cartridge's bus is the CPU's.
+    wire        dma_wram = cgb_hw && dma_on && dma_addr[15:14] == 2'b11;
+    wire [15:0] ext_addr = blk ? hd_addr : dma_ext && !dma_wram ? dma_addr : a;
     wire        ext_wram = ext_addr[15:14] == 2'b11;
+    wire [12:0] wram_addr = dma_wram && !blk ? dma_addr[12:0] : ext_addr[12:0];
     assign cart_addr  = ext_addr;
-    assign cart_rd    = blk ? blk_xfer && !ext_wram && !hd_bad : dma_ext ? !ext_wram : rd && reg_a == R_CART;
+    assign cart_rd    = blk ? blk_xfer && !ext_wram && !hd_bad : dma_ext && !dma_wram ? !ext_wram : rd && reg_a == R_CART;
     assign cart_wr    = cpu_wr && reg_a == R_CART;
     assign cart_wdata = dout;
 
@@ -210,7 +223,7 @@ module gameboy #(
     logic [7:0] wram [0:(1 << WRAM_AW) - 1];
     logic [7:0] wram_q;
     wire [WRAM_AW-1:0] wram_wa = WRAM_AW'({a[12] ? wbank : 3'd0, a[11:0]});
-    wire [WRAM_AW-1:0] wram_ra = WRAM_AW'({ext_addr[12] ? wbank : 3'd0, ext_addr[11:0]});
+    wire [WRAM_AW-1:0] wram_ra = WRAM_AW'({wram_addr[12] ? wbank : 3'd0, wram_addr[11:0]});
     always_ff @(posedge clk) begin
         if (cpu_wr && reg_a == R_WRAM) wram[wram_wa] <= dout;
         wram_q <= wram[wram_ra];
@@ -254,7 +267,7 @@ module gameboy #(
         assign ppu_vq1 = 8'h00;
     end
     wire [7:0] vram_q   = vbk_q ? vram_q1 : vram_q0;
-    wire [7:0] dma_byte = dma_vram ? vram_q : ext_q;
+    wire [7:0] dma_byte = dma_vram ? vram_q : dma_wram ? wram_q : ext_q;
 
     // ---- OAM (its even and odd bytes, so the PPU reads 16 bits), high RAM, the boot ROM ----
     logic [7:0]  oam_e [0:79];
