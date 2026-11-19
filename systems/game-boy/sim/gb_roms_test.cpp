@@ -8,8 +8,10 @@
 // MesenCE's result (a pass, or a fail where MesenCE's is one) within twice
 // the frames MesenCE took, and its frame 30 frames after the result must be
 // MesenCE's (its CRC: 2 bytes a pixel, the shade then 0, row by row); a
-// frame check's frame is the one MesenCE's list names. A frame ends as
-// VBlank starts, or every 70,224 T-cycles while the LCD is off. The sound's
+// frame check's frame is the one MesenCE's list names. Frames end as MesenCE
+// ends them (gb_sys has the rules: at VBlank, as the LCD turns off outside it,
+// and every 70,224 dots while it's off), so the result comes at MesenCE's frame
+// number too. The sound's
 // CRC to the end of that frame (the APU's two mixes at each M-cycle's end, as
 // 16-bit little-endian words, left then right: gb_sys's register 30) must be
 // harness/golden/gb_audio_crc32.txt's, which RS_GB_AUDIO_OUT=<file> writes
@@ -82,6 +84,7 @@ struct Rom {
     uint32_t crc = 0;        // and its CRC
     Script input;
     bool again = false;
+    bool overridden = false;  // the manifest's `override`: MesenCE wrong, its result and CRC another's
     std::string sav;
     std::optional<uint32_t> savcrc;
 };
@@ -144,6 +147,7 @@ Manifest read_manifest(const std::string& file) {
             else if (k == "model") r.model = unquote(v);
             else if (k == "check") r.check = unquote(v);
             else if (k == "frames") r.frames = std::stoi(v);
+            else if (k == "override") r.overridden = true;
             else if (k == "needs") {
                 std::istringstream s(unquote(v));
                 std::string n;
@@ -300,6 +304,13 @@ Outcome run(const Rom& rom, const std::vector<uint8_t>& image, const std::vector
 
     std::vector<uint16_t> screen(kW * kH, 0);
     bool frame_ended = false;
+    // Frames end as gb_sys ends them (MesenCE's frames): at VBlank, as the LCD turns off outside
+    // it, and with the LCD off, every 70,224 dots from when it went off (a blank frame). The
+    // screen turns white at a blank frame and at the first frame to end after the LCD goes on
+    // (on the Color, only if it was off more than 5,000 dots).
+    long t_off = 0;
+    bool lcd_was = false, white_next = false;
+    const bool cgb = rom.model == "cgb";
     Crc audio;
     auto tick = [&](bool ce) {
         m.ce = ce;
@@ -309,7 +320,17 @@ Outcome run(const Rom& rom, const std::vector<uint8_t>& image, const std::vector
         if (m.cart_wr && a >= 0xA000 && a < 0xC000) cram[a & 0x1FFF] = m.cart_wdata;
         const uint32_t ra = m.rom_addr;
         if (m.pix_we && m.pix_x < kW && m.pix_y < kH) screen[m.pix_y * kW + m.pix_x] = m.pix_color;
-        if (ce && m.frame_end) frame_ended = true;
+        if (ce) {
+            const bool lcd_on = (m.lcdc & 0x80) != 0;
+            const bool blank = !lcd_on && !lcd_was && t_off == kTPerFrame;
+            const bool done = m.frame_end || m.frame_cut || blank;
+            if (done && (blank || white_next)) std::fill(screen.begin(), screen.end(), cgb ? 0x7FFF : 0);
+            if (!lcd_on) t_off = lcd_was || blank ? 1 : t_off + 1;
+            if (done) white_next = false;
+            if (lcd_on && !lcd_was) white_next = !cgb || t_off > 5000;
+            lcd_was = lcd_on;
+            if (done) frame_ended = true;
+        }
         if (ce && m.m_end) {
             const uint16_t l = static_cast<uint16_t>(static_cast<int16_t>(m.aud_l << 6) >> 6);
             const uint16_t r = static_cast<uint16_t>(static_cast<int16_t>(m.aud_r << 6) >> 6);
@@ -366,7 +387,7 @@ Outcome run(const Rom& rom, const std::vector<uint8_t>& image, const std::vector
     Outcome out;
     std::vector<uint8_t> bytes;
     const long limit = 2L * rom.frames + 60;
-    long t = 0, want = rom.check == "frame" ? rom.golden_frames : -1;
+    long want = rom.check == "frame" ? rom.golden_frames : -1;
     const std::vector<uint8_t> pass = {3, 5, 8, 13, 21, 34};
     if (rom.check == "frame") out.result = "-";
     while (out.frames < limit) {
@@ -382,10 +403,8 @@ Outcome run(const Rom& rom, const std::vector<uint8_t>& image, const std::vector
             if (trace) std::printf("%s serial %02X\n", rom.id.c_str(), m.ser_tx);
         }
         tick(false);
-        if (++t == kTPerFrame) frame_ended = true;
         if (!frame_ended) continue;
         frame_ended = false;
-        t = 0;
         out.frames++;
         m.keys = keys_at(rom.input, out.frames);
         if (want < 0) {
@@ -522,6 +541,12 @@ TEST_CASE("Game Boy test ROMs end as they do in MesenCE") {
                 std::string t = o.text;
                 std::replace(t.begin(), t.end(), '\n', '|');
                 failures.push_back(r.id + ": " + o.result + ", MesenCE " + r.result + " [" + t + "]");
+            } else if (o.frames != r.golden_frames && !r.overridden) {
+                // The result, and so the checked frame, must come at MesenCE's frame number: frames
+                // ending as MesenCE's do, a game's input script and checks land at the same moment.
+                // (Not where the manifest overrides MesenCE: its frame number is its own wrong run's.)
+                failures.push_back(r.id + ": frame " + std::to_string(o.frames) + " checked, MesenCE's " +
+                                   std::to_string(r.golden_frames));
             } else if (o.crc != r.crc && !kFrameNotChecked.count(r.id)) {
                 failures.push_back(r.id + ": frame " + std::to_string(o.frames) + " " + crcs);
             } else if (r.savcrc && crc32_bytes(o.ram) != *r.savcrc) {

@@ -83,6 +83,7 @@ module gameboy #(
     output logic [7:0]  pix_y,
     output logic [14:0] pix_color,
     output logic        frame_end,   // VBlank starts: the frame is out
+    output logic        frame_cut,   // the LCD turns off outside VBlank: the frame is cut short
 
     output logic signed [9:0] aud_l, // the APU's mixes (audio/apu-gb), held from an M-cycle's end
     output logic signed [9:0] aud_r
@@ -328,7 +329,7 @@ module gameboy #(
         .vaddr(ppu_vaddr), .vq({ppu_vq1, ppu_vq0}), .oaddr(ppu_oaddr), .oq(ppu_oq),
         .vram_rd_blk, .vram_wr_blk, .oam_rd_blk, .oam_wr_blk,
         .irq_vblank, .irq_stat,
-        .pix_we, .pix_x, .pix_y, .pix_color, .frame_end, .mode(ppu_mode), .lcdc
+        .pix_we, .pix_x, .pix_y, .pix_color, .frame_end, .frame_cut, .mode(ppu_mode), .lcdc
     );
     // The APU's 2 MHz ticks are the M-cycle's first and third T-cycles, so the
     // CPU's reads (in the last) and writes (at its end) come between them. A

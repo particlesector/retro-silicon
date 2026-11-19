@@ -73,6 +73,7 @@ module gb_ppu (
     output logic [7:0]  pix_y,
     output logic [14:0] pix_color,
     output logic        frame_end,   // with ce: VBlank starts (the frame is out)
+    output logic        frame_cut,   // with ce: the LCD turns off outside VBlank (the frame is cut short)
     output logic [1:0]  mode,        // STAT's mode bits
     output logic [7:0]  lcdc
 );
@@ -253,7 +254,7 @@ module gb_ppu (
     logic        n_pix_we, n_pix_obj;
     logic [1:0]  n_pix_shade;
     logic [2:0]  n_pix_pal;
-    logic        n_frame_end;
+    logic        n_frame_end, n_frame_cut;
     logic [5:0]  su;
 
     // working values inside a dot
@@ -305,6 +306,7 @@ module gb_ppu (
         n_vaddr = vaddr; n_oaddr = oaddr;
         add_obj = 1'b0; add_slot = nvis;
         n_pix_we = 1'b0; n_pix_shade = 2'd0; n_pix_obj = 1'b0; n_pix_pal = 3'd0; n_frame_end = 1'b0;
+        n_frame_cut = 1'b0;
         su = '0;
         xm = '0; nx = '0; ns = '0; nhave = 1'b0; do_render = 1'b0; do_fetch = 1'b0; end_m3 = 1'b0;
         fy = '0; taddr = '0; bp = '0; op = '0; opal = '0; opri = 1'b0; draw_obj = 1'b0; popped = 1'b0;
@@ -686,6 +688,7 @@ module gb_ppu (
                                 n_m3 = 1'b0; n_hb1 = 1'b0;
                             end else if (!wdata[7] && lcdc[7]) begin
                                 // off: LY and the mode read 0
+                                n_frame_cut = smode != 2'd1;
                                 n_ly = 8'd0; n_smode = 2'd0; n_line = 8'd0;
                                 n_cmp_none = 1'b0; n_ly_cmp = 8'd0; n_wy_trig = 1'b0;
                                 n_vrb = 1'b0; n_vwb = 1'b0; n_orb = 1'b0; n_owb = 1'b0;
@@ -752,6 +755,7 @@ module gb_ppu (
     assign irq_vblank = n_ivb;
     assign irq_stat   = n_ist;
     assign frame_end  = n_frame_end;
+    assign frame_cut  = n_frame_cut;
     assign mode       = smode;
 
     always_ff @(posedge clk)

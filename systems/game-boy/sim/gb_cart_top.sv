@@ -43,10 +43,12 @@ module gb_cart_top #(
     output logic [7:0]   pix_y,
     output logic [14:0]  pix_color,
     output logic         frame_end,
+    output logic         frame_cut,
+    output logic [7:0]   lcdc,
     output logic signed [9:0] aud_l,
     output logic signed [9:0] aud_r
 );
-    logic [7:0] cart_rdata, lcdc, boot_q;
+    logic [7:0] cart_rdata, boot_q;
     logic       cart_rd, boot_on, m_last;
 
     gameboy u_gb (
@@ -55,7 +57,7 @@ module gb_cart_top #(
         .boot_we, .boot_addr, .boot_wdata, .boot_q,
         .keys, .ser_tx, .ser_tx_valid,
         .m_end, .m_last, .cpu_sync, .cpu_pc, .boot_on, .lcdc,
-        .pix_we, .pix_x, .pix_y, .pix_color, .frame_end, .aud_l, .aud_r);
+        .pix_we, .pix_x, .pix_y, .pix_color, .frame_end, .frame_cut, .aud_l, .aud_r);
 
     gb_cart #(.ROM_AW(23), .RAM_AW(RAM_AW)) u_cart (
         .clk, .rst, .ce,
@@ -64,5 +66,5 @@ module gb_cart_top #(
         .rom_addr, .rom_q,
         .sh_we, .sh_rtc, .sh_addr, .sh_wdata, .sh_q);
 
-    wire unused = &{1'b0, cart_rd, boot_on, lcdc, m_last, boot_q};
+    wire unused = &{1'b0, cart_rd, boot_on, m_last, boot_q};
 endmodule

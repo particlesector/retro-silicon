@@ -16,10 +16,15 @@
 // only a fetch that isn't done three T-cycles after its address came costs
 // time; register 54 counts the clocks lost.
 //
-// A frame ends as VBlank starts (the PPU's frame_end), or after 70,224
-// T-cycles without one (the LCD off), as gb_roms_test counts them. The frame
-// buffer holds each pixel's shade (or on the Game Boy Color, its 15-bit colour) as the PPU last
-// drew it. When the system stops at a limit, it takes the CRC of the frame buffer (2 bytes a pixel,
+// Frames end as MesenCE ends them, so a frame number means the same moment in both (and
+// gb_roms_test counts them alike): as VBlank starts (the PPU's frame_end), as the LCD turns off
+// outside VBlank (frame_cut), and with the LCD off, each time 70,224 dots have passed since it
+// went off or since the last such frame (a blank frame); never at a count running on from
+// before the LCD went on. The frame buffer holds each pixel's shade (or on the Game Boy Color,
+// its 15-bit colour) as the PPU last drew it, and turns white as MesenCE's screen does: at a
+// blank frame, and at the first frame to end after the LCD goes on (on the Color, only if it
+// was off more than 5,000 dots). MesenCE keeps two screens, so a frame cut short shows the
+// frame before last under the cut where this shows the last; a check doesn't land there. When the system stops at a limit, it takes the CRC of the frame buffer (2 bytes a pixel,
 // little-endian, row by row: as gb_frames.py takes MesenCE's), about 23,000 clocks, and starts no
 // T-cycle until that's done.
 //
@@ -124,7 +129,7 @@ module gb_sys #(
     logic        boot_we;
     logic [11:0] boot_addr;
     logic [7:0]  boot_wdata, boot_sh;
-    logic        pix_we, frame_end;
+    logic        pix_we, frame_end, frame_cut;
     logic [7:0]  pix_x, pix_y;
     logic [14:0] pix_color;
     logic signed [9:0] aud_l, aud_r;
@@ -135,7 +140,7 @@ module gb_sys #(
         .boot_we, .boot_addr, .boot_wdata, .boot_q(boot_sh),
         .keys, .ser_tx, .ser_tx_valid,
         .m_end, .m_last, .cpu_sync, .cpu_pc, .boot_on, .lcdc,
-        .pix_we, .pix_x, .pix_y, .pix_color, .frame_end, .aud_l, .aud_r);
+        .pix_we, .pix_x, .pix_y, .pix_color, .frame_end, .frame_cut, .aud_l, .aud_r);
 
     // ---- The sound's CRC ----
     logic [31:0] snd_crc;
@@ -261,17 +266,30 @@ module gb_sys #(
     end
 
     // ---- Counts and frames ----
-    logic [16:0] t_in_frame;
-    wire         frame_done = ce && (frame_end || t_in_frame == 17'(T_PER_FRAME - 1));
+    // t_off: dots since the LCD went off or the last blank frame (the LCD is off from reset,
+    // as MesenCE's count starts at power-on); it holds while the LCD is on.
+    logic [16:0] t_off;
+    logic        lcd_was, white_next;
+    wire         lcd_on     = lcdc[7];
+    wire         blank      = ce && !lcd_on && !lcd_was && t_off == 17'(T_PER_FRAME);
+    wire         frame_done = ce && (frame_end || frame_cut || blank);
+    wire         white      = frame_done && (blank || white_next);  // the frame buffer turns white
     always_ff @(posedge clk)
         if (rst) begin
             cycles     <= '0;
             frames     <= '0;
-            t_in_frame <= '0;
+            t_off      <= '0;
+            lcd_was    <= 1'b0;
+            white_next <= 1'b0;
             ser_count  <= '0;
         end else begin
-            if (ce) cycles <= cycles + 32'd1;
-            if (ce) t_in_frame <= frame_done ? '0 : t_in_frame + 17'd1;
+            if (ce) begin
+                cycles  <= cycles + 32'd1;
+                lcd_was <= lcd_on;
+                if (!lcd_on) t_off <= lcd_was || blank ? 17'd1 : t_off + 17'd1;
+                if (frame_done) white_next <= 1'b0;
+                if (lcd_on && !lcd_was) white_next <= !(CGB && cart_cfg[5]) || t_off > 17'd5000;
+            end
             if (frame_done) frames <= frames + 32'd1;
             if (ser_tx_valid) ser_count <= ser_count + 32'd1;
         end
@@ -287,13 +305,32 @@ module gb_sys #(
     wire  [14:0] pix_addr = 15'({pix_y, 7'd0}) + 15'({pix_y, 5'd0}) + 15'(pix_x);
     wire         fb_w     = pix_we && pix_x < 8'(W) && pix_y < 8'(H);
     wire         sh_fb    = s_req && !s_we && s_addr[31:24] == 8'h05 && s_addr[23:16] == '0;
-    wire  [14:0] fb_a     = fb_w ? pix_addr : scanning ? scan_addr : s_addr[15:1];
+    // Turning white: a write a clock, from the first pixel, when neither the PPU nor a shell read
+    // has the port. It's done in 23,040 clocks or so, about 2,600 dots: well ahead of the PPU,
+    // which starts again no sooner than the next line 0 and writes a pixel a dot at most; the CRC's
+    // scan waits for it.
+    logic        clearing;
+    logic [14:0] clr_addr;
+    wire         clr_w    = clearing && !fb_w && !(s_req && !s_ack && sh_fb);
+    wire  [14:0] fb_a     = fb_w ? pix_addr : clr_w ? clr_addr : scanning ? scan_addr : s_addr[15:1];
+    wire  [FB_W-1:0] white_c = CGB && cart_cfg[5] ? '1 : '0;  // the Color's white (7FFF), or shade 0
+    always_ff @(posedge clk)
+        if (rst) begin
+            clearing <= 1'b0;
+            clr_addr <= '0;
+        end else if (white) begin
+            clearing <= 1'b1;
+            clr_addr <= '0;
+        end else if (clr_w) begin
+            clr_addr <= clr_addr + 15'd1;
+            if (clr_addr == 15'(W * H - 1)) clearing <= 1'b0;
+        end
     always_ff @(posedge clk) begin
         fb_w_d <= fb_w;
         sh_hi  <= s_addr[0];
-        if (fb_w) begin
-            fb[fb_a] <= pix_color[FB_W-1:0];
-            fb_q     <= 15'(pix_color[FB_W-1:0]);
+        if (fb_w || clr_w) begin
+            fb[fb_a] <= fb_w ? pix_color[FB_W-1:0] : white_c;
+            fb_q     <= 15'(fb_w ? pix_color[FB_W-1:0] : white_c);
         end else
             fb_q <= 15'(fb[fb_a]);
     end
@@ -312,7 +349,7 @@ module gb_sys #(
         end else begin
             scan_take <= scanning && scan_addr < 15'(W * H);
             if (ce) crc_done <= 1'b0;
-            if (!scanning && at_limit && ctrl[0] && !crc_done) begin
+            if (!scanning && !clearing && at_limit && ctrl[0] && !crc_done) begin
                 scanning  <= 1'b1;
                 scan_addr <= '0;
             end else if (scanning) begin
