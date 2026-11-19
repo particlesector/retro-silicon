@@ -32,8 +32,6 @@ std::vector<uint8_t> read_file(const std::string& path) {
 void match_in_turn(const std::vector<std::string>& ids) {
     const char* env = std::getenv("RS_TESTROMS");
     const std::string roms = env ? env : RS_TESTROMS;
-    const auto boot = read_file(roms + "/" + rig::gb::kDmgBoot);
-    if (boot.empty()) SKIP("no " << roms << "/" << rig::gb::kDmgBoot);
     const auto golden = rig::gb::load_golden(RS_GB_GOLDEN);
     const auto audio = rig::gb::load_audio_golden(RS_GB_AUDIO_GOLDEN);
     auto link = rig::make_gb_sim();
@@ -42,6 +40,8 @@ void match_in_turn(const std::vector<std::string>& ids) {
         REQUIRE(g != golden.end());
         const auto rom = read_file(roms + "/" + g->path);
         if (rom.empty()) SKIP("no " << roms << "/" << g->path);
+        const auto boot = read_file(roms + "/" + rig::gb::boot_for(g->model));
+        if (boot.empty()) SKIP("no " << roms << "/" << rig::gb::boot_for(g->model));
         auto a = audio.find(id);
         REQUIRE(a != audio.end());
         auto r = rig::gb::rom_test(*link, *g, rom, boot, RS_GB_BUILD_ID, a->second);
@@ -56,12 +56,12 @@ void matches_mesen(const std::string& id, const MakeSim& make = [] { return rig:
                    uint32_t build_id = RS_GB_BUILD_ID) {
     const char* env = std::getenv("RS_TESTROMS");
     const std::string roms = env ? env : RS_TESTROMS;
-    const auto boot = read_file(roms + "/" + rig::gb::kDmgBoot);
-    if (boot.empty()) SKIP("no " << roms << "/" << rig::gb::kDmgBoot);
     for (const auto& g : rig::gb::load_golden(RS_GB_GOLDEN)) {
         if (g.id != id) continue;
         const auto rom = read_file(roms + "/" + g.path);
         if (rom.empty()) SKIP("no " << roms << "/" << g.path);
+        const auto boot = read_file(roms + "/" + rig::gb::boot_for(g.model));
+        if (boot.empty()) SKIP("no " << roms << "/" << rig::gb::boot_for(g.model));
         const auto audio = rig::gb::load_audio_golden(RS_GB_AUDIO_GOLDEN);
         auto a = audio.find(id);
         REQUIRE(a != audio.end());
@@ -113,4 +113,20 @@ TEST_CASE("Game Boy through the shell: an MBC5 cartridge (mts-mbc5-rom_512kb) on
     SECTION("the PYNQ-Z2's DDR3, through AXI and the read cache") {
         matches_mesen("mts-mbc5-rom_512kb", [] { return rig::make_gb_axi_sim(); }, RS_GB_AXI_BUILD_ID);
     }
+}
+
+TEST_CASE("Game Boy Color through the shell: cgb-acid2's frame 300 matches MesenCE's") {
+    SECTION("block RAM") { matches_mesen("cgb-acid2"); }
+    SECTION("the PYNQ-Z2's DDR3, through AXI and the read cache") {
+        matches_mesen("cgb-acid2", [] { return rig::make_gb_axi_sim(); }, RS_GB_AXI_BUILD_ID);
+    }
+}
+
+TEST_CASE("Game Boy Color through the shell: interrupt_time (double speed) matches MesenCE's frame") {
+    matches_mesen("interrupt_time");
+}
+
+TEST_CASE("Game Boy Color through the shell: the model changes with each ROM's boot ROM") {
+    // A Game Boy ROM, a Color ROM, then the Game Boy again: register 50's bit 5 each time.
+    match_in_turn({"dmg-acid2", "cgb-acid2", "dmg-acid2"});
 }

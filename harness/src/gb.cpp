@@ -3,6 +3,7 @@
 
 #include <algorithm>
 #include <chrono>
+#include <cmath>
 #include <cstdlib>
 #include <cstdio>
 #include <fstream>
@@ -284,6 +285,20 @@ std::map<std::string, std::set<std::string>> load_needs(const std::string& manif
         }
     }
     return out;
+}
+
+uint32_t color_rgb(uint16_t c) {
+    static constexpr uint8_t kCurve[32] = {0,   6,   12,  20,  28,  36,  45,  56,  66,  76,  88,
+                                           100, 113, 125, 137, 149, 161, 172, 182, 192, 202, 210,
+                                           218, 225, 232, 238, 243, 247, 250, 252, 254, 255};
+    const unsigned r = kCurve[c & 31], g = kCurve[(c >> 5) & 31], b = kCurve[(c >> 10) & 31];
+    unsigned gm = g;
+    if (g != b) {
+        const double gamma = 1.6;
+        gm = static_cast<unsigned>(
+            std::floor(std::pow((std::pow(g / 255.0, gamma) * 3 + std::pow(b / 255.0, gamma)) / 4, 1 / gamma) * 255 + 0.5));
+    }
+    return r << 16 | gm << 8 | b;
 }
 
 const std::set<std::string>& system_has() {

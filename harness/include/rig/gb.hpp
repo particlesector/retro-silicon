@@ -89,6 +89,9 @@ inline constexpr const char* kDmgBoot = "sameboy/build/bin/BootROMs/dmg_boot.bin
 inline constexpr const char* kCgbBoot = "sameboy/build/bin/BootROMs/cgb_boot.bin";
 // The boot ROM for a golden line's model (dmg or cgb)
 inline const char* boot_for(const std::string& model) { return model == "cgb" ? kCgbBoot : kDmgBoot; }
+// The Color's 15-bit colour as gb_video shows it (gb_color, from tools/gb/color_table.py: SameBoy's
+// "modern balanced" colour correction), 0xRRGGBB.
+uint32_t color_rgb(uint16_t c);
 
 // gb_sys through its test shell. Every call is an absolute register write or read.
 class Console {

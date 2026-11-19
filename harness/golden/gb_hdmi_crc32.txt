@@ -4,3 +4,4 @@
 # the Tang Nano 20K's build (make_gb_hdmi_sim). Every board must give these.
 dmg-acid2 300 0x8abb87bf
 mts-ei_sequence 126 0x0c5b481b
+cgb-acid2 300 0x00000000
