@@ -184,7 +184,182 @@ uint8_t dma_bus_byte(const std::vector<uint8_t>& boot) {
     return gb.serial(0)[0];
 }
 
+// A 32 KB ROM of our own: with the LCD off, it sums every RAM a game sees (high RAM below the stack,
+// OAM, work RAM's banks 0-7, video RAM's banks 0 and 1, the Color's two palette RAMs; on the Game
+// Boy the bank registers do nothing) into 16 bits and sends the sum over the serial port (high byte
+// first), then fills them all with $A5 and stops.
+std::vector<uint8_t> ram_sum_rom() {
+    std::vector<uint8_t> rom(0x8000, 0x00);
+    const uint8_t entry[] = {0x00, 0xC3, 0x50, 0x01};  // NOP; JP $0150
+    std::copy(std::begin(entry), std::end(entry), rom.begin() + 0x100);
+    rom[0x143] = 0x80;
+    uint8_t x = 0;
+    for (int i = 0x134; i <= 0x14C; i++) x = static_cast<uint8_t>(x - rom[i] - 1);
+    rom[0x14D] = x;
+
+    std::vector<uint8_t> c;  // the code, from $0150
+    auto op = [&](std::initializer_list<uint8_t> b) { c.insert(c.end(), b); };
+    auto here = [&] { return static_cast<int>(c.size()); };
+    auto jr_back = [&](uint8_t opcode, int to) {  // JR (cc) back to `to`
+        c.push_back(opcode);
+        c.push_back(static_cast<uint8_t>(to - (here() + 1)));
+    };
+    auto ld16 = [&](uint8_t opcode, int v) {
+        op({opcode, static_cast<uint8_t>(v), static_cast<uint8_t>(v >> 8)});
+    };
+    enum Sub { SUM, FILL, PORT_SUM, PORT_FILL, SEND, N_SUB };
+    int sub[N_SUB] = {};
+    std::vector<std::pair<int, Sub>> calls;  // CALLs' operands, patched at the end
+    auto call = [&](Sub s) {
+        calls.push_back({here() + 1, s});
+        op({0xCD, 0x00, 0x00});
+    };
+    auto region = [&](int start, int len, Sub s) {  // HL the start, BC the length
+        ld16(0x21, start);
+        ld16(0x01, len);
+        call(s);
+    };
+    auto banked = [&](Sub s) {  // work RAM's banks 1-7, then video RAM's banks 0 and 1
+        op({0x3E, 0x01});              // LD A,1: the bank, kept at $FF80
+        int b = here();
+        op({0xE0, 0x80, 0xE0, 0x70});  // .b: LDH ($80),A; LDH ($70),A (SVBK)
+        region(0xD000, 0x1000, s);
+        op({0xF0, 0x80, 0x3C, 0xFE, 0x08});  // LDH A,($80); INC A; CP 8
+        jr_back(0x20, b);                    // JR NZ,.b
+        op({0xAF, 0xE0, 0x4F});              // XOR A; LDH ($4F),A (VBK 0)
+        region(0x8000, 0x2000, s);
+        op({0x3E, 0x01, 0xE0, 0x4F});        // LD A,1; LDH ($4F),A (VBK 1)
+        region(0x8000, 0x2000, s);
+    };
+    auto palettes = [&](Sub s) {  // the background's and the objects' palette RAM, 64 bytes each
+        for (uint8_t idx : {uint8_t{0x68}, uint8_t{0x6A}}) {
+            op({0x3E, 0x80, 0xE0, idx});                                // LD A,$80; LDH (idx),A: from 0, stepping
+            op({0x0E, static_cast<uint8_t>(idx + 1), 0x06, 0x40});      // LD C,idx+1; LD B,64
+            call(s);
+        }
+    };
+
+    op({0x31, 0xFE, 0xFF});        // LD SP,$FFFE
+    int w = here();
+    op({0xF0, 0x44, 0xFE, 0x90});  // .w: LDH A,($44); CP 144
+    jr_back(0x20, w);              //     JR NZ,.w
+    op({0xAF, 0xE0, 0x40});        // XOR A; LDH ($40),A: the LCD off, so video RAM and OAM can be reached
+    ld16(0x11, 0);                 // LD DE,0: the sum
+    region(0xFF80, 0x7C, SUM);     // high RAM up to $FFFB: the stack is above
+    region(0xFE00, 0xA0, SUM);
+    region(0xC000, 0x1000, SUM);
+    banked(SUM);
+    palettes(PORT_SUM);
+    op({0x7A});
+    call(SEND);  // LD A,D; CALL send
+    op({0x7B});
+    call(SEND);  // LD A,E; CALL send
+    banked(FILL);
+    region(0xFF80, 0x7C, FILL);
+    region(0xFE00, 0xA0, FILL);
+    region(0xC000, 0x1000, FILL);
+    palettes(PORT_FILL);
+    int stop = here();
+    jr_back(0x18, stop);  // JR @
+
+    sub[SUM] = here();  // sum: DE += the BC bytes from HL
+    int s = here();
+    op({0x2A, 0x83, 0x5F, 0x30, 0x01, 0x14});  // .s: LD A,(HL+); ADD E; LD E,A; JR NC,+1; INC D
+    op({0x0B, 0x78, 0xB1});                    //     DEC BC; LD A,B; OR C
+    jr_back(0x20, s);                          //     JR NZ,.s
+    op({0xC9});                                // RET
+    sub[FILL] = here();  // fill: the BC bytes from HL with $A5
+    int f = here();
+    op({0x3E, 0xA5, 0x22, 0x0B, 0x78, 0xB1});  // .f: LD A,$A5; LD (HL+),A; DEC BC; LD A,B; OR C
+    jr_back(0x20, f);
+    op({0xC9});
+    sub[PORT_SUM] = here();  // port_sum: DE += B reads of the port at $FF00+C
+    int ps = here();
+    op({0xF2, 0x83, 0x5F, 0x30, 0x01, 0x14, 0x05});  // .p: LD A,($FF00+C); ADD E; LD E,A; JR NC,+1; INC D; DEC B
+    jr_back(0x20, ps);
+    op({0xC9});
+    sub[PORT_FILL] = here();  // port_fill: B writes of $A5 to the port at $FF00+C
+    int pf = here();
+    op({0x3E, 0xA5, 0xE2, 0x05});  // .q: LD A,$A5; LD ($FF00+C),A; DEC B
+    jr_back(0x20, pf);
+    op({0xC9});
+    sub[SEND] = here();  // send: A over the serial port, then wait for it to go
+    op({0xE0, 0x01, 0x3E, 0x81, 0xE0, 0x02});  // LDH ($01),A; LD A,$81; LDH ($02),A
+    int sw = here();
+    op({0xF0, 0x02, 0xCB, 0x7F});  // .w: LDH A,($02); BIT 7,A
+    jr_back(0x20, sw);
+    op({0xC9});
+
+    for (auto [at, which] : calls) {
+        const int addr = 0x150 + sub[which];
+        c[static_cast<size_t>(at)] = static_cast<uint8_t>(addr);
+        c[static_cast<size_t>(at) + 1] = static_cast<uint8_t>(addr >> 8);
+    }
+    std::copy(c.begin(), c.end(), rom.begin() + 0x150);
+    return rom;
+}
+
+// The sums ram_sum_rom() sends, run `times` times in one system through `boot`, the host holding it
+// in reset and loading the ROM again between runs, as rig-run does from game to game.
+std::vector<uint16_t> ram_sums(const std::vector<uint8_t>& boot, int times) {
+    auto link = rig::make_gb_sim();
+    rig::shell::Client client(*link);
+    rig::gb::Console gb(client);
+    std::vector<uint16_t> sums;
+    for (int t = 0; t < times; t++) {
+        gb.hold_reset();
+        REQUIRE_FALSE(gb.load(ram_sum_rom(), boot));
+        const uint32_t from = gb.serial_count();
+        for (uint32_t f = 20; f <= 600 && gb.serial_count() < from + 2; f += 20) {
+            gb.stop_frame(f);
+            gb.run();
+            gb.wait_stopped();
+        }
+        REQUIRE(gb.serial_count() == from + 2);
+        const auto b = gb.serial(from);
+        sums.push_back(static_cast<uint16_t>(b[0] << 8 | b[1]));
+    }
+    return sums;
+}
+
 }  // namespace
+
+TEST_CASE("Game Boy Color through the shell: each ROM starts from the RAM MesenCE powers up with, whatever ran before") {
+    // MesenCE (RamPowerOnState AllZeros) starts every game with its RAM zeroed, so a game the host
+    // loads after another mustn't see what the other left.
+    const char* env = std::getenv("RS_TESTROMS");
+    const std::string roms = env ? env : RS_TESTROMS;
+    for (const char* model : {"cgb", "dmg"}) {
+        const auto boot = read_file(roms + "/" + rig::gb::boot_for(model));
+        if (boot.empty()) SKIP("the boot ROMs aren't fetched");
+        INFO(model);
+        const auto sums = ram_sums(boot, 2);
+        CHECK(sums[0] == sums[1]);
+    }
+}
+
+TEST_CASE("Game Boy Color through the shell: with the LCD off, blank frames end at MesenCE's dots") {
+    // MesenCE ends a blank frame once its dot count is more than 70,224 past the last frame, the
+    // count stepping 2 at a time at normal speed: 70,226 dots apart, from 0 at power-up. Every Color
+    // game's first two frames come so, in the boot ROM, at MesenCE's 70,226 and 140,452.
+    const char* env = std::getenv("RS_TESTROMS");
+    const std::string roms = env ? env : RS_TESTROMS;
+    const auto boot = read_file(roms + "/" + rig::gb::boot_for("cgb"));
+    if (boot.empty()) SKIP("the boot ROMs aren't fetched");
+    auto link = rig::make_gb_sim();
+    rig::shell::Client client(*link);
+    rig::gb::Console gb(client);
+    gb.hold_reset();
+    REQUIRE_FALSE(gb.load(ram_sum_rom(), boot));
+    gb.stop_frame(1);
+    gb.run();
+    gb.wait_stopped();
+    CHECK(gb.cycles() == 70226);
+    gb.stop_frame(2);
+    gb.run();
+    gb.wait_stopped();
+    CHECK(gb.cycles() == 140452);
+}
 
 TEST_CASE("Game Boy Color through the shell: an OAM DMA from work RAM leaves the ROM's bus free, as MesenCE has it") {
     // The Color's work RAM has its own bus: a DMA from it conflicts with $A000-$FDFF only (MesenCE's

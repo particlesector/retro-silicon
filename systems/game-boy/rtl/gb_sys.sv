@@ -114,7 +114,8 @@ module gb_sys #(
     logic [31:0] cycles, frames, frame_crc, crc_frame, ser_count;
     logic        scanning, pace_wait;
     wire at_limit = (stop_cycle != 0 && cycles >= stop_cycle) || (stop_frame != 0 && frames >= stop_frame);
-    wire running  = ctrl[0] && !rst && !scanning && !at_limit && !pace_wait;
+    logic ram_clearing;  // the console zeroing its RAM after a reset
+    wire running  = ctrl[0] && !rst && !ram_clearing && !scanning && !at_limit && !pace_wait;
 
     // ---- T-cycles ----
     logic ce, ce_held;
@@ -135,7 +136,7 @@ module gb_sys #(
     logic signed [9:0] aud_l, aud_r;
     localparam int FB_W = CGB ? 15 : 2;  // the frame buffer's bits a pixel
     gameboy #(.CGB(CGB)) u_gb (
-        .clk, .rst, .ce, .cgb_hw_in(cart_cfg[5]),
+        .clk, .rst, .ce, .cgb_hw_in(cart_cfg[5]), .clearing(ram_clearing), .dbl_speed,
         .cart_addr, .cart_rd, .cart_wr, .cart_wdata, .cart_rdata,
         .boot_we, .boot_addr, .boot_wdata, .boot_q(boot_sh),
         .keys, .ser_tx, .ser_tx_valid,
@@ -266,19 +267,21 @@ module gb_sys #(
     end
 
     // ---- Counts and frames ----
-    // t_off: dots since the LCD went off or the last blank frame (the LCD is off from reset,
-    // as MesenCE's count starts at power-on); it holds while the LCD is on.
+    // t_off: dots since the LCD went off or the last blank frame, counting this one (the LCD is
+    // off from reset, as MesenCE's count starts at power-on); it holds while the LCD is on. MesenCE
+    // sends a blank frame once its count is more than a frame's dots past the last frame, its count
+    // stepping 2 dots at a time at normal speed and 1 at double speed: 70,226 dots, or 70,225.
     logic [16:0] t_off;
-    logic        lcd_was, white_next;
+    logic        lcd_was, white_next, dbl_speed;
     wire         lcd_on     = lcdc[7];
-    wire         blank      = ce && !lcd_on && !lcd_was && t_off == 17'(T_PER_FRAME);
+    wire         blank      = ce && !lcd_on && !lcd_was && t_off == 17'(T_PER_FRAME + (dbl_speed ? 1 : 2));
     wire         frame_done = ce && (frame_end || frame_cut || blank);
     wire         white      = frame_done && (blank || white_next);  // the frame buffer turns white
     always_ff @(posedge clk)
         if (rst) begin
             cycles     <= '0;
             frames     <= '0;
-            t_off      <= '0;
+            t_off      <= 17'd1;
             lcd_was    <= 1'b0;
             white_next <= 1'b0;
             ser_count  <= '0;

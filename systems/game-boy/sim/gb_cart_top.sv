@@ -45,6 +45,8 @@ module gb_cart_top #(
     output logic         frame_end,
     output logic         frame_cut,
     output logic [7:0]   lcdc,
+    output logic         clearing,
+    output logic         dbl_speed,
     output logic signed [9:0] aud_l,
     output logic signed [9:0] aud_r
 );
@@ -52,7 +54,7 @@ module gb_cart_top #(
     logic       cart_rd, boot_on, m_last;
 
     gameboy u_gb (
-        .clk, .rst, .ce, .cgb_hw_in(cgb_hw),
+        .clk, .rst, .ce, .cgb_hw_in(cgb_hw), .clearing, .dbl_speed,
         .cart_addr, .cart_rd, .cart_wr, .cart_wdata, .cart_rdata,
         .boot_we, .boot_addr, .boot_wdata, .boot_q,
         .keys, .ser_tx, .ser_tx_valid,

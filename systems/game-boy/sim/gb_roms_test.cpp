@@ -305,10 +305,11 @@ Outcome run(const Rom& rom, const std::vector<uint8_t>& image, const std::vector
     std::vector<uint16_t> screen(kW * kH, 0);
     bool frame_ended = false;
     // Frames end as gb_sys ends them (MesenCE's frames): at VBlank, as the LCD turns off outside
-    // it, and with the LCD off, every 70,224 dots from when it went off (a blank frame). The
+    // it, and with the LCD off, every 70,226 dots (70,225 at double speed) from power-up, from
+    // when it went off or from the last blank frame (MesenCE's count steps 2 dots at a time). The
     // screen turns white at a blank frame and at the first frame to end after the LCD goes on
     // (on the Color, only if it was off more than 5,000 dots).
-    long t_off = 0;
+    long t_off = 1;
     bool lcd_was = false, white_next = false;
     const bool cgb = rom.model == "cgb";
     Crc audio;
@@ -322,7 +323,7 @@ Outcome run(const Rom& rom, const std::vector<uint8_t>& image, const std::vector
         if (m.pix_we && m.pix_x < kW && m.pix_y < kH) screen[m.pix_y * kW + m.pix_x] = m.pix_color;
         if (ce) {
             const bool lcd_on = (m.lcdc & 0x80) != 0;
-            const bool blank = !lcd_on && !lcd_was && t_off == kTPerFrame;
+            const bool blank = !lcd_on && !lcd_was && t_off == kTPerFrame + (m.dbl_speed ? 1 : 2);
             const bool done = m.frame_end || m.frame_cut || blank;
             if (done && (blank || white_next)) std::fill(screen.begin(), screen.end(), cgb ? 0x7FFF : 0);
             if (!lcd_on) t_off = lcd_was || blank ? 1 : t_off + 1;
@@ -382,6 +383,7 @@ Outcome run(const Rom& rom, const std::vector<uint8_t>& image, const std::vector
     }
     m.boot_we = 0;
     tick(false);
+    while (m.clearing) tick(false);  // the console zeroing its RAM, as gb_sys waits for it
     m.rst = 0;
 
     Outcome out;

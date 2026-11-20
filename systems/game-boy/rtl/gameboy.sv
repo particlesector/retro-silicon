@@ -54,6 +54,8 @@ module gameboy #(
     input  logic        rst,
     input  logic        ce,          // one T-cycle
     input  logic        cgb_hw_in,   // the Game Boy Color (steady from reset; with CGB)
+    output logic        clearing,    // zeroing the RAM after a reset: hold ce low until it ends
+    output logic        dbl_speed,   // the Color's double speed (KEY1)
 
     output logic [15:0] cart_addr,
     output logic        cart_rd,     // this M-cycle reads the cartridge
@@ -219,13 +221,30 @@ module gameboy #(
     assign cart_wr    = cpu_wr && reg_a == R_CART;
     assign cart_wdata = dout;
 
+    // ---- zeroing the RAM at reset ----
+    // MesenCE powers up with its RAM zeroed, and a game the host loads after another mustn't find
+    // what the other left: from reset's rising edge, a count through work RAM's addresses (the
+    // biggest memory) zeroes work RAM, both video RAM banks, OAM and high RAM through their write
+    // ports. The palettes' RAM, in registers, clears with `rst`.
+    logic [WRAM_AW:0] clr;  // the top bit: done
+    logic             rst_q;
+    always_ff @(posedge clk) begin
+        rst_q <= rst;
+        if (rst && !rst_q) clr <= '0;
+        else if (!clr[WRAM_AW]) clr <= clr + 1'b1;
+    end
+    wire clr_on = !clr[WRAM_AW];
+    assign clearing = clr_on;
+    assign dbl_speed = dbl;
+
     // 32 KB: $C000-$CFFF bank 0, $D000-$DFFF the bank SVBK picks (1 on the Game Boy)
     logic [7:0] wram [0:(1 << WRAM_AW) - 1];
     logic [7:0] wram_q;
     wire [WRAM_AW-1:0] wram_wa = WRAM_AW'({a[12] ? wbank : 3'd0, a[11:0]});
     wire [WRAM_AW-1:0] wram_ra = WRAM_AW'({wram_addr[12] ? wbank : 3'd0, wram_addr[11:0]});
+    wire [WRAM_AW-1:0] wram_wx = clr_on ? clr[WRAM_AW-1:0] : wram_wa;
     always_ff @(posedge clk) begin
-        if (cpu_wr && reg_a == R_WRAM) wram[wram_wa] <= dout;
+        if (clr_on || cpu_wr && reg_a == R_WRAM) wram[wram_wx] <= clr_on ? 8'h00 : dout;
         wram_q <= wram[wram_ra];
     end
     wire [7:0] ext_q = ext_wram ? wram_q : cart_rdata;
@@ -240,12 +259,12 @@ module gameboy #(
     // The CPU's writes and reads share a port: a write never comes while the DMA reads video RAM
     // (that's a conflict), so its address is vram_a. A write gives its own byte on the port (block
     // RAM's write-first mode, which the Gowin parts' dual-port RAM has), which nothing reads.
-    wire [12:0] vram_a  = blk ? {hd_dst[8:0], blk_byte} : dma_vram ? dma_addr[12:0] : a[12:0];
-    wire        vram_we = (cpu_wr && reg_a == R_VRAM || blk_wr) && !vram_wr_blk;
-    wire [7:0]  vram_wd = blk ? (hd_bad ? 8'hFF : ext_q) : dout;
+    wire [12:0] vram_a  = clr_on ? clr[12:0] : blk ? {hd_dst[8:0], blk_byte} : dma_vram ? dma_addr[12:0] : a[12:0];
+    wire        vram_we = clr_on || (cpu_wr && reg_a == R_VRAM || blk_wr) && !vram_wr_blk;
+    wire [7:0]  vram_wd = clr_on ? 8'h00 : blk ? (hd_bad ? 8'hFF : ext_q) : dout;
     always_ff @(posedge clk) begin
         vbk_q <= vbk;
-        if (vram_we && !vbk) begin
+        if (vram_we && (clr_on || !vbk)) begin
             vram0[vram_a] <= vram_wd;
             vram_q0       <= vram_wd;
         end else
@@ -255,7 +274,7 @@ module gameboy #(
     if (CGB) begin : g_vram1
         logic [7:0] vram1 [0:8191];
         always_ff @(posedge clk) begin
-            if (vram_we && vbk) begin
+            if (vram_we && (clr_on || vbk)) begin
                 vram1[vram_a] <= vram_wd;
                 vram_q1       <= vram_wd;
             end else
@@ -277,15 +296,15 @@ module gameboy #(
     logic [6:0]  ppu_oaddr;
     logic [7:0]  hram [0:127];
     logic [7:0]  boot [0:(1 << BOOT_AW) - 1];
-    wire  [7:0]  oam_wa = dma_on ? dma_idx : a[7:0];
-    wire         oam_we = m && dma_on || cpu_wr && reg_a == R_OAM && !oam_busy && !oam_wr_blk;
-    wire  [7:0]  oam_wd = dma_on ? dma_byte : dout;
+    wire  [7:0]  oam_wa = clr_on ? clr[7:0] : dma_on ? dma_idx : a[7:0];
+    wire         oam_we = clr_on ? clr[7:0] < 8'd160 : m && dma_on || cpu_wr && reg_a == R_OAM && !oam_busy && !oam_wr_blk;
+    wire  [7:0]  oam_wd = clr_on ? 8'h00 : dma_on ? dma_byte : dout;
     always_ff @(posedge clk) begin
         if (oam_we && !oam_wa[0]) oam_e[oam_wa[7:1]] <= oam_wd;
         if (oam_we && oam_wa[0])  oam_o[oam_wa[7:1]] <= oam_wd;
         oam_q <= a[7:0] >= 8'd160 ? 8'h00 : a[0] ? oam_o[a[7:1]] : oam_e[a[7:1]];
         ppu_oq <= {oam_o[ppu_oaddr], oam_e[ppu_oaddr]};
-        if (cpu_wr && reg_a == R_HRAM) hram[a[6:0]] <= dout;
+        if (clr_on || cpu_wr && reg_a == R_HRAM) hram[clr_on ? clr[6:0] : a[6:0]] <= clr_on ? 8'h00 : dout;
         hram_q <= hram[a[6:0]];
         if (boot_we) boot[boot_addr[BOOT_AW-1:0]] <= boot_wdata;
         boot_q <= boot[rst ? boot_addr[BOOT_AW-1:0] : a[BOOT_AW-1:0]];
