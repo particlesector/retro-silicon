@@ -12,7 +12,7 @@ Module `cpu_sm83`.
 - **Interrupts:** `int_req` is the system's IE & IF, combinational from its registers, so a write to either is seen in the next M-cycle. Before each opcode fetch, if IME is set and `int_req` isn't 0, the CPU dispatches instead, in 5 M-cycles: the fetch made and its opcode dropped, two internal M-cycles, PC's high byte pushed, then its low byte. During that last one it picks the lowest bit of `int_req` and pulses `int_ack` with it, for the system to clear in IF at the edge, and jumps to its vector (`$40` + 8 × bit). If the high byte's push wrote IE and no enabled interrupt is left, PC goes to `$0000` and nothing is acked.
 - **EI, DI, RETI:** EI enables interrupts after the next instruction; DI and RETI act at once.
 - **HALT:** the CPU reads the byte after HALT (and drops it), then idles with no bus accesses until `int_req` isn't 0. The M-cycle that sees it is the dispatch's first, its dropped fetch (IME set), or the next opcode's fetch (IME clear), so `rd` may rise during it. This is SameBoy's timing, which looks two T-cycles into each halted M-cycle: the Game Boy system gives the CPU a request made in an M-cycle's second or third T-cycle an M-cycle later (`systems/game-boy`), and Mooneye's HALT and PPU interrupt tests pass there. With IME clear and an interrupt already pending, HALT doesn't halt and the next opcode byte is read twice (the HALT bug). With EI just before HALT and an interrupt pending, the interrupt returns to the HALT.
-- **STOP:** with no interrupt pending, the CPU reads the byte after STOP, skips it, pulses `stop_pulse` (the system resets DIV) and stops, `stopped` high, until `stop_exit`. With one pending, that byte runs as the next opcode. Leaving STOP on a joypad press, and the Color's speed switch, are the system's: it raises `stop_exit`.
+- **STOP:** with no interrupt pending, the CPU reads the byte after STOP, skips it, pulses `stop_pulse` (the system resets DIV) and stops, `stopped` high, until `stop_exit`. With one pending, that byte runs as the next opcode, unless `stop_switch` is high (the Color's speed switch is armed): then it stops all the same, as MesenCE's STOP does (SameBoy's switches too). Leaving STOP on a joypad press, and the Color's speed switch, are the system's: it raises `stop_exit`.
 - **Illegal opcodes** (`$D3 $DB $DD $E3 $E4 $EB $EC $ED $F4 $FC $FD`) lock the CPU up, `locked` high, until reset.
 
 ## Ports
@@ -28,6 +28,7 @@ Module `cpu_sm83`.
 | `int_req` | in | 5 | IE & IF: VBlank, STAT, timer, serial, joypad |
 | `int_ack` | out | 5 | One-hot, in a dispatch's last M-cycle: the IF bit to clear at its edge |
 | `stop_exit` | in | 1 | Leaves STOP |
+| `stop_switch` | in | 1 | STOP stops even with an interrupt pending (a speed switch is armed) |
 | `sync` | out | 1 | This M-cycle fetches an opcode |
 | `halted`, `stopped`, `locked` | out | 1 | In HALT, in STOP, locked up by an illegal opcode |
 | `stop_pulse` | out | 1 | The M-cycle that enters STOP |

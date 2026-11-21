@@ -30,7 +30,9 @@
 // interrupt returns to the HALT. EI enables interrupts after the next
 // instruction; DI and RETI act at once. STOP reads the byte after it and
 // stops the CPU, with `stopped` high, until `stop_exit` (the system's joypad
-// line or speed switch). An illegal opcode locks the CPU up, `locked` high,
+// line or speed switch); with an interrupt pending it does nothing (the next
+// byte is the next opcode), unless `stop_switch` (the Color's speed switch is
+// armed: it stops then too, as MesenCE's does). An illegal opcode locks the CPU up, `locked` high,
 // until reset.
 //
 // Save state (docs/conventions.md): four words, readable and writable while
@@ -56,6 +58,7 @@ module cpu_sm83 #(
     input  logic [4:0]  int_req,    // IE & IF
     output logic [4:0]  int_ack,    // one-hot, in the dispatch's last M-cycle: clear this bit of IF at its edge
     input  logic        stop_exit,  // leaves STOP
+    input  logic        stop_switch, // STOP stops even with an interrupt pending (a speed switch is armed)
 
     output logic        sync,       // this M-cycle fetches an opcode
     output logic        halted,
@@ -359,7 +362,7 @@ module cpu_sm83 #(
                 // halted: no access
             end else if (prev_ill) begin
                 n_lock = 1'b1;
-            end else if (prev_stop && !pend) begin
+            end else if (prev_stop && (!pend || stop_switch)) begin
                 rd = 1'b1;  // STOP's second byte, read and skipped
                 n_pc = w_pc + 16'd1;
                 n_stop = 1'b1;

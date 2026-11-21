@@ -151,6 +151,7 @@ module gameboy #(
         .clk, .rst, .ce(cm),
         .addr(a), .rd, .wr, .dout, .din,
         .int_req(ie[4:0] & int_seen), .int_ack, .stop_exit(sw_on ? sw_end : joy_low),
+        .stop_switch(cgb_en && key1_arm),
         .sync(cpu_sync), .halted(cpu_halted), .stopped(cpu_stopped), .stop_pulse, .locked(cpu_locked),
         .dbg_pc(cpu_pc), .dbg_sp(cpu_sp), .dbg_af(cpu_af), .dbg_bc(cpu_bc), .dbg_de(cpu_de), .dbg_hl(cpu_hl),
         .dbg_ime(cpu_ime), .dbg_ei(cpu_ei), .dbg_boundary(cpu_boundary),

@@ -168,13 +168,42 @@ std::vector<uint8_t> dma_bus_rom() {
     return rom;
 }
 
-// The byte dma_bus_rom() sends, through `boot`.
-uint8_t dma_bus_byte(const std::vector<uint8_t>& boot) {
+// A 32 KB ROM of our own: it arms a speed switch (KEY1 bit 0) with the timer's interrupt pending
+// (IE and IF bit 2, IME off), runs STOP, and sends KEY1 over the serial port.
+std::vector<uint8_t> speed_switch_pending_rom() {
+    std::vector<uint8_t> rom(0x8000, 0x00);
+    const uint8_t entry[] = {0x00, 0xC3, 0x50, 0x01};  // NOP; JP $0150
+    std::copy(std::begin(entry), std::end(entry), rom.begin() + 0x100);
+    rom[0x143] = 0x80;
+    uint8_t x = 0;
+    for (int i = 0x134; i <= 0x14C; i++) x = static_cast<uint8_t>(x - rom[i] - 1);
+    rom[0x14D] = x;
+    const uint8_t code[] = {
+        0x31, 0xFE, 0xFF,  // LD SP,$FFFE
+        0xF3,              // DI
+        0x3E, 0x04,        // LD A,$04
+        0xE0, 0xFF,        // LDH ($FF),A: IE, the timer
+        0xE0, 0x0F,        // LDH ($0F),A: IF, the timer's pending
+        0x3E, 0x01,        // LD A,1
+        0xE0, 0x4D,        // LDH ($4D),A: KEY1, a switch armed
+        0x10, 0x00,        // STOP
+        0xF0, 0x4D,        // LDH A,($4D)
+        0xE0, 0x01,        // LDH ($01),A
+        0x3E, 0x81,        // LD A,$81
+        0xE0, 0x02,        // LDH ($02),A: send it
+        0x18, 0xFE,        // JR @
+    };
+    std::copy(std::begin(code), std::end(code), rom.begin() + 0x150);
+    return rom;
+}
+
+// The first byte `rom` sends over the serial port, through `boot`.
+uint8_t serial_byte(const std::vector<uint8_t>& rom, const std::vector<uint8_t>& boot) {
     auto link = rig::make_gb_sim();
     rig::shell::Client client(*link);
     rig::gb::Console gb(client);
     gb.hold_reset();
-    REQUIRE_FALSE(gb.load(dma_bus_rom(), boot));
+    REQUIRE_FALSE(gb.load(rom, boot));
     for (uint32_t f = 20; f <= 600 && gb.serial_count() == 0; f += 20) {
         gb.stop_frame(f);
         gb.run();
@@ -369,6 +398,17 @@ TEST_CASE("Game Boy Color through the shell: an OAM DMA from work RAM leaves the
     const auto cgb = read_file(roms + "/" + rig::gb::boot_for("cgb"));
     const auto dmg = read_file(roms + "/" + rig::gb::boot_for("dmg"));
     if (cgb.empty() || dmg.empty()) SKIP("the boot ROMs aren't fetched");
-    CHECK(dma_bus_byte(cgb) == 0x5A);
-    CHECK(dma_bus_byte(dmg) == 0xEE);
+    CHECK(serial_byte(dma_bus_rom(), cgb) == 0x5A);
+    CHECK(serial_byte(dma_bus_rom(), dmg) == 0xEE);
+}
+
+TEST_CASE("Game Boy Color through the shell: STOP switches the speed with an interrupt pending, as MesenCE and SameBoy do") {
+    // With a switch armed, STOP switches the speed whether or not IE & IF has a bit set (MesenCE's
+    // STOP doesn't look; SameBoy's switches and only skips the pause). Turok: Rage Wars switches with
+    // one pending and waits for KEY1 bit 7. KEY1 then reads $FE: double speed, nothing armed.
+    const char* env = std::getenv("RS_TESTROMS");
+    const std::string roms = env ? env : RS_TESTROMS;
+    const auto cgb = read_file(roms + "/" + rig::gb::boot_for("cgb"));
+    if (cgb.empty()) SKIP("the boot ROMs aren't fetched");
+    CHECK(serial_byte(speed_switch_pending_rom(), cgb) == 0xFE);
 }

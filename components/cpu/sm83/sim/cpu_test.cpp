@@ -217,6 +217,30 @@ TEST_CASE("SM83 STOP reads its second byte, then waits for stop_exit") {
     REQUIRE(p.regs().af >> 8 == 0x01);
 }
 
+TEST_CASE("SM83 STOP with an interrupt pending: nothing, unless stop_switch (a speed switch armed)") {
+    for (bool sw : {false, true}) {
+        INFO("stop_switch " << sw);
+        Program p({0x10, 0x00, 0x3C});
+        p.ram[0xFFFF] = 0x04;
+        p.ram[0xFF0F] = 0x04;  // the timer's, pending, IME clear
+        p.stop_switch = sw;
+        p.step();
+        p.step();
+        REQUIRE(p.stopped() == sw);
+        if (!sw) {
+            REQUIRE(p.regs().pc == kStart + 2);  // its second byte ran as a NOP
+            continue;
+        }
+        for (int i = 0; i < 5; i++) REQUIRE(p.cycle().kind == '-');
+        p.stop_exit = true;
+        p.cycle();
+        p.stop_exit = false;
+        REQUIRE_FALSE(p.stopped());
+        p.step();  // INC A
+        REQUIRE(p.regs().af >> 8 == 0x01);
+    }
+}
+
 TEST_CASE("SM83 locks up on an illegal opcode, interrupts or not") {
     for (uint8_t op : {0xD3, 0xDB, 0xDD, 0xE3, 0xE4, 0xEB, 0xEC, 0xED, 0xF4, 0xFC, 0xFD}) {
         Program p({op, 0x00}, true);

@@ -27,6 +27,7 @@ public:
     std::array<uint8_t, 65536> ram{};
     bool irqs = false;
     bool stop_exit = false;
+    bool stop_switch = false;
     uint64_t cycles = 0;
     uint8_t last_ack = 0;
 
@@ -109,6 +110,7 @@ private:
     void drive() {
         m.int_req = irqs ? (ram[0xFFFF] & ram[0xFF0F] & 0x1F) : 0;
         m.stop_exit = stop_exit;
+        m.stop_switch = stop_switch;
         m.eval();
     }
     void clock() {
