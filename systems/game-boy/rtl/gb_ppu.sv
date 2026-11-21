@@ -54,6 +54,8 @@ module gb_ppu (
     input  logic        pwr,         // the CPU writes FF68 + pal_sel this M-cycle (lands at its end)
     input  logic [1:0]  pal_sel,
     output logic [7:0]  pal_q,       // FF68 + pal_sel, as read
+    input  logic        pal_clr,     // zero palette entry pal_clr_a in both palettes (after a reset)
+    input  logic [5:0]  pal_clr_a,
 
     output logic [12:0] vaddr,       // video RAM, the PPU's port
     input  logic [15:0] vq,          // both banks: bank 1 in bits 15-8
@@ -780,27 +782,26 @@ module gb_ppu (
             2'd2: pal_q = {ocps[6], 1'b1, ocps[5:0]};
             default: pal_q = pal_blk ? 8'hFF : opal_m[ocps[5:0]];
         endcase
+    wire pal_wr = !rst && ce && phase == 2'd3 && pwr && !pal_blk;
     always_ff @(posedge clk)
         if (rst) begin
             bcps <= '0;
             ocps <= '0;
-            for (int i = 0; i < 64; i++) begin
-                bpal[i]   <= '0;
-                opal_m[i] <= '0;
-            end
         end else if (ce && phase == 2'd3 && pwr)
             case (pal_sel)
                 2'd0: bcps <= {wdata[7], wdata[5:0]};
-                2'd1: begin
-                    if (!pal_blk) bpal[bcps[5:0]] <= wdata;
-                    if (bcps[6]) bcps[5:0] <= bcps[5:0] + 6'd1;
-                end
+                2'd1: if (bcps[6]) bcps[5:0] <= bcps[5:0] + 6'd1;
                 2'd2: ocps <= {wdata[7], wdata[5:0]};
-                default: begin
-                    if (!pal_blk) opal_m[ocps[5:0]] <= wdata;
-                    if (ocps[6]) ocps[5:0] <= ocps[5:0] + 6'd1;
-                end
+                default: if (ocps[6]) ocps[5:0] <= ocps[5:0] + 6'd1;
             endcase
+    // The data, one write port each so that they can be RAM: zeroed a cell at a time after a reset
+    // (gameboy's count through its memories), as a reset can't clear a RAM.
+    always_ff @(posedge clk)
+        if (pal_clr) bpal[pal_clr_a] <= '0;
+        else if (pal_wr && pal_sel == 2'd1) bpal[bcps[5:0]] <= wdata;
+    always_ff @(posedge clk)
+        if (pal_clr) opal_m[pal_clr_a] <= '0;
+        else if (pal_wr && pal_sel == 2'd3) opal_m[ocps[5:0]] <= wdata;
 
     // ---- the pixel, a clock after its dot: its colour from the palettes ----
     logic       q_obj;

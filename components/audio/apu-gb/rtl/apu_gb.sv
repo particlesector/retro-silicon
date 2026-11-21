@@ -60,9 +60,11 @@ module apu_gb (
     // the pulse channels: playing, timer running, silent until its first step,
     // the duty bit, the timer just reloaded, length enabled
     logic [1:0]  sq_act, sq_run, sq_supp, sq_duty, sq_just, sq_lenen;
+    // (Packed: the reset and NR52's power-off clear them in one clock, which a RAM can't, and
+    // GowinSynthesis made the unpacked arrays RAM.)
     logic [6:0]  sq_len [2];
-    logic [12:0] sq_cd [2];
-    logic [2:0]  sq_pos [2];
+    logic [1:0][12:0] sq_cd;
+    logic [1:0][2:0]  sq_pos;
 
     // channel 1's sweep
     logic [10:0] sw_shadow;

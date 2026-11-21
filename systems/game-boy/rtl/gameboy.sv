@@ -224,8 +224,9 @@ module gameboy #(
     // ---- zeroing the RAM at reset ----
     // MesenCE powers up with its RAM zeroed, and a game the host loads after another mustn't find
     // what the other left: from reset's rising edge, a count through work RAM's addresses (the
-    // biggest memory) zeroes work RAM, both video RAM banks, OAM and high RAM through their write
-    // ports. The palettes' RAM, in registers, clears with `rst`.
+    // biggest memory) zeroes work RAM, both video RAM banks, OAM, high RAM and the Color's palettes
+    // through their write ports. (A reset clearing every cell at once can't be a RAM, and
+    // GowinSynthesis made the palettes RAM anyway and dropped the clear, without a warning.)
     logic [WRAM_AW:0] clr;  // the top bit: done
     logic             rst_q;
     always_ff @(posedge clk) begin
@@ -357,7 +358,7 @@ module gameboy #(
         .rdata(lcd_q), .dma_on, .halted(cpu_halted),
         .cgb_hw, .cgb_en, .obj_x_pri(opri),
         .pwr(ppu_pwr_q),
-        .pal_sel(ppu_sel_q[1:0]), .pal_q,
+        .pal_sel(ppu_sel_q[1:0]), .pal_q, .pal_clr(clr_on), .pal_clr_a(clr[5:0]),
         .vaddr(ppu_vaddr), .vq({ppu_vq1, ppu_vq0}), .oaddr(ppu_oaddr), .oq(ppu_oq),
         .vram_rd_blk, .vram_wr_blk, .oam_rd_blk, .oam_wr_blk,
         .irq_vblank, .irq_stat,
