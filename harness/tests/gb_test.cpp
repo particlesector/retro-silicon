@@ -197,6 +197,36 @@ std::vector<uint8_t> speed_switch_pending_rom() {
     return rom;
 }
 
+// A 32 KB ROM of our own for the Color: the background white (tile 0, colour 0) and the window
+// black (tile 1, colour 3), from WY = 0 with WX = 166, the window's left edge at x = 159.
+std::vector<uint8_t> wx166_rom() {
+    std::vector<uint8_t> rom(0x8000, 0x00);
+    const uint8_t entry[] = {0x00, 0xC3, 0x50, 0x01};  // NOP; JP $0150
+    std::copy(std::begin(entry), std::end(entry), rom.begin() + 0x100);
+    rom[0x143] = 0x80;
+    uint8_t x = 0;
+    for (int i = 0x134; i <= 0x14C; i++) x = static_cast<uint8_t>(x - rom[i] - 1);
+    rom[0x14D] = x;
+    const uint8_t code[] = {
+        0x31, 0xFE, 0xFF,                    // LD SP,$FFFE
+        0xF0, 0x44, 0xFE, 0x90, 0x20, 0xFA,  // .v: LDH A,($44); CP 144; JR NZ,.v
+        0xAF, 0xE0, 0x40,                    // XOR A; LDH ($40),A: the LCD off
+        0x21, 0x10, 0x80, 0x06, 0x10,        // LD HL,$8010; LD B,16
+        0x3E, 0xFF, 0x22, 0x05, 0x20, 0xFA,  // .t: LD A,$FF; LD (HL+),A; DEC B; JR NZ,.t: tile 1, colour 3
+        0x21, 0x00, 0x9C, 0x01, 0x00, 0x04,  // LD HL,$9C00; LD BC,$0400
+        0x3E, 0x01, 0x22, 0x0B, 0x78, 0xB1, 0x20, 0xF8,  // .w: LD A,1; LD (HL+),A; DEC BC; LD A,B; OR C; JR NZ,.w
+        0x3E, 0x80, 0xE0, 0x68,              // LD A,$80; LDH ($68),A: palette 0, stepping
+        0x3E, 0xFF, 0xE0, 0x69, 0x3E, 0x7F, 0xE0, 0x69,  // colour 0 white
+        0xAF, 0xE0, 0x69, 0xE0, 0x69, 0xE0, 0x69, 0xE0, 0x69, 0xE0, 0x69, 0xE0, 0x69,  // colours 1-3 black
+        0xE0, 0x4A,                          // LDH ($4A),A: WY 0
+        0x3E, 0xA6, 0xE0, 0x4B,              // LD A,166; LDH ($4B),A: WX
+        0x3E, 0xF1, 0xE0, 0x40,              // LD A,$F1; LDH ($40),A: LCD, window (map $9C00), tiles $8000, background
+        0x18, 0xFE,                          // JR @
+    };
+    std::copy(std::begin(code), std::end(code), rom.begin() + 0x150);
+    return rom;
+}
+
 // The first byte `rom` sends over the serial port, through `boot`.
 uint8_t serial_byte(const std::vector<uint8_t>& rom, const std::vector<uint8_t>& boot) {
     auto link = rig::make_gb_sim();
@@ -411,4 +441,29 @@ TEST_CASE("Game Boy Color through the shell: STOP switches the speed with an int
     const auto cgb = read_file(roms + "/" + rig::gb::boot_for("cgb"));
     if (cgb.empty()) SKIP("the boot ROMs aren't fetched");
     CHECK(serial_byte(speed_switch_pending_rom(), cgb) == 0xFE);
+}
+
+TEST_CASE("Game Boy Color through the shell: WX = 166 shows the window's first pixel at x = 159, as MesenCE and SameBoy do") {
+    // On the Color, WX = 166 is like any other WX: the window starts at x = WX - 7, and doesn't carry
+    // on into the next line (that's the Game Boy's, in SameBoy). Bionic Commando: Elite Forces sets
+    // WY = 143 and WX = 166 on its title screen.
+    const char* env = std::getenv("RS_TESTROMS");
+    const std::string roms = env ? env : RS_TESTROMS;
+    const auto cgb = read_file(roms + "/" + rig::gb::boot_for("cgb"));
+    if (cgb.empty()) SKIP("the boot ROMs aren't fetched");
+    auto link = rig::make_gb_sim();
+    rig::shell::Client client(*link);
+    rig::gb::Console gb(client);
+    gb.hold_reset();
+    REQUIRE_FALSE(gb.load(wx166_rom(), cgb));
+    gb.stop_frame(300);
+    gb.run();
+    gb.wait_stopped();
+    const auto f = gb.frame();
+    for (int y : {0, 1, 72, 143}) {
+        INFO("line " << y);
+        CHECK(f[static_cast<size_t>(y) * 160 + 0] == 0x7FFF);
+        CHECK(f[static_cast<size_t>(y) * 160 + 158] == 0x7FFF);
+        CHECK(f[static_cast<size_t>(y) * 160 + 159] == 0x0000);
+    }
 }

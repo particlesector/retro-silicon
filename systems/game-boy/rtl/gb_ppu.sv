@@ -461,9 +461,11 @@ module gb_ppu (
                                     if (wx == 8'd0) begin
                                         act = pos == 8'd249 || (pos == 8'd240 && scx[2:0] != 3'd0) ||
                                               (pos >= 8'd241 && pos <= 8'd248);
-                                    end else if (wx < 8'd166) begin
+                                    end else if (wx < (cgb_hw ? 8'd167 : 8'd166)) begin
+                                        // (On the Color, 166 is as any other WX; the Game Boy's quirks
+                                        // here and at mode 3's end are its own, as SameBoy has them.)
                                         if (wx == pos + 8'd7) act = 1'b1;
-                                        else if (wx == pos + 8'd6 && !wx_new) begin
+                                        else if (wx == pos + 8'd6 && !wx_new && !cgb_hw) begin
                                             act = 1'b1;
                                             if (lcd_x != 8'd0) n_lcd_x = lcd_x - 8'd1;
                                         end
@@ -472,7 +474,7 @@ module gb_ppu (
                                         n_win_y = win_y + 8'd1; n_win_tx = '0; n_bgn = '0;
                                         n_wx_trig = 1'b1; n_fst = '0; n_win_fetching = 1'b1;
                                         if (wx == 8'd0 && scx[2:0] != 3'd0) n_resume = 1'b1;
-                                    end else if (wx == 8'd166 && wx == pos + 8'd7) begin
+                                    end else if (!cgb_hw && wx == 8'd166 && wx == pos + 8'd7) begin
                                         n_win_y = win_y + 8'd1;
                                     end
                                 end
@@ -653,7 +655,7 @@ module gb_ppu (
                     n_vrb = 1'b0; n_vwb = 1'b0; n_orb = 1'b0; n_owb = 1'b0;
                     n_pos = 8'd240;
                     if (line == 8'd143) n_win_y = 8'hFF;
-                    if (wy_trig && lcdc[5] && wx == 8'd166) begin
+                    if (!cgb_hw && wy_trig && lcdc[5] && wx == 8'd166) begin
                         n_wx_trig = 1'b1; n_win_tx = 5'd1; n_win_y = n_win_y + 8'd1;
                     end else begin
                         n_wx_trig = 1'b0;
