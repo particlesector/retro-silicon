@@ -35,7 +35,8 @@
 // Shell address map (README.md has the registers):
 //   0x00000000-...         the cartridge's ROM, 2^ROM_LOG2 bytes, written and read while held in reset
 //   0x01000000-0x0100007F  control and status registers
-//   0x02000000-...         the cartridge's RAM, 2^CRAM_LOG2 bytes, written and read while held in reset
+//   0x02000000-...         the cartridge's RAM, 2^CRAM_LOG2 bytes, written and read while held in reset;
+//                          read too while stopped at a limit (a battery game's save, as it plays)
 //   0x03000000-0x03000FFF  the boot ROM (256 bytes, or the Color's 2,304), written and read while held in reset
 //   0x04000000-0x040007FF  the serial port's bytes: byte n at n mod 2048
 //   0x05000000-0x0500B3FF  the frame buffer: 2 bytes a pixel at 2 (y x 160 + x), the shade (0 white to 3)
@@ -158,14 +159,16 @@ module gb_sys #(
     logic        rom_sh_ack;  // with ROM_EXT, the shell's ROM access is done
 
     // The shell writes the RAM and clock only while the system is held in reset, through gb_cart's
-    // port; it reads them through the same port then.
+    // port; it reads them through the same port then, and the RAM while the system is stopped at a
+    // limit too (a battery game's save as it plays: `ce` is low until a shell write lets it run on,
+    // long after, by when the RAM's output is the CPU's byte again).
     gb_cart #(.ROM_AW(23), .RAM_AW(CRAM_LOG2)) u_cart (
         .clk, .rst, .ce,
         .mbc(cart_cfg[2:0]), .rtc(cart_cfg[3]), .rumble(cart_cfg[4]),
         .rom_log2(cart_cfg[12:8]), .ram_log2(cart_cfg[20:16]),
         .addr(cart_addr), .wr(cart_wr), .wdata(cart_wdata), .rdata(cart_rdata),
         .rom_addr(rom_full), .rom_q,
-        .sh_we(rst && (sh_cram || sh_rtc) && s_we && !s_ack), .sh_rtc(sh_rtc),
+        .sh_rd(at_limit && sh_cram && !s_we), .sh_we(rst && (sh_cram || sh_rtc) && s_we && !s_ack), .sh_rtc(sh_rtc),
         .sh_addr(17'(s_addr[CRAM_LOG2 > 4 ? CRAM_LOG2 - 1 : 3:0])), .sh_wdata(s_wdata), .sh_q(cart_sh));
     wire [ROM_LOG2-1:0] rom_a = rom_full[ROM_LOG2-1:0];
     wire                rom_rd = cart_rd && !cart_addr[15];  // this M-cycle reads the ROM
@@ -243,6 +246,13 @@ module gb_sys #(
         if (rst) cram_head <= '1;
         else if (cart_wr && cart_addr[15:13] == 3'b101 && cart_addr[12:2] == '0)
             cram_head[8 * cart_addr[1:0] +: 8] <= cart_wdata;
+
+    // The T-cycles in which the system has written cartridge RAM since reset (register 58): the
+    // host sees a battery game save when it changes. Counted with `ce`, so not while stopped.
+    logic [31:0] cram_writes;
+    always_ff @(posedge clk)
+        if (rst) cram_writes <= '0;
+        else if (ce && cart_wr && cart_addr[15:13] == 3'b101) cram_writes <= cram_writes + 32'd1;
 
     // The clocks the M-cycles' last T-cycles have waited on the ROM since reset (register 54).
     logic [31:0] waits;
@@ -502,6 +512,7 @@ module gb_sys #(
             5'h13: reg_q = byte_of(pcm_n, r[1:0]);
             5'h14: reg_q = byte_of({11'd0, cart_cfg}, r[1:0]);
             5'h15: reg_q = byte_of(waits, r[1:0]);
+            5'h16: reg_q = byte_of(cram_writes, r[1:0]);
             default: ;
         endcase
     end

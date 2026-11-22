@@ -66,7 +66,7 @@ module gb_cart_top #(
         .mbc, .rtc, .rumble, .rom_log2, .ram_log2,
         .addr(cart_addr), .wr(cart_wr), .wdata(cart_wdata), .rdata(cart_rdata),
         .rom_addr, .rom_q,
-        .sh_we, .sh_rtc, .sh_addr, .sh_wdata, .sh_q);
+        .sh_rd(1'b0), .sh_we, .sh_rtc, .sh_addr, .sh_wdata, .sh_q);
 
     wire unused = &{1'b0, cart_rd, boot_on, m_last, boot_q};
 endmodule

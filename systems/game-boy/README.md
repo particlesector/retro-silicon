@@ -145,7 +145,7 @@ Not here yet: the serial port's fast clock (SC bit 1 is kept and read back, but 
 | --- | --- |
 | `0x00000000-...` | The cartridge's ROM, 2^`ROM_LOG2` bytes (written and read only while the system is held in reset) |
 | `0x01000000-0x0100007F` | Registers, below |
-| `0x02000000-...` | The cartridge's RAM, 2^`CRAM_LOG2` bytes (written and read only while the system is held in reset) |
+| `0x02000000-...` | The cartridge's RAM, 2^`CRAM_LOG2` bytes (written only while the system is held in reset; read then, or while it's stopped at a limit, from which it runs on: a battery game's save as it plays) |
 | `0x03000000-0x03000FFF` | The boot ROM: 256 bytes, or the Color's 2,304 (written and read while held in reset) |
 | `0x04000000-0x040007FF` | The serial port's bytes: byte n at n mod 2,048 |
 | `0x05000000-0x0500B3FF` | The frame buffer: 2 bytes a pixel at 2 × (y × 160 + x), little-endian, a shade (0 white to 3) or the Color's colour |
@@ -190,6 +190,7 @@ Not here yet: the serial port's fast clock (SC bit 1 is kept and read back, but 
 | `4C` | 4 | With `VIDEO`: how many (read-only) |
 | `50` | 3 | The cartridge: `gb_cart`'s `mbc` (bits 2-0: 0 none, 1 MBC1, 2 MBC1M, 3 MBC2, 4 MBC3, 5 MBC5), `rtc` (3), `rumble` (4), the Game Boy Color (5; with `CGB`), `rom_log2` (12-8) and `ram_log2` (20-16: 0 none, 9 MBC2's). 32 KB of ROM and no MBC or RAM at power-up |
 | `54` | 4 | With `ROM_EXT`: clocks the system has waited on the ROM since reset (read-only) |
+| `58` | 4 | T-cycles in which the system has written cartridge RAM since reset (read-only): a host keeping a battery game's saves sees it save when this changes |
 
 ## Tests
 

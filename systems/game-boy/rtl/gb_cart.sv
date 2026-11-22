@@ -36,7 +36,8 @@
 // clock's reads are registered), as gameboy's `cart_rdata` must be. A write lands on
 // the clock `wr` is high.
 //
-// The shell's port (while the system is held in reset, when it has the RAM's port):
+// The shell's port (while the system is held in reset, when it has the RAM's port; or, for reads
+// only, while `sh_rd`, which the system raises only while it's stopped and `ce` stays low):
 // with `sh_rtc` low, the RAM's byte `sh_addr`; high, the clock's state: bytes 0-4
 // the registers (seconds, minutes, hours, days' low 8, days' high: bit 0 day bit 8,
 // 6 halt, 7 carry), 5-9 the latched copy, 10-12 the tick count (bits 0-14) and the
@@ -63,6 +64,7 @@ module gb_cart #(
     output logic [ROM_AW-1:0] rom_addr,
     input  logic [7:0]        rom_q,
 
+    input  logic              sh_rd,
     input  logic              sh_we,
     input  logic              sh_rtc,
     input  logic [16:0]       sh_addr,
@@ -161,8 +163,9 @@ module gb_cart #(
     wire ram_on = has_ram && (mbc == M_NONE || ram_en && (mbc != M_MBC3 || xbank <= (mbc30 ? 4'd7 : 4'd3)));
     wire rtc_on = mbc == M_MBC3 && rtc && ram_en && xbank >= 4'd8 && xbank <= 4'hC;
 
-    wire [RAM_AW-1:0] ram_a  = rst ? sh_addr[RAM_AW-1:0] : RAM_AW'(ram_full & ram_mask);
-    wire              ram_we = rst ? sh_we && !sh_rtc : wr && is_ram && ram_on;
+    wire              sh_own = rst || sh_rd;
+    wire [RAM_AW-1:0] ram_a  = sh_own ? sh_addr[RAM_AW-1:0] : RAM_AW'(ram_full & ram_mask);
+    wire              ram_we = sh_own ? sh_we && !sh_rtc : wr && is_ram && ram_on;
     wire [7:0]        ram_d  = rst ? sh_wdata : mbc == M_MBC2 ? {4'hF, wdata[3:0]} : wdata;
     always_ff @(posedge clk) begin
         if (ram_we) ram[ram_a] <= ram_d;

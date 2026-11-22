@@ -169,11 +169,17 @@ std::vector<uint16_t> Console::frame() {
 uint32_t Console::sound_crc() { return get32(kSoundCrc); }
 uint32_t Console::cart_head() { return get32(kCartHead); }
 uint32_t Console::waits() { return get32(kWaits); }
+uint32_t Console::cart_writes() { return get32(kCartWrites); }
 
 std::vector<uint8_t> Console::cart_ram(const std::vector<uint8_t>& rom) {
     const auto cfg = cart_config(rom);
     if (!cfg || !cfg->ram_log2) return {};
     hold_reset();
+    return c_.read(kCartRam, 1u << cfg->ram_log2);
+}
+std::vector<uint8_t> Console::cart_ram_stopped(const std::vector<uint8_t>& rom) {
+    const auto cfg = cart_config(rom);
+    if (!cfg || !cfg->ram_log2) return {};
     return c_.read(kCartRam, 1u << cfg->ram_log2);
 }
 std::pair<uint32_t, uint32_t> Console::pcm() { return {get32(kPcmCrc), get32(kPcmCount)}; }

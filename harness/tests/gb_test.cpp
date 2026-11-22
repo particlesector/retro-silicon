@@ -467,3 +467,47 @@ TEST_CASE("Game Boy Color through the shell: WX = 166 shows the window's first p
         CHECK(f[static_cast<size_t>(y) * 160 + 159] == 0x0000);
     }
 }
+
+TEST_CASE("Game Boy through the shell: a game's cartridge RAM reads back while it's stopped at a frame, and it runs on") {
+    // rig-run play keeps a battery game's saves as it plays: it sees the game write its RAM
+    // (cart_writes), stops it at a frame's end, reads the RAM and lets it run on.
+    const char* env = std::getenv("RS_TESTROMS");
+    const std::string roms = env ? env : RS_TESTROMS;
+    const auto golden = rig::gb::load_golden(RS_GB_GOLDEN);
+    auto g = std::find_if(golden.begin(), golden.end(), [](auto& x) { return x.id == "dmg_sound-01"; });
+    REQUIRE(g != golden.end());
+    const auto rom = read_file(roms + "/" + g->path);
+    if (rom.empty()) SKIP("no " << roms << "/" << g->path);
+    const auto boot = read_file(roms + "/" + rig::gb::boot_for(g->model));
+    if (boot.empty()) SKIP("the boot ROMs aren't fetched");
+    auto link = rig::make_gb_sim();
+    rig::shell::Client client(*link);
+    rig::gb::Console gb(client);
+    gb.hold_reset();
+    REQUIRE_FALSE(gb.load(rom, boot));
+    CHECK(gb.cart_writes() == 0);
+    // blargg's ROM writes its signature, DE B0 61 at $A001, as it starts.
+    uint32_t f = 0;
+    for (f = 10; f <= 300 && (gb.cart_head() >> 8) != 0x61B0DE; f += 10) {
+        gb.stop_frame(f);
+        gb.run();
+        gb.wait_stopped();
+    }
+    REQUIRE((gb.cart_head() >> 8) == 0x61B0DE);
+    const uint32_t w = gb.cart_writes();
+    CHECK(w > 0);
+    const auto live = gb.cart_ram_stopped(rom);
+    REQUIRE(live.size() == 8192);
+    CHECK(live[1] == 0xDE);
+    CHECK(live[2] == 0xB0);
+    CHECK(live[3] == 0x61);
+    CHECK(gb.cart_writes() == w);  // stopped, nothing counts
+    // It runs on from there, its RAM as the read left it.
+    gb.stop_frame(f + 20);
+    gb.wait_stopped();
+    CHECK(gb.frames() == f + 20);
+    const auto later = gb.cart_ram_stopped(rom);
+    CHECK((gb.cart_head() >> 8) == 0x61B0DE);
+    // And what it reads stopped is what it reads held in reset.
+    CHECK(gb.cart_ram(rom) == later);
+}
