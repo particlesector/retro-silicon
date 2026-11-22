@@ -168,6 +168,7 @@ std::vector<uint16_t> Console::frame() {
 }
 uint32_t Console::sound_crc() { return get32(kSoundCrc); }
 uint32_t Console::cart_head() { return get32(kCartHead); }
+uint8_t Console::lcdc() { return c_.peek(kRegs + kLcdc, 1)[0]; }
 uint32_t Console::waits() { return get32(kWaits); }
 uint32_t Console::cart_writes() { return get32(kCartWrites); }
 
@@ -406,7 +407,13 @@ TestResult rom_test(Link& link, const Golden& g, const std::vector<uint8_t>& rom
         const std::vector<uint8_t> pass = {3, 5, 8, 13, 21, 34};
         // The next frame to stop at after `at`: `to`, or an input script's change before it, where the keys
         // change at that frame's end as gb_roms_test changes them.
+        // RS_GB_FRAME_LOG=<dir>: stops at every frame and writes each one's CRC and LCDC to <dir>/<id>.frames
+        // ("<frame> <crc> <lcdc>"), to find the first frame a game parts from another emulator's.
+        const char* frame_log = std::getenv("RS_GB_FRAME_LOG");
+        std::ofstream flog;
+        if (frame_log) flog.open(std::string(frame_log) + "/" + g.id + ".frames");
         auto next_stop = [&](uint32_t at, uint32_t to) {
+            if (frame_log) return at + 1;
             for (const auto& e : g.input)
                 if (e.frame > at && e.frame < to) return e.frame;
             return to;
@@ -417,6 +424,10 @@ TestResult rom_test(Link& link, const Golden& g, const std::vector<uint8_t>& rom
             if (!started) gb.run();
             gb.wait_stopped();
             gb.set_keys(keys_at(g.input, at));
+            if (flog) {
+                auto c = gb.frame_crc();
+                flog << at << " " << hex(c ? c->first : 0, 8) << " " << hex(gb.lcdc(), 2) << "\n";
+            }
             if (want && at == want) break;
             if (!want) {
                 auto more = gb.serial(static_cast<uint32_t>(bytes.size()));

@@ -339,7 +339,7 @@ module gameboy #(
         .p1, .irq(irq_joy), .low(joy_low)
     );
     logic [7:0] pal_q;
-    logic [1:0] ppu_mode;
+    logic       ppu_hblank;
     // The CPU's access to the PPU's registers, registered as the APU's is (below): the address and
     // data are steady from the clock after an M-cycle starts, and the PPU takes a write no sooner
     // than the M-cycle's second T-cycle, so this is exact and keeps the CPU's address decode off the
@@ -363,7 +363,7 @@ module gameboy #(
         .vaddr(ppu_vaddr), .vq({ppu_vq1, ppu_vq0}), .oaddr(ppu_oaddr), .oq(ppu_oq),
         .vram_rd_blk, .vram_wr_blk, .oam_rd_blk, .oam_wr_blk,
         .irq_vblank, .irq_stat,
-        .pix_we, .pix_x, .pix_y, .pix_color, .frame_end, .frame_cut, .mode(ppu_mode), .lcdc
+        .pix_we, .pix_x, .pix_y, .pix_color, .frame_end, .frame_cut, .hblank(ppu_hblank), .lcdc
     );
     // The APU's 2 MHz ticks are the M-cycle's first and third T-cycles, so the
     // CPU's reads (in the last) and writes (at its end) come between them. A
@@ -486,7 +486,7 @@ module gameboy #(
     end
 
     // ---- the Color's registers' writes, and its DMA to video RAM ----
-    wire hd_hbl = hd_run && ppu_mode == 2'd0;  // HBlank (or the LCD off) with an HBlank DMA on
+    wire hd_hbl = hd_run && ppu_hblank;  // HBlank (or the LCD off) with an HBlank DMA on
     always_ff @(posedge clk) begin
         if (rst) begin
             cgb_en   <= cgb_hw;

@@ -197,6 +197,34 @@ std::vector<uint8_t> speed_switch_pending_rom() {
     return rom;
 }
 
+// A 32 KB ROM of our own for the Color: at line 140 it starts an HBlank DMA of 8 blocks, which
+// moves one in each HBlank, 140 to 143 and, after VBlank, 0 to 3; once it's done it sends LY.
+std::vector<uint8_t> hdma_vblank_rom() {
+    std::vector<uint8_t> rom(0x8000, 0x00);
+    const uint8_t entry[] = {0x00, 0xC3, 0x50, 0x01};  // NOP; JP $0150
+    std::copy(std::begin(entry), std::end(entry), rom.begin() + 0x100);
+    rom[0x143] = 0x80;
+    uint8_t x = 0;
+    for (int i = 0x134; i <= 0x14C; i++) x = static_cast<uint8_t>(x - rom[i] - 1);
+    rom[0x14D] = x;
+    const uint8_t code[] = {
+        0x31, 0xFE, 0xFF,                    // LD SP,$FFFE
+        0xF3,                                // DI
+        0xF0, 0x44, 0xFE, 0x8C, 0x20, 0xFA,  // .w: LDH A,($44); CP 140; JR NZ,.w
+        0x3E, 0x40, 0xE0, 0x51,              // LD A,$40; LDH ($51),A: from $4000
+        0xAF, 0xE0, 0x52,                    // XOR A; LDH ($52),A
+        0x3E, 0x80, 0xE0, 0x53,              // LD A,$80; LDH ($53),A: to $8000
+        0xAF, 0xE0, 0x54,                    // XOR A; LDH ($54),A
+        0x3E, 0x87, 0xE0, 0x55,              // LD A,$87; LDH ($55),A: an HBlank DMA of 8 blocks
+        0xF0, 0x55, 0xCB, 0x7F, 0x28, 0xFA,  // .p: LDH A,($55); BIT 7,A; JR Z,.p: until it's done
+        0xF0, 0x44, 0xE0, 0x01,              // LDH A,($44); LDH ($01),A
+        0x3E, 0x81, 0xE0, 0x02,              // LD A,$81; LDH ($02),A: send LY
+        0x18, 0xFE,                          // JR @
+    };
+    std::copy(std::begin(code), std::end(code), rom.begin() + 0x150);
+    return rom;
+}
+
 // A 32 KB ROM of our own for the Color: the background white (tile 0, colour 0) and the window
 // black (tile 1, colour 3), from WY = 0 with WX = 166, the window's left edge at x = 159.
 std::vector<uint8_t> wx166_rom() {
@@ -510,4 +538,15 @@ TEST_CASE("Game Boy through the shell: a game's cartridge RAM reads back while i
     CHECK((gb.cart_head() >> 8) == 0x61B0DE);
     // And what it reads stopped is what it reads held in reset.
     CHECK(gb.cart_ram(rom) == later);
+}
+
+TEST_CASE("Game Boy Color through the shell: an HBlank DMA moves no block as line 0 starts after VBlank, as MesenCE has it") {
+    // The PPU's STAT reads mode 0 for a dot as each line starts (SameBoy's timing); after VBlank
+    // that isn't an HBlank, and the DMA mustn't take it for one. A Bug's Life's HBlank DMAs across
+    // VBlank ended a line early, and the game a frame ahead of MesenCE.
+    const char* env = std::getenv("RS_TESTROMS");
+    const std::string roms = env ? env : RS_TESTROMS;
+    const auto cgb = read_file(roms + "/" + rig::gb::boot_for("cgb"));
+    if (cgb.empty()) SKIP("the boot ROMs aren't fetched");
+    CHECK(serial_byte(hdma_vblank_rom(), cgb) == 3);
 }

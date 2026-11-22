@@ -136,6 +136,7 @@ public:
     std::vector<uint16_t> frame();  // the frame buffer: 160 x 144 shades, or the Color's 15-bit colours
     uint32_t sound_crc();
     uint32_t cart_head();  // cartridge RAM's first 4 bytes, $A000 in the low byte
+    uint8_t lcdc();
 
     // With a display:
     void pace(bool on);

@@ -76,7 +76,7 @@ module gb_ppu (
     output logic [14:0] pix_color,
     output logic        frame_end,   // with ce: VBlank starts (the frame is out)
     output logic        frame_cut,   // with ce: the LCD turns off outside VBlank (the frame is cut short)
-    output logic [1:0]  mode,        // STAT's mode bits
+    output logic        hblank,      // HBlank, mode 0 from mode 3's end (or the LCD off), for the HBlank DMA
     output logic [7:0]  lcdc
 );
     // ---- registers ----
@@ -760,7 +760,6 @@ module gb_ppu (
     assign irq_stat   = n_ist;
     assign frame_end  = n_frame_end;
     assign frame_cut  = n_frame_cut;
-    assign mode       = smode;
 
     always_ff @(posedge clk)
         if (rst) late_v <= 1'b0;
@@ -831,6 +830,7 @@ module gb_ppu (
             wy <= '0; wx <= '0; ly <= '0; stat_en <= '0;
             lx <= '0; line <= '0; first <= 1'b0; cmp_none <= 1'b0; ly_cmp <= '0;
             smode <= '0; scoinc <= 1'b0; mode_int <= MI_NONE; stat_line <= 1'b0; lyc_line <= 1'b0;
+            hblank <= 1'b0;
             wy_trig <= 1'b0; wy_sched <= 1'b0; wx_new <= 1'b0; win_y <= 8'hFF; hb1 <= 1'b0;
             stat_pend <= 1'b0; stat_val <= '0;
             ybus <= '0; xbus <= '0;
@@ -847,6 +847,10 @@ module gb_ppu (
             obp1 <= n_obp1; wy <= n_wy; wx <= n_wx; ly <= n_ly; stat_en <= n_stat_en;
             lx <= n_lx; line <= n_line; first <= n_first; cmp_none <= n_cmp_none; ly_cmp <= n_ly_cmp;
             smode <= n_smode; scoinc <= n_scoinc; mode_int <= n_mode_int; stat_line <= n_stat_line;
+            // STAT reads mode 0 for a dot as each line starts; after VBlank, on line 0, that isn't an
+            // HBlank (MesenCE's HBlank DMA moves no block there), so HBlank is mode 0 that began as
+            // mode 3 ended, or the LCD off.
+            hblank <= n_smode == 2'd0 && (smode == 2'd3 || hblank || !n_lcdc[7]);
             lyc_line <= n_lyc_line; wy_trig <= n_wy_trig; wy_sched <= n_wy_sched; win_y <= n_win_y;
             if (ce) begin
                 wx_new <= n_wx_new;
