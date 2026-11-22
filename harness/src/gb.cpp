@@ -3,6 +3,7 @@
 
 #include <algorithm>
 #include <chrono>
+#include <cmath>
 #include <cstdlib>
 #include <cstdio>
 #include <fstream>
@@ -81,12 +82,15 @@ std::optional<CartConfig> cart_config(const std::vector<uint8_t>& rom) {
 
 std::optional<std::string> Console::load(const std::vector<uint8_t>& rom, const std::vector<uint8_t>& boot,
                                          const std::vector<uint8_t>* ram_in) {
-    if (boot.size() != 256) return "a boot ROM of " + std::to_string(boot.size()) + " bytes, not 256";
+    // The Color's boot ROM is 2,304 bytes: with it the system is a Color (kCartCfg's bit 5).
+    if (boot.size() != 256 && boot.size() != 2304)
+        return "a boot ROM of " + std::to_string(boot.size()) + " bytes, not 256 or 2,304";
     const auto cfg = cart_config(rom);
     if (!cfg) return std::string(kNoMbc);
-    const auto room = c_.peek(kRegs + kRomRoom, 2);
+    const auto room = c_.peek(kRegs + kRomRoom, 3);  // and byte 2: the Color is built
+    if (boot.size() == 2304 && !room[2]) return std::string(kNoColor);
     if (cfg->rom_log2 > room[0] || cfg->ram_log2 > room[1]) return std::string(kNoRoom);
-    put32(kCartCfg, cfg->reg(), 3);
+    put32(kCartCfg, cfg->reg() | (boot.size() == 2304 ? 1u << 5 : 0), 3);
     std::vector<uint8_t> image(rom);
     image.resize(size_t{1} << cfg->rom_log2, 0xFF);
     const std::vector<uint8_t>& cart = image;
@@ -156,7 +160,12 @@ void Console::wait_stopped() {
     }
 }
 
-std::vector<uint8_t> Console::frame() { return c_.read(kFrameBuffer, kWidth * kHeight); }
+std::vector<uint16_t> Console::frame() {
+    const auto b = c_.read(kFrameBuffer, 2 * kWidth * kHeight);
+    std::vector<uint16_t> f(kWidth * kHeight);
+    for (size_t i = 0; i < f.size(); i++) f[i] = static_cast<uint16_t>(b[2 * i] | b[2 * i + 1] << 8);
+    return f;
+}
 uint32_t Console::sound_crc() { return get32(kSoundCrc); }
 uint32_t Console::cart_head() { return get32(kCartHead); }
 uint32_t Console::waits() { return get32(kWaits); }
@@ -278,10 +287,24 @@ std::map<std::string, std::set<std::string>> load_needs(const std::string& manif
     return out;
 }
 
+uint32_t color_rgb(uint16_t c) {
+    static constexpr uint8_t kCurve[32] = {0,   6,   12,  20,  28,  36,  45,  56,  66,  76,  88,
+                                           100, 113, 125, 137, 149, 161, 172, 182, 192, 202, 210,
+                                           218, 225, 232, 238, 243, 247, 250, 252, 254, 255};
+    const unsigned r = kCurve[c & 31], g = kCurve[(c >> 5) & 31], b = kCurve[(c >> 10) & 31];
+    unsigned gm = g;
+    if (g != b) {
+        const double gamma = 1.6;
+        gm = static_cast<unsigned>(
+            std::floor(std::pow((std::pow(g / 255.0, gamma) * 3 + std::pow(b / 255.0, gamma)) / 4, 1 / gamma) * 255 + 0.5));
+    }
+    return r << 16 | gm << 8 | b;
+}
+
 const std::set<std::string>& system_has() {
     static const std::set<std::string> has = {"cpu",     "serial",   "timer", "interrupts", "boot",
                                               "ppu",     "oam dma",  "apu",   "cart ram",   "mbc1",
-                                              "mbc2",    "mbc3",     "mbc5",  "rtc"};
+                                              "mbc2",    "mbc3",     "mbc5",  "rtc",        "cgb"};
     return has;
 }
 
@@ -330,7 +353,9 @@ TestResult rom_test(Link& link, const Golden& g, const std::vector<uint8_t>& rom
     };
 
     try {
-        if (g.model != "dmg") return finish("a ROM for the " + g.model + ": the system is a Game Boy (dmg)");
+        if (g.model != "dmg" && g.model != "cgb") return finish("a ROM for the " + g.model);
+        if ((g.model == "cgb") != (boot.size() == 2304))
+            return finish("a ROM for the " + g.model + " with the other model's boot ROM");
         if (g.check != "serial" && g.check != "mooneye" && g.check != "blargg" && g.check != "frame")
             return finish("the " + g.check + " check isn't supported");
         auto info = client.info();

@@ -1,7 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 // The Game Boy's picture and sound as HDMI at 720p. Each of the 160 x 144
 // pixels is 5 display pixels each way, 800 x 720, in the middle of the display, its shade grey: 0
-// white, 1 $AA, 2 $55, 3 black.
+// white, 1 $AA, 2 $55, 3 black; on the Game Boy Color (`cgb_hw`), its 15-bit colour corrected as
+// SameBoy's is (gb_color).
 //
 // The picture is gb_sys's frame buffer, read on the pixel clock through a port of its own (`fb_ra`,
 // its shade in `fb_q` the clock after), not a ring of lines as a2600_video's: the Game Boy can turn
@@ -35,6 +36,7 @@
 //
 // The pixel side resets itself at configuration (common/por on pclk).
 module gb_video #(
+    parameter bit CGB   = 1'b1, // the Game Boy Color's colours too
     parameter int X0    = 240,  // the picture's left edge
     parameter int Y0    = 0,    // ...and top line
     parameter int REQ_Y = 690
@@ -59,7 +61,8 @@ module gb_video #(
     // The pixel clock
     input  logic        pclk,
     output logic [14:0] fb_ra,       // the frame buffer: y x 160 + x
-    input  logic [1:0]  fb_q,        // ...its shade, the clock after
+    input  logic [14:0] fb_q,        // ...its shade or colour, the clock after
+    input  logic        cgb_hw,      // the Game Boy Color: colours
     output logic [9:0]  tmds0,
     output logic [9:0]  tmds1,
     output logic [9:0]  tmds2
@@ -202,16 +205,23 @@ module gb_video #(
     // The buffer's shade for this position the clock after; its colour the clock after that.
     assign fb_ra = 15'({row, 7'd0}) + 15'({row, 5'd0}) + 15'(col);
     logic [1:0] on_d;
-    logic [23:0] rgb;
+    logic [23:0] grey, crgb;
     always_ff @(posedge pclk) begin
         on_d <= {on_d[0], x_on && y_on && cur_ok};
-        case (fb_q)
-            2'd0: rgb <= 24'hFFFFFF;
-            2'd1: rgb <= 24'hAAAAAA;
-            2'd2: rgb <= 24'h555555;
-            default: rgb <= 24'h000000;
+        case (fb_q[1:0])
+            2'd0: grey <= 24'hFFFFFF;
+            2'd1: grey <= 24'hAAAAAA;
+            2'd2: grey <= 24'h555555;
+            default: grey <= 24'h000000;
         endcase
     end
+    if (CGB) begin : g_color
+        gb_color u_color (.clk(pclk), .c(fb_q), .rgb(crgb));
+    end else begin : g_no_color
+        assign crgb = 24'd0;
+        wire unused_c = &{1'b0, fb_q[14:2]};
+    end
+    wire [23:0] rgb = CGB && cgb_hw ? crgb : grey;
 
     logic packet;
     // ---- Sound: each pair crosses to pclk with a toggle, held until the next ----

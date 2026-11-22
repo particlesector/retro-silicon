@@ -30,10 +30,32 @@
 // The cartridge sees `cart_addr` (the DMA's address while it reads there),
 // and must have `cart_rdata` there a clock before the M-cycle's last T-cycle
 // ends; `cart_wr` is a write landing at this clock.
-module gameboy (
+//
+// The Game Boy Color (`cgb_hw`, with CGB set; G7): its 2,304-byte boot ROM at $0000-$00FF and $0200-$08FF, which
+// sets the Color's own mode or its Game Boy mode with KEY0 ($FF4C) before it unmaps itself; 32 KB
+// of work RAM in 8 banks (SVBK, $FF70) and 16 KB of video RAM in 2 (VBK, $FF4F); the colour
+// palettes (in gb_ppu); the DMA to video RAM ($FF51-$FF55): a general one, which stops the CPU until
+// it's done, or 16 bytes each HBlank, which stops it for each block. A block takes 4 T-cycles to
+// set up, then 2 a byte, and starts at an M-cycle's end, so the CPU's next M-cycle waits for it.
+// The registers read and write as SameBoy has them (the hardware, where MesenCE differs: Mooneye's
+// boot_hwio-C and unused_hwio-C).
+//
+// Double speed (KEY1, $FF4D, then STOP): the CPU, the timer, the serial port and OAM DMA run an
+// M-cycle every 2 T-cycles (`phase` steps by 2), while the PPU, the APU and the DMA to video RAM
+// keep their rate (dots). The switch stops the CPU for 33,941 M-cycles at the old speed, DIV held
+// at 0, as MesenCE times it, then the speed changes at an M-cycle's end.
+//
+// With CGB clear the Color isn't built: the memories are the Game Boy's (8 KB of work RAM, one bank
+// of video RAM, a 256-byte boot ROM), and `cgb_hw` is ignored.
+module gameboy #(
+    parameter bit CGB = 1'b1     // build the Game Boy Color too
+) (
     input  logic        clk,
     input  logic        rst,
     input  logic        ce,          // one T-cycle
+    input  logic        cgb_hw_in,   // the Game Boy Color (steady from reset; with CGB)
+    output logic        clearing,    // zeroing the RAM after a reset: hold ce low until it ends
+    output logic        dbl_speed,   // the Color's double speed (KEY1)
 
     output logic [15:0] cart_addr,
     output logic        cart_rd,     // this M-cycle reads the cartridge
@@ -42,8 +64,9 @@ module gameboy (
     input  logic [7:0]  cart_rdata,
 
     input  logic        boot_we,     // write the boot ROM
-    input  logic [7:0]  boot_addr,
+    input  logic [11:0] boot_addr,   // ...and in reset, read it here (boot_q, a clock later)
     input  logic [7:0]  boot_wdata,
+    output logic [7:0]  boot_q,
 
     input  logic [7:0]  keys,        // 1 pressed: Start, Select, B, A, down, up, left, right (bit 7 to 0)
 
@@ -51,29 +74,62 @@ module gameboy (
     output logic        ser_tx_valid,
 
     output logic        m_end,       // the clock that ends an M-cycle
-    output logic        m_last,      // the next T-cycle is the M-cycle's last (no `ce` in it, for a hold)
+    output logic        m_last,      // the next T-cycle ends an external access: an M-cycle's last, or an HDMA byte's
     output logic        cpu_sync,    // this M-cycle fetches an opcode
     output logic [15:0] cpu_pc,
     output logic        boot_on,     // the boot ROM is mapped
     output logic [7:0]  lcdc,
 
-    output logic        pix_we,      // a pixel at (pix_x, pix_y), shade 0 (white) to 3
+    output logic        pix_we,      // a pixel at (pix_x, pix_y): the Color's 15-bit colour, or shade 0 (white) to 3
     output logic [7:0]  pix_x,
     output logic [7:0]  pix_y,
-    output logic [1:0]  pix_shade,
+    output logic [14:0] pix_color,
     output logic        frame_end,   // VBlank starts: the frame is out
+    output logic        frame_cut,   // the LCD turns off outside VBlank: the frame is cut short
 
     output logic signed [9:0] aud_l, // the APU's mixes (audio/apu-gb), held from an M-cycle's end
     output logic signed [9:0] aud_r
 );
     // ---- T-cycles and M-cycles ----
+    wire        cgb_hw = CGB && cgb_hw_in;
+    localparam int WRAM_AW = CGB ? 15 : 13;
+    localparam int BOOT_AW = CGB ? 12 : 8;
+    wire unused_boot = &{1'b0, boot_addr};  // its top bits, without the Color
+
     logic [1:0] phase;
     wire        m = ce && phase == 2'd3;
     assign m_end = m;
-    assign m_last = phase == 2'd3;
+
+    // ---- the Color's double speed ----
+    logic        dbl;          // double speed
+    logic        sw_on;        // switching: the CPU waits in STOP
+    logic [15:0] sw_cnt;       // ...M-cycles left
+    wire         sw_end = sw_on && sw_cnt == 16'd0;
+    logic [1:0]  aph;          // the dot in the APU's M-cycle (phase, in single speed)
+
+    // ---- the Color's DMA to video RAM: a block (blk) stops the CPU for its 36 T-cycles ----
+    logic        blk, hd_run, hd_pend, hd_trig, gd_act;
+    logic [5:0]  blk_cnt;      // the block's T-cycle: 0-3 setup, then byte (n - 4) / 2
+    logic [11:0] hd_src;       // the source's bits 15-4
+    logic [11:0] hd_dst;       // the destination's bits 15-4 (video RAM takes 12-4)
+    logic [6:0]  hd_len;       // blocks left, less 1
+    wire  [3:0]  blk_byte = 4'((blk_cnt - 6'd4) >> 1);
+    wire         blk_xfer = blk && blk_cnt >= 6'd4;
+    wire  [15:0] hd_addr  = {hd_src, blk_byte};
+    wire         hd_bad   = hd_addr[15:13] == 3'b100 || hd_addr[15:13] == 3'b111;
+    wire         blk_wr   = ce && blk_xfer && blk_cnt[0];  // a byte lands in video RAM
+    wire         cm       = m && !blk;                      // an M-cycle the CPU runs
+    assign m_last = blk ? blk_xfer && blk_cnt[0] : phase == 2'd3;
     always_ff @(posedge clk)
-        if (rst) phase <= '0;
-        else if (ce) phase <= phase + 2'd1;
+        if (rst) begin
+            phase <= '0;
+            aph   <= '0;
+        end else if (ce) begin
+            // At a switch the new speed's M-cycle starts: 0 1 2 3, or 1 3 in double speed.
+            if (m && sw_end) phase <= dbl ? 2'd0 : 2'd1;
+            else phase <= dbl ? {~phase[1], 1'b1} : phase + 2'd1;
+            aph <= m && sw_end ? 2'd0 : aph + 2'd1;
+        end
 
     // ---- the CPU ----
     logic [15:0] a;
@@ -92,9 +148,10 @@ module gameboy (
     logic [31:0] cpu_st;
     /* verilator lint_on UNUSEDSIGNAL */
     cpu_sm83 #(.SAVE_STATE(1'b0)) cpu (
-        .clk, .rst, .ce(m),
+        .clk, .rst, .ce(cm),
         .addr(a), .rd, .wr, .dout, .din,
-        .int_req(ie[4:0] & int_seen), .int_ack, .stop_exit(joy_low),
+        .int_req(ie[4:0] & int_seen), .int_ack, .stop_exit(sw_on ? sw_end : joy_low),
+        .stop_switch(cgb_en && key1_arm),
         .sync(cpu_sync), .halted(cpu_halted), .stopped(cpu_stopped), .stop_pulse, .locked(cpu_locked),
         .dbg_pc(cpu_pc), .dbg_sp(cpu_sp), .dbg_af(cpu_af), .dbg_bc(cpu_bc), .dbg_de(cpu_de), .dbg_hl(cpu_hl),
         .dbg_ime(cpu_ime), .dbg_ei(cpu_ei), .dbg_boundary(cpu_boundary),
@@ -114,7 +171,8 @@ module gameboy (
     typedef enum logic [3:0] { R_BOOT, R_CART, R_VRAM, R_WRAM, R_OAM, R_NONE, R_IO, R_HRAM, R_IE } region_t;
     region_t reg_a;
     always_comb begin
-        if (boot_on && a[15:8] == 8'h00) reg_a = R_BOOT;
+        if (boot_on && (a[15:8] == 8'h00 || cgb_hw && a[15:12] == 4'h0 && a[11:8] >= 4'h2 && a[11:8] <= 4'h8))
+            reg_a = R_BOOT;
         else if (!a[15]) reg_a = R_CART;
         else if (a[15:13] == 3'b100) reg_a = R_VRAM;
         else if (a[15:13] == 3'b101) reg_a = R_CART;
@@ -125,66 +183,133 @@ module gameboy (
         else if (a != 16'hFFFF) reg_a = R_HRAM;
         else reg_a = R_IE;
     end
+    // An access on the bus the OAM DMA is reading from gets its byte, and its write is lost. The
+    // Game Boy's cartridge and work RAM share one bus; the Color's work RAM has its own, and as
+    // MesenCE has it, a DMA from $0000-$7FFF conflicts with that range only, one from $A000-$FDFF
+    // with that range only (SameBoy's buses agree where games go: a DMA from work RAM leaves the
+    // ROM free, so code can run from it while the DMA runs).
     wire on_ext   = reg_a == R_CART || reg_a == R_WRAM;
-    wire conflict = on_ext && dma_ext || reg_a == R_VRAM && dma_vram;
+    wire cgb_rom  = !a[15];                                  // $0000-$7FFF
+    wire cgb_ram  = a[15:13] == 3'b101 || reg_a == R_WRAM;   // $A000-$FDFF
+    wire dma_lo   = !dma_hi[7];                              // a DMA from $0000-$7FFF
+    wire dma_ram  = dma_hi >= 8'hA0 && dma_hi <= 8'hFD;      // from $A000-$FDFF
+    wire conflict = (cgb_hw ? dma_on && (cgb_rom && dma_lo || cgb_ram && dma_ram) : on_ext && dma_ext) ||
+                    reg_a == R_VRAM && dma_vram;
     wire oam_busy = dma_on;
-    wire cpu_wr   = m && wr && !conflict;
+    wire cpu_wr   = cm && wr && !conflict;
     wire io_wr    = cpu_wr && reg_a == R_IO;
+    wire cpu_w    = wr && !blk;          // the CPU writes this M-cycle (it isn't stopped)
+
+    // ---- the Color's registers ----
+    logic       cgb_en;      // the Color's own mode: KEY0 written by the boot ROM
+    logic       key0_b3;     // KEY0's bit 3 (OPRI stays writable)
+    logic       vbk, key1_arm, opri;
+    logic [2:0] svbk;
+    logic [7:0] r72, r73, r74, r75;
+    logic [7:0] rp;
+    wire        cgb_pal_ok = cgb_en || boot_on;  // the palettes' data can be written (SameBoy)
+    wire  [2:0] wbank = cgb_en && svbk != 3'd0 ? svbk : 3'd1;
 
     // ---- the external bus: the cartridge and work RAM ----
-    wire [15:0] ext_addr = dma_ext ? dma_addr : a;
+    // (the Color's DMA to video RAM reads it while a block runs). On the Color, work RAM is on a bus
+    // of its own: an OAM DMA from it reads it at its own address, and the cartridge's bus is the CPU's.
+    wire        dma_wram = cgb_hw && dma_on && dma_addr[15:14] == 2'b11;
+    wire [15:0] ext_addr = blk ? hd_addr : dma_ext && !dma_wram ? dma_addr : a;
     wire        ext_wram = ext_addr[15:14] == 2'b11;
+    wire [12:0] wram_addr = dma_wram && !blk ? dma_addr[12:0] : ext_addr[12:0];
     assign cart_addr  = ext_addr;
-    assign cart_rd    = dma_ext ? !ext_wram : rd && reg_a == R_CART;
+    assign cart_rd    = blk ? blk_xfer && !ext_wram && !hd_bad : dma_ext && !dma_wram ? !ext_wram : rd && reg_a == R_CART;
     assign cart_wr    = cpu_wr && reg_a == R_CART;
     assign cart_wdata = dout;
 
-    logic [7:0] wram [0:8191];
-    logic [7:0] wram_q;
+    // ---- zeroing the RAM at reset ----
+    // MesenCE powers up with its RAM zeroed, and a game the host loads after another mustn't find
+    // what the other left: from reset's rising edge, a count through work RAM's addresses (the
+    // biggest memory) zeroes work RAM, both video RAM banks, OAM, high RAM and the Color's palettes
+    // through their write ports. (A reset clearing every cell at once can't be a RAM, and
+    // GowinSynthesis made the palettes RAM anyway and dropped the clear, without a warning.)
+    logic [WRAM_AW:0] clr;  // the top bit: done
+    logic             rst_q;
     always_ff @(posedge clk) begin
-        if (cpu_wr && reg_a == R_WRAM) wram[a[12:0]] <= dout;
-        wram_q <= wram[ext_addr[12:0]];
+        rst_q <= rst;
+        if (rst && !rst_q) clr <= '0;
+        else if (!clr[WRAM_AW]) clr <= clr + 1'b1;
+    end
+    wire clr_on = !clr[WRAM_AW];
+    assign clearing = clr_on;
+    assign dbl_speed = dbl;
+
+    // 32 KB: $C000-$CFFF bank 0, $D000-$DFFF the bank SVBK picks (1 on the Game Boy)
+    logic [7:0] wram [0:(1 << WRAM_AW) - 1];
+    logic [7:0] wram_q;
+    wire [WRAM_AW-1:0] wram_wa = WRAM_AW'({a[12] ? wbank : 3'd0, a[11:0]});
+    wire [WRAM_AW-1:0] wram_ra = WRAM_AW'({wram_addr[12] ? wbank : 3'd0, wram_addr[11:0]});
+    wire [WRAM_AW-1:0] wram_wx = clr_on ? clr[WRAM_AW-1:0] : wram_wa;
+    always_ff @(posedge clk) begin
+        if (clr_on || cpu_wr && reg_a == R_WRAM) wram[wram_wx] <= clr_on ? 8'h00 : dout;
+        wram_q <= wram[wram_ra];
     end
     wire [7:0] ext_q = ext_wram ? wram_q : cart_rdata;
 
-    // ---- video RAM: the CPU's (and DMA's) port, and the PPU's ----
-    logic [7:0]  vram [0:8191];
-    logic [7:0]  vram_q, ppu_vq;
+    // ---- video RAM, two banks (the Color's): the CPU's (and DMAs') port, and the PPU's, which
+    // reads both banks at once ----
+    logic [7:0]  vram0 [0:8191];
+    logic [7:0]  vram_q0, vram_q1, ppu_vq0, ppu_vq1;
+    logic        vbk_q;
     logic [12:0] ppu_vaddr;
     logic        vram_rd_blk, vram_wr_blk, oam_rd_blk, oam_wr_blk;
     // The CPU's writes and reads share a port: a write never comes while the DMA reads video RAM
     // (that's a conflict), so its address is vram_a. A write gives its own byte on the port (block
     // RAM's write-first mode, which the Gowin parts' dual-port RAM has), which nothing reads.
-    wire [12:0] vram_a = dma_vram ? dma_addr[12:0] : a[12:0];
-    always_ff @(posedge clk)
-        if (cpu_wr && reg_a == R_VRAM && !vram_wr_blk) begin
-            vram[vram_a] <= dout;
-            vram_q       <= dout;
+    wire [12:0] vram_a  = clr_on ? clr[12:0] : blk ? {hd_dst[8:0], blk_byte} : dma_vram ? dma_addr[12:0] : a[12:0];
+    wire        vram_we = clr_on || (cpu_wr && reg_a == R_VRAM || blk_wr) && !vram_wr_blk;
+    wire [7:0]  vram_wd = clr_on ? 8'h00 : blk ? (hd_bad ? 8'hFF : ext_q) : dout;
+    always_ff @(posedge clk) begin
+        vbk_q <= vbk;
+        if (vram_we && (clr_on || !vbk)) begin
+            vram0[vram_a] <= vram_wd;
+            vram_q0       <= vram_wd;
         end else
-            vram_q <= vram[vram_a];
-    always_ff @(posedge clk) ppu_vq <= vram[ppu_vaddr];
-    wire [7:0] dma_byte = dma_vram ? vram_q : ext_q;
+            vram_q0 <= vram0[vram_a];
+    end
+    always_ff @(posedge clk) ppu_vq0 <= vram0[ppu_vaddr];
+    if (CGB) begin : g_vram1
+        logic [7:0] vram1 [0:8191];
+        always_ff @(posedge clk) begin
+            if (vram_we && (clr_on || vbk)) begin
+                vram1[vram_a] <= vram_wd;
+                vram_q1       <= vram_wd;
+            end else
+                vram_q1 <= vram1[vram_a];
+            ppu_vq1 <= vram1[ppu_vaddr];
+        end
+    end else begin : g_no_vram1
+        assign vram_q1 = 8'hFF;
+        assign ppu_vq1 = 8'h00;
+    end
+    wire [7:0] vram_q   = vbk_q ? vram_q1 : vram_q0;
+    wire [7:0] dma_byte = dma_vram ? vram_q : dma_wram ? wram_q : ext_q;
 
     // ---- OAM (its even and odd bytes, so the PPU reads 16 bits), high RAM, the boot ROM ----
     logic [7:0]  oam_e [0:79];
     logic [7:0]  oam_o [0:79];
-    logic [7:0]  oam_q, hram_q, boot_q;
+    logic [7:0]  oam_q, hram_q;
     logic [15:0] ppu_oq;
     logic [6:0]  ppu_oaddr;
     logic [7:0]  hram [0:127];
-    logic [7:0]  boot [0:255];
-    wire  [7:0]  oam_wa = dma_on ? dma_idx : a[7:0];
-    wire         oam_we = m && dma_on || cpu_wr && reg_a == R_OAM && !oam_busy && !oam_wr_blk;
-    wire  [7:0]  oam_wd = dma_on ? dma_byte : dout;
+    logic [7:0]  boot [0:(1 << BOOT_AW) - 1];
+    wire  [7:0]  oam_wa = clr_on ? clr[7:0] : dma_on ? dma_idx : a[7:0];
+    wire         oam_we = clr_on ? clr[7:0] < 8'd160 : m && dma_on || cpu_wr && reg_a == R_OAM && !oam_busy && !oam_wr_blk;
+    wire  [7:0]  oam_wd = clr_on ? 8'h00 : dma_on ? dma_byte : dout;
     always_ff @(posedge clk) begin
         if (oam_we && !oam_wa[0]) oam_e[oam_wa[7:1]] <= oam_wd;
         if (oam_we && oam_wa[0])  oam_o[oam_wa[7:1]] <= oam_wd;
         oam_q <= a[7:0] >= 8'd160 ? 8'h00 : a[0] ? oam_o[a[7:1]] : oam_e[a[7:1]];
         ppu_oq <= {oam_o[ppu_oaddr], oam_e[ppu_oaddr]};
-        if (cpu_wr && reg_a == R_HRAM) hram[a[6:0]] <= dout;
+        if (clr_on || cpu_wr && reg_a == R_HRAM) hram[clr_on ? clr[6:0] : a[6:0]] <= clr_on ? 8'h00 : dout;
         hram_q <= hram[a[6:0]];
-        if (boot_we) boot[boot_addr] <= boot_wdata;
-        boot_q <= boot[a[7:0]];
+        if (boot_we) boot[boot_addr[BOOT_AW-1:0]] <= boot_wdata;
+        boot_q <= boot[rst ? boot_addr[BOOT_AW-1:0] : a[BOOT_AW-1:0]];
     end
 
     // ---- I/O ----
@@ -199,13 +324,13 @@ module gameboy (
     wire  [5:0]  apu_sel = io[5:0] - 6'h10;
 
     gb_timer timer (
-        .clk, .rst, .tick(ce && phase == 2'd2), .m,
-        .wr_div(io_wr && io == 8'h04 || m && stop_pulse), .wr_tima(io_wr && io == 8'h05),
+        .clk, .rst, .dbl, .tick(ce && phase == (dbl ? 2'd1 : 2'd2)), .m,
+        .wr_div(io_wr && io == 8'h04 || cm && stop_pulse || m && sw_on), .wr_tima(io_wr && io == 8'h05),
         .wr_tma(io_wr && io == 8'h06), .wr_tac(io_wr && io == 8'h07), .wdata(dout),
         .counter, .tima, .tma, .tac, .irq(irq_timer), .fall7, .fall12, .rise12
     );
     gb_serial serial (
-        .clk, .rst, .m, .fall7,
+        .clk, .rst, .cgb_hw(cgb_en), .m, .fall7,
         .wr_sb(io_wr && io == 8'h01), .wr_sc(io_wr && io == 8'h02), .wdata(dout),
         .sb, .sc, .irq(irq_serial), .tx(ser_tx), .tx_valid(ser_tx_valid)
     );
@@ -213,14 +338,32 @@ module gameboy (
         .clk, .rst, .m, .wr(io_wr && io == 8'h00), .wsel(dout[5:4]), .keys,
         .p1, .irq(irq_joy), .low(joy_low)
     );
+    logic [7:0] pal_q;
+    logic [1:0] ppu_mode;
+    // The CPU's access to the PPU's registers, registered as the APU's is (below): the address and
+    // data are steady from the clock after an M-cycle starts, and the PPU takes a write no sooner
+    // than the M-cycle's second T-cycle, so this is exact and keeps the CPU's address decode off the
+    // PPU's paths (the PYNQ-Z2's system clock had 1% of margin with it there).
+    logic       ppu_wr_q, ppu_pwr_q;
+    logic [3:0] ppu_sel_q;
+    logic [7:0] ppu_wd_q;
+    always_ff @(posedge clk) begin
+        ppu_wr_q  <= cpu_w && !conflict && reg_a == R_IO && io[7:4] == 4'h4;
+        ppu_pwr_q <= cpu_w && !conflict && reg_a == R_IO && io >= 8'h68 && io <= 8'h6B && cgb_pal_ok && cgb_hw;
+        ppu_sel_q <= io[3:0];
+        ppu_wd_q  <= dout;
+    end
     gb_ppu ppu (
         .clk, .rst, .ce, .phase,
-        .wr(wr && !conflict && reg_a == R_IO && io[7:4] == 4'h4), .reg_sel(io[3:0]), .wdata(dout),
+        .wr(ppu_wr_q), .reg_sel(ppu_sel_q), .wdata(ppu_wd_q),
         .rdata(lcd_q), .dma_on, .halted(cpu_halted),
-        .vaddr(ppu_vaddr), .vq(ppu_vq), .oaddr(ppu_oaddr), .oq(ppu_oq),
+        .cgb_hw, .cgb_en, .obj_x_pri(opri),
+        .pwr(ppu_pwr_q),
+        .pal_sel(ppu_sel_q[1:0]), .pal_q, .pal_clr(clr_on), .pal_clr_a(clr[5:0]),
+        .vaddr(ppu_vaddr), .vq({ppu_vq1, ppu_vq0}), .oaddr(ppu_oaddr), .oq(ppu_oq),
         .vram_rd_blk, .vram_wr_blk, .oam_rd_blk, .oam_wr_blk,
         .irq_vblank, .irq_stat,
-        .pix_we, .pix_x, .pix_y, .pix_shade, .frame_end, .lcdc
+        .pix_we, .pix_x, .pix_y, .pix_color, .frame_end, .frame_cut, .mode(ppu_mode), .lcdc
     );
     // The APU's 2 MHz ticks are the M-cycle's first and third T-cycles, so the
     // CPU's reads (in the last) and writes (at its end) come between them. A
@@ -231,17 +374,17 @@ module gameboy (
     logic [5:0] apu_sel_q;
     logic [7:0] apu_wd_q;
     always_ff @(posedge clk) begin
-        apu_wr_q  <= wr && !conflict && reg_a == R_IO && io >= 8'h10 && io < 8'h40;
+        apu_wr_q  <= cpu_w && !conflict && reg_a == R_IO && io >= 8'h10 && io < 8'h40;
         apu_sel_q <= apu_sel;
         apu_wd_q  <= dout;
     end
-    /* verilator lint_off UNUSEDSIGNAL */
     logic [15:0] apu_levels;
+    /* verilator lint_off UNUSEDSIGNAL */
     logic [3:0]  apu_dac;
     logic [7:0]  apu_nr50, apu_nr51;
     /* verilator lint_on UNUSEDSIGNAL */
     apu_gb apu (
-        .clk, .rst, .t2(ce && !phase[0]), .fs(fall12), .fs_rise(rise12), .div_b12(counter[10]),
+        .clk, .rst, .cgb(cgb_hw), .t2(ce && !aph[0]), .fs(fall12), .fs_rise(rise12), .div_b12(dbl ? counter[11] : counter[10]),
         .wr(m && apu_wr_q), .sel(apu_sel_q), .wdata(apu_wd_q), .rsel(apu_sel), .rdata(apu_q),
         .levels(apu_levels), .dac(apu_dac), .nr50(apu_nr50), .nr51(apu_nr51), .mix_l(aud_l), .mix_r(aud_r)
     );
@@ -251,6 +394,24 @@ module gameboy (
         if (io >= 8'h10 && io < 8'h40) io_q = apu_q;
         else if (io == 8'h46) io_q = dma_reg;
         else if (io >= 8'h40 && io < 8'h4C) io_q = lcd_q;
+        else if (cgb_hw && io >= 8'h4C) case (io)
+            // the Color's, as SameBoy reads them (its CGB-E)
+            8'h4D: io_q = cgb_en ? {dbl, 6'h3F, key1_arm} : 8'hFF;
+            8'h4F: io_q = {7'h7F, vbk};
+            8'h55: io_q = cgb_en ? {!hd_run, hd_len} : 8'hFF;
+            8'h56: io_q = cgb_en ? (rp & 8'hC1) | 8'h2E : 8'hFF;
+            8'h68, 8'h6A: io_q = pal_q;
+            8'h69, 8'h6B: io_q = cgb_pal_ok ? pal_q : 8'hFF;
+            8'h6C: io_q = {7'h7F, opri};
+            8'h70: io_q = cgb_en ? {5'h1F, svbk} : 8'hFF;
+            8'h72: io_q = r72;
+            8'h73: io_q = r73;
+            8'h74: io_q = cgb_en ? r74 : 8'hFF;
+            8'h75: io_q = r75 | 8'h8F;
+            8'h76: io_q = apu_levels[7:0];   // PCM12: channels 2 and 1's levels
+            8'h77: io_q = apu_levels[15:8];  // PCM34: 4 and 3's
+            default: io_q = 8'hFF;
+        endcase
         else case (io)
             8'h00: io_q = p1;
             8'h01: io_q = sb;
@@ -271,7 +432,7 @@ module gameboy (
     wire  [4:0] irq_now = {irq_joy, irq_serial, irq_timer, irq_stat, irq_vblank};
     always_comb begin
         if_n = if_r;
-        if (m) if_n = io_wr && io == 8'h0F ? dout[4:0] : if_r & ~int_ack;
+        if (cm) if_n = io_wr && io == 8'h0F ? dout[4:0] : if_r & ~int_ack;
         if_n = if_n | irq_now;
     end
     // Halted, the CPU sees a request made at an M-cycle's second or third dot
@@ -321,6 +482,114 @@ module gameboy (
                 end
             end
             if_r <= if_n;
+        end
+    end
+
+    // ---- the Color's registers' writes, and its DMA to video RAM ----
+    wire hd_hbl = hd_run && ppu_mode == 2'd0;  // HBlank (or the LCD off) with an HBlank DMA on
+    always_ff @(posedge clk) begin
+        if (rst) begin
+            cgb_en   <= cgb_hw;
+            key0_b3  <= 1'b0;
+            vbk      <= 1'b0;
+            opri     <= 1'b0;
+            svbk     <= '0;
+            key1_arm <= 1'b0;
+            r72 <= '0; r73 <= '0; r74 <= '0; r75 <= '0;
+            rp       <= '0;
+            blk      <= 1'b0;
+            blk_cnt  <= '0;
+            dbl      <= 1'b0;
+            sw_on    <= 1'b0;
+            sw_cnt   <= '0;
+            hd_run   <= 1'b0;
+            hd_pend  <= 1'b0;
+            hd_trig  <= 1'b0;
+            gd_act   <= 1'b0;
+            hd_src   <= '0;
+            hd_dst   <= '0;
+            hd_len   <= '0;
+        end else begin
+            if (cgb_hw && io_wr) begin
+                case (io)
+                    8'h4C: if (boot_on) begin
+                        cgb_en <= dout[3:2] == 2'b00;
+                        key0_b3 <= dout[3];
+                    end
+                    8'h4D: if (cgb_en) key1_arm <= dout[0];
+                    8'h4F: if (cgb_en) vbk <= dout[0];
+                    8'h6C: if (boot_on || key0_b3 || cgb_en) opri <= dout[0];
+                    8'h51: if (cgb_en) hd_src[11:4] <= dout;
+                    8'h52: if (cgb_en) hd_src[3:0] <= dout[7:4];
+                    8'h53: if (cgb_en) hd_dst[11:4] <= dout;
+                    8'h54: if (cgb_en) hd_dst[3:0] <= dout[7:4];
+                    8'h56: rp <= dout;
+                    8'h70: if (cgb_en || boot_on) svbk <= dout[2:0];
+                    8'h72: r72 <= dout;
+                    8'h73: r73 <= dout;
+                    8'h74: if (cgb_en) r74 <= dout;
+                    8'h75: r75 <= dout;
+                    default: ;
+                endcase
+            end
+
+            // STOP with KEY1 armed switches the speed (the CPU stops for its M-cycles; then KEY1 clears).
+            if (cm && stop_pulse && cgb_en && key1_arm) begin
+                sw_on  <= 1'b1;
+                sw_cnt <= 16'd33940;
+            end else if (m && sw_on) begin
+                if (sw_end) begin
+                    sw_on    <= 1'b0;
+                    dbl      <= !dbl;
+                    key1_arm <= 1'b0;
+                end else
+                    sw_cnt <= sw_cnt - 16'd1;
+            end
+
+            // HBlank's start (as the PPU's mode becomes 0, or as the DMA starts in it) asks for a block.
+            if (ce) begin
+                hd_trig <= hd_hbl;
+                if (hd_hbl && !hd_trig) hd_pend <= 1'b1;
+            end
+
+            // FF55: bit 7 clear starts a general DMA, or stops an HBlank one; set, starts an HBlank one.
+            if (cgb_en && io_wr && io == 8'h55) begin
+                hd_len <= dout[6:0];
+                if (dout[7]) begin
+                    hd_run <= 1'b1;
+                end else if (hd_run) begin
+                    hd_run  <= 1'b0;
+                    hd_pend <= 1'b0;
+                    hd_trig <= 1'b0;
+                end else begin
+                    gd_act  <= 1'b1;
+                    blk     <= 1'b1;
+                    blk_cnt <= dbl ? 6'd2 : 6'd0;  // its setup is 2 dots in double speed
+                end
+            end else if (m && !blk && hd_pend && hd_run && !cpu_halted) begin
+                // an HBlank block, at an M-cycle's end
+                hd_pend <= 1'b0;
+                blk     <= 1'b1;
+                blk_cnt <= dbl ? 6'd2 : 6'd0;
+            end
+
+            if (ce && blk) begin
+                blk_cnt <= blk_cnt + 6'd1;
+                if (blk_cnt == 6'd35) begin
+                    // the block's 16 bytes are done; an HBlank DMA stops after its last, or as the
+                    // destination wraps past $FFF0 (MesenCE)
+                    hd_src <= hd_src + 12'd1;
+                    hd_dst <= hd_dst + 12'd1;
+                    hd_len <= hd_len - 7'd1;
+                    if (hd_len == 7'd0 || hd_dst == 12'hFFF) hd_run <= 1'b0;
+                    if (gd_act && hd_len != 7'd0) begin
+                        blk_cnt <= 6'd4;  // the next block, without the setup
+                    end else begin
+                        blk    <= 1'b0;
+                        gd_act <= 1'b0;
+                    end
+                end
+            end
         end
     end
 

@@ -63,7 +63,8 @@ module gb_top #(
     logic [31:0] dq_o;
     logic        dq_oe;
 
-    gb_sdram #(.CLKS_PER_BIT(CLKS_PER_BIT), .IDLE_CLKS(464_063), .T_NUM(7), .T_DEN(76), .VIDEO(1'b1),
+    // Without the Game Boy Color: it needs more block RAM than the GW2AR-18 has (G7).
+    gb_sdram #(.CLKS_PER_BIT(CLKS_PER_BIT), .IDLE_CLKS(464_063), .T_NUM(7), .T_DEN(76), .VIDEO(1'b1), .CGB(1'b0),
                .FREQ_MHZ(47), .BUILD_ID(BUILD_ID)) u_sys (
         .clk(sclk), .uart_rx, .uart_tx, .led,
         .sd_cke(O_sdram_cke), .sd_cs_n(O_sdram_cs_n), .sd_ras_n(O_sdram_ras_n),

@@ -12,6 +12,7 @@ filesets:
       - rtl/gb_ppu.sv
       - rtl/gameboy.sv
       - rtl/gb_cart.sv
+      - rtl/gb_color.sv
       - rtl/gb_video.sv
       - rtl/gb_sys.sv
       - rtl/gb_sdram.sv

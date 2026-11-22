@@ -8,8 +8,10 @@
 // MesenCE's result (a pass, or a fail where MesenCE's is one) within twice
 // the frames MesenCE took, and its frame 30 frames after the result must be
 // MesenCE's (its CRC: 2 bytes a pixel, the shade then 0, row by row); a
-// frame check's frame is the one MesenCE's list names. A frame ends as
-// VBlank starts, or every 70,224 T-cycles while the LCD is off. The sound's
+// frame check's frame is the one MesenCE's list names. Frames end as MesenCE
+// ends them (gb_sys has the rules: at VBlank, as the LCD turns off outside it,
+// and every 70,224 dots while it's off), so the result comes at MesenCE's frame
+// number too. The sound's
 // CRC to the end of that frame (the APU's two mixes at each M-cycle's end, as
 // 16-bit little-endian words, left then right: gb_sys's register 30) must be
 // harness/golden/gb_audio_crc32.txt's, which RS_GB_AUDIO_OUT=<file> writes
@@ -57,7 +59,7 @@ namespace fs = std::filesystem;
 
 // What the system has so far (the manifest's `needs`; harness's rig::gb::system_has() is the same).
 const std::set<std::string> kHas = {"cpu",     "serial", "timer", "interrupts", "boot", "ppu", "oam dma",
-                                    "apu",     "cart ram", "mbc1", "mbc2",     "mbc3", "mbc5", "rtc"};
+                                    "apu",     "cart ram", "mbc1", "mbc2",     "mbc3", "mbc5", "rtc", "cgb"};
 // ROMs whose result is checked but not their frame, and why (harness's
 // rig::gb::frame_not_checked() has the same list).
 const std::map<std::string, std::string> kFrameNotChecked = {
@@ -82,6 +84,7 @@ struct Rom {
     uint32_t crc = 0;        // and its CRC
     Script input;
     bool again = false;
+    bool overridden = false;  // the manifest's `override`: MesenCE wrong, its result and CRC another's
     std::string sav;
     std::optional<uint32_t> savcrc;
 };
@@ -112,7 +115,7 @@ std::string unquote(const std::string& v) {
 struct Manifest {
     std::vector<Rom> roms;
     std::map<std::string, std::string> sources_dir;  // [sources.X] -> X
-    std::string dmg_boot;                           // source/path
+    std::string dmg_boot, cgb_boot;                 // source/path
 };
 
 Manifest read_manifest(const std::string& file) {
@@ -124,6 +127,7 @@ Manifest read_manifest(const std::string& file) {
     auto flush = [&] {
         if (table == "rom" && !r.id.empty()) m.roms.push_back(r);
         if (table == "boot" && boot_id == "dmg") m.dmg_boot = boot_src + "/" + boot_path;
+        if (table == "boot" && boot_id == "cgb") m.cgb_boot = boot_src + "/" + boot_path;
         r = Rom{};
         boot_id.clear();
     };
@@ -143,6 +147,7 @@ Manifest read_manifest(const std::string& file) {
             else if (k == "model") r.model = unquote(v);
             else if (k == "check") r.check = unquote(v);
             else if (k == "frames") r.frames = std::stoi(v);
+            else if (k == "override") r.overridden = true;
             else if (k == "needs") {
                 std::istringstream s(unquote(v));
                 std::string n;
@@ -232,7 +237,9 @@ std::optional<CartConfig> cart_config(const std::vector<uint8_t>& rom) {
     return c;
 }
 
-uint32_t crc32_frame(const std::vector<uint8_t>& shades) {
+// The frame as gb_frames.py takes MesenCE's: 2 bytes a pixel, little-endian (a shade, or the Color's
+// 15-bit colour).
+uint32_t crc32_frame(const std::vector<uint16_t>& pixels) {
     static const auto table = [] {
         std::array<uint32_t, 256> t{};
         for (uint32_t i = 0; i < 256; i++) {
@@ -243,9 +250,9 @@ uint32_t crc32_frame(const std::vector<uint8_t>& shades) {
         return t;
     }();
     uint32_t c = 0xFFFFFFFFu;
-    for (uint8_t v : shades) {
+    for (uint16_t v : pixels) {
         c = table[(c ^ v) & 0xFF] ^ (c >> 8);
-        c = table[c & 0xFF] ^ (c >> 8);
+        c = table[(c ^ (v >> 8)) & 0xFF] ^ (c >> 8);
     }
     return ~c;
 }
@@ -270,7 +277,7 @@ struct Outcome {
     long frames = 0;     // frames ended at the checked frame
     uint32_t crc = 0;    // its CRC
     uint32_t audio = 0;  // the sound's CRC to its end
-    std::vector<uint8_t> frame;
+    std::vector<uint16_t> frame;
     std::vector<uint8_t> ram;  // the cartridge's RAM at the end
 };
 
@@ -295,8 +302,16 @@ Outcome run(const Rom& rom, const std::vector<uint8_t>& image, const std::vector
     // The cartridge RAM's first bytes as the system wrote them, where blargg's newer ROMs report.
     std::array<uint8_t, 0x2000> cram{};
 
-    std::vector<uint8_t> screen(kW * kH, 0);
+    std::vector<uint16_t> screen(kW * kH, 0);
     bool frame_ended = false;
+    // Frames end as gb_sys ends them (MesenCE's frames): at VBlank, as the LCD turns off outside
+    // it, and with the LCD off, every 70,226 dots (70,225 at double speed) from power-up, from
+    // when it went off or from the last blank frame (MesenCE's count steps 2 dots at a time). The
+    // screen turns white at a blank frame and at the first frame to end after the LCD goes on
+    // (on the Color, only if it was off more than 5,000 dots).
+    long t_off = 1;
+    bool lcd_was = false, white_next = false;
+    const bool cgb = rom.model == "cgb";
     Crc audio;
     auto tick = [&](bool ce) {
         m.ce = ce;
@@ -305,8 +320,18 @@ Outcome run(const Rom& rom, const std::vector<uint8_t>& image, const std::vector
         const uint16_t a = m.cart_addr;
         if (m.cart_wr && a >= 0xA000 && a < 0xC000) cram[a & 0x1FFF] = m.cart_wdata;
         const uint32_t ra = m.rom_addr;
-        if (ce && m.pix_we && m.pix_x < kW && m.pix_y < kH) screen[m.pix_y * kW + m.pix_x] = m.pix_shade;
-        if (ce && m.frame_end) frame_ended = true;
+        if (m.pix_we && m.pix_x < kW && m.pix_y < kH) screen[m.pix_y * kW + m.pix_x] = m.pix_color;
+        if (ce) {
+            const bool lcd_on = (m.lcdc & 0x80) != 0;
+            const bool blank = !lcd_on && !lcd_was && t_off == kTPerFrame + (m.dbl_speed ? 1 : 2);
+            const bool done = m.frame_end || m.frame_cut || blank;
+            if (done && (blank || white_next)) std::fill(screen.begin(), screen.end(), cgb ? 0x7FFF : 0);
+            if (!lcd_on) t_off = lcd_was || blank ? 1 : t_off + 1;
+            if (done) white_next = false;
+            if (lcd_on && !lcd_was) white_next = !cgb || t_off > 5000;
+            lcd_was = lcd_on;
+            if (done) frame_ended = true;
+        }
         if (ce && m.m_end) {
             const uint16_t l = static_cast<uint16_t>(static_cast<int16_t>(m.aud_l << 6) >> 6);
             const uint16_t r = static_cast<uint16_t>(static_cast<int16_t>(m.aud_r << 6) >> 6);
@@ -325,6 +350,7 @@ Outcome run(const Rom& rom, const std::vector<uint8_t>& image, const std::vector
         m.rom_q = cart[ra & (cart.size() - 1)];  // a clock after its address, as block RAM gives it
     };
     m.rst = 1;
+    m.cgb_hw = rom.model == "cgb";
     m.keys = keys_at(rom.input, 0);
     m.mbc = cc.mbc;
     m.rtc = cc.rtc;
@@ -351,18 +377,19 @@ Outcome run(const Rom& rom, const std::vector<uint8_t>& image, const std::vector
     m.sh_rtc = 0;
     for (size_t i = 0; i < boot.size(); i++) {
         m.boot_we = 1;
-        m.boot_addr = static_cast<uint8_t>(i);
+        m.boot_addr = static_cast<uint16_t>(i);
         m.boot_wdata = boot[i];
         tick(false);
     }
     m.boot_we = 0;
     tick(false);
+    while (m.clearing) tick(false);  // the console zeroing its RAM, as gb_sys waits for it
     m.rst = 0;
 
     Outcome out;
     std::vector<uint8_t> bytes;
     const long limit = 2L * rom.frames + 60;
-    long t = 0, want = rom.check == "frame" ? rom.golden_frames : -1;
+    long want = rom.check == "frame" ? rom.golden_frames : -1;
     const std::vector<uint8_t> pass = {3, 5, 8, 13, 21, 34};
     if (rom.check == "frame") out.result = "-";
     while (out.frames < limit) {
@@ -378,10 +405,8 @@ Outcome run(const Rom& rom, const std::vector<uint8_t>& image, const std::vector
             if (trace) std::printf("%s serial %02X\n", rom.id.c_str(), m.ser_tx);
         }
         tick(false);
-        if (++t == kTPerFrame) frame_ended = true;
         if (!frame_ended) continue;
         frame_ended = false;
-        t = 0;
         out.frames++;
         m.keys = keys_at(rom.input, out.frames);
         if (want < 0) {
@@ -435,10 +460,12 @@ TEST_CASE("Game Boy test ROMs end as they do in MesenCE") {
         }
     }
     std::map<std::string, std::pair<long, uint32_t>> audio_got;
-    const fs::path boot_path = roms_dir / man.dmg_boot;
+    const fs::path boot_path = roms_dir / man.dmg_boot, cgb_boot_path = roms_dir / man.cgb_boot;
     if (!fs::exists(boot_path)) SKIP(boot_path.string() << " not found: run testroms/fetch.py");
-    const auto boot = read_file(boot_path);
-    REQUIRE(boot.size() == 256);
+    if (!fs::exists(cgb_boot_path)) SKIP(cgb_boot_path.string() << " not found: run testroms/fetch.py");
+    const auto dmg_boot = read_file(boot_path), cgb_boot = read_file(cgb_boot_path);
+    REQUIRE(dmg_boot.size() == 256);
+    REQUIRE(cgb_boot.size() == 2304);
 
     std::set<std::string> only;
     if (const char* o = std::getenv("RS_GB_ONLY")) {
@@ -450,8 +477,8 @@ TEST_CASE("Game Boy test ROMs end as they do in MesenCE") {
 
     std::vector<Rom> todo;
     for (auto& r : man.roms) {
-        if (r.model != "dmg" || (r.check != "serial" && r.check != "mooneye" && r.check != "blargg" &&
-                                 r.check != "frame"))
+        if ((r.model != "dmg" && r.model != "cgb") ||
+            (r.check != "serial" && r.check != "mooneye" && r.check != "blargg" && r.check != "frame"))
             continue;
         if (!std::all_of(r.needs.begin(), r.needs.end(), [](auto& n) { return kHas.count(n) != 0; })) continue;
         if (!only.empty() && !only.count(r.id)) continue;
@@ -491,13 +518,19 @@ TEST_CASE("Game Boy test ROMs end as they do in MesenCE") {
             // A battery cartridge's RAM: from `sav`, or with `again` what a first run left.
             std::vector<uint8_t> ram_in;
             if (!r.sav.empty()) ram_in = read_file(roms_dir / r.sav);
+            const auto& boot = r.model == "cgb" ? cgb_boot : dmg_boot;
             if (r.again) ram_in = run(r, image, boot, false, nullptr, nullptr).ram;
             Outcome o = run(r, image, boot, trace, r.again || !r.sav.empty() ? &ram_in : nullptr, mix);
             if (mix) std::fclose(mix);
             if (dump) {
-                std::ofstream f(fs::path(dump) / (r.id + ".pgm"), std::ios::binary);
-                f << "P5\n" << kW << " " << kH << "\n255\n";
-                for (uint8_t v : o.frame) f.put(static_cast<char>(255 - v * 85));
+                // A PPM: the Game Boy's shades as greys, the Color's 15-bit colours scaled to 8 bits.
+                std::ofstream f(fs::path(dump) / (r.id + ".ppm"), std::ios::binary);
+                f << "P6\n" << kW << " " << kH << "\n255\n";
+                for (uint16_t v : o.frame)
+                    for (int ch = 0; ch < 3; ch++) {
+                        const int c5 = (v >> (5 * ch)) & 0x1F;
+                        f.put(static_cast<char>(r.model == "cgb" ? (c5 << 3) | (c5 >> 2) : 255 - (v & 3) * 85));
+                    }
             }
             std::lock_guard<std::mutex> g(mu);
             char crcs[64];
@@ -510,6 +543,12 @@ TEST_CASE("Game Boy test ROMs end as they do in MesenCE") {
                 std::string t = o.text;
                 std::replace(t.begin(), t.end(), '\n', '|');
                 failures.push_back(r.id + ": " + o.result + ", MesenCE " + r.result + " [" + t + "]");
+            } else if (o.frames != r.golden_frames && !r.overridden) {
+                // The result, and so the checked frame, must come at MesenCE's frame number: frames
+                // ending as MesenCE's do, a game's input script and checks land at the same moment.
+                // (Not where the manifest overrides MesenCE: its frame number is its own wrong run's.)
+                failures.push_back(r.id + ": frame " + std::to_string(o.frames) + " checked, MesenCE's " +
+                                   std::to_string(r.golden_frames));
             } else if (o.crc != r.crc && !kFrameNotChecked.count(r.id)) {
                 failures.push_back(r.id + ": frame " + std::to_string(o.frames) + " " + crcs);
             } else if (r.savcrc && crc32_bytes(o.ram) != *r.savcrc) {

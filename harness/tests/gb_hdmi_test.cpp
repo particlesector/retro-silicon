@@ -28,7 +28,7 @@ namespace {
 // An HDMI receiver for 1280x720 at 60 Hz: it decodes each pixel clock (tmds::HdmiDecoder, which
 // keeps the audio and checks every packet), finds the frames, and checks each against CEA-861's
 // layout. With `expect` set it also checks the picture: the Game Boy's frame 5 times its size from
-// (240, 0), shade 0 white to 3 black, black around it. It takes each frame's CRC as gb_video does,
+// (240, 0), shade 0 white to 3 black (or the Color's colours, corrected), black around it. It takes each frame's CRC as gb_video does,
 // the data islands' packets as 0.
 class Receiver {
 public:
@@ -41,7 +41,7 @@ public:
         bool picture = true;  // the picture is `expect`'s
     };
     std::vector<Result> frames;
-    const std::vector<uint8_t>* expect = nullptr;
+    const std::vector<uint32_t>* expect = nullptr;  // each Game Boy pixel's colour, 0xRRGGBB
     tmds::HdmiDecoder dec;
 
     void operator()(uint32_t sym) {
@@ -69,7 +69,7 @@ public:
             bool pic = x >= kX0 && x < kX0 + 800 && y >= kY0 && y < kY0 + 720;
             if (!pic) {
                 if (rgb != 0) cur_.timing = false;
-            } else if (expect && rgb != kGrey[(*expect)[((y - kY0) / 5) * 160 + (x - kX0) / 5] & 3]) {
+            } else if (expect && rgb != (*expect)[((y - kY0) / 5) * 160 + (x - kX0) / 5]) {
                 cur_.picture = false;
             }
         } else {
@@ -116,10 +116,10 @@ std::optional<Rom> rom(const std::string& id) {
     const char* env = std::getenv("RS_TESTROMS");
     const std::string dir = env ? env : RS_TESTROMS;
     Rom r;
-    r.boot = read_file(dir + "/" + rig::gb::kDmgBoot);
     for (const auto& g : rig::gb::load_golden(RS_GB_GOLDEN)) {
         if (g.id != id) continue;
         r.g = g;
+        r.boot = read_file(dir + "/" + rig::gb::boot_for(g.model));
         r.rom = read_file(dir + "/" + g.path);
         if (r.rom.empty() || r.boot.empty()) return std::nullopt;
         return r;
@@ -128,8 +128,9 @@ std::optional<Rom> rom(const std::string& id) {
     return std::nullopt;
 }
 
-// The frame buffer at frame `frame`, in the sim without a display: its CRC must be MesenCE's.
-std::vector<uint8_t> frame_at(const Rom& r, uint32_t frame) {
+// The frame buffer at frame `frame`, in the sim without a display (its CRC must be MesenCE's), as
+// each pixel's colour on HDMI (0xRRGGBB).
+std::vector<uint32_t> frame_at(const Rom& r, uint32_t frame) {
     auto link = rig::make_gb_sim();
     rig::shell::Client client(*link);
     rig::gb::Console gb(client);
@@ -141,11 +142,15 @@ std::vector<uint8_t> frame_at(const Rom& r, uint32_t frame) {
     auto f = gb.frame();
     REQUIRE(f.size() == 160u * 144u);
     std::vector<uint8_t> two;
-    for (uint8_t v : f) two.insert(two.end(), {v, 0});
+    std::vector<uint32_t> rgb;
+    for (uint16_t v : f) {
+        two.insert(two.end(), {static_cast<uint8_t>(v), static_cast<uint8_t>(v >> 8)});
+        rgb.push_back(r.g.model == "cgb" ? rig::gb::color_rgb(v) : Receiver::kGrey[v & 3]);
+    }
     rig::Crc32 crc;
     crc.update(two);
     if (!rig::gb::frame_not_checked().count(r.g.id)) REQUIRE(crc.value() == r.g.crc);
-    return f;
+    return rgb;
 }
 
 // Runs a ROM with HDMI to its golden frame and decodes the output: the display frame whose CRC
@@ -208,6 +213,10 @@ TEST_CASE("Game Boy HDMI: a receiver sees dmg-acid2's frame at 720p, 5 times its
 
 TEST_CASE("Game Boy HDMI: a receiver sees mts-ei_sequence's pass screen at 720p") {
     matches_golden("mts-ei_sequence");
+}
+
+TEST_CASE("Game Boy Color HDMI: a receiver sees cgb-acid2's frame at 720p in corrected colours") {
+    matches_golden("cgb-acid2", rig::make_gb_console_sim);
 }
 
 TEST_CASE("Game Boy HDMI on the Tang Console 138K and the PYNQ-Z2: mts-ei_sequence with the 20K's video CRC") {

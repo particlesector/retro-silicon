@@ -16,20 +16,30 @@
 // only a fetch that isn't done three T-cycles after its address came costs
 // time; register 54 counts the clocks lost.
 //
-// A frame ends as VBlank starts (the PPU's frame_end), or after 70,224
-// T-cycles without one (the LCD off), as gb_roms_test counts them. The frame
-// buffer holds each pixel's shade as the PPU last drew it. When the system
-// stops at a limit, it takes the CRC of the frame buffer (2 bytes a pixel:
-// the shade, then 0, row by row), about 23,000 clocks, and starts no T-cycle
-// until that's done.
+// Frames end as MesenCE ends them, so a frame number means the same moment in both (and
+// gb_roms_test counts them alike): as VBlank starts (the PPU's frame_end), as the LCD turns off
+// outside VBlank (frame_cut), and with the LCD off, each time 70,224 dots have passed since it
+// went off or since the last such frame (a blank frame); never at a count running on from
+// before the LCD went on. The frame buffer holds each pixel's shade (or on the Game Boy Color,
+// its 15-bit colour) as the PPU last drew it, and turns white as MesenCE's screen does: at a
+// blank frame, and at the first frame to end after the LCD goes on (on the Color, only if it
+// was off more than 5,000 dots). MesenCE keeps two screens, so a frame cut short shows the
+// frame before last under the cut where this shows the last; a check doesn't land there. When the system stops at a limit, it takes the CRC of the frame buffer (2 bytes a pixel,
+// little-endian, row by row: as gb_frames.py takes MesenCE's), about 23,000 clocks, and starts no
+// T-cycle until that's done.
+//
+// Register 50's bit 5 makes it a Game Boy Color (gameboy's `cgb_hw`), from the next reset; with
+// CGB clear the Color isn't built (register 2C's byte 2 says which), and the frame buffer holds
+// shades only.
 //
 // Shell address map (README.md has the registers):
 //   0x00000000-...         the cartridge's ROM, 2^ROM_LOG2 bytes, written and read while held in reset
 //   0x01000000-0x0100007F  control and status registers
 //   0x02000000-...         the cartridge's RAM, 2^CRAM_LOG2 bytes, written and read while held in reset
-//   0x03000000-0x030000FF  the boot ROM
+//   0x03000000-0x03000FFF  the boot ROM (256 bytes, or the Color's 2,304), written and read while held in reset
 //   0x04000000-0x040007FF  the serial port's bytes: byte n at n mod 2048
-//   0x05000000-0x050059FF  the frame buffer: y x 160 + x, a shade (0 white to 3) a byte
+//   0x05000000-0x0500B3FF  the frame buffer: 2 bytes a pixel at 2 (y x 160 + x), the shade (0 white to 3)
+//                          or colour, little-endian
 //   0x06000000-0x0600000C  the cartridge's clock (MBC3's; gb_cart's shell bytes), while held in reset
 // The sound's CRC (register 30) is of the APU's two mixes at each M-cycle's end since reset, each
 // as a 16-bit little-endian word, left then right, as gb_roms_test takes it. With VIDEO, the mixes
@@ -49,6 +59,7 @@ module gb_sys #(
     parameter int          T_NUM        = 65_536,   // T-cycles per T_DEN clocks: the console's
     parameter int          T_DEN        = 421_875,  //   4.194304 MHz from 27 MHz
     parameter bit          VIDEO        = 1'b0,     // HDMI out (gb_video), on pclk
+    parameter bit          CGB          = 1'b1,     // the Game Boy Color too
     parameter int          ROM_LOG2     = 15,       // room for the cartridge's ROM: 2^ROM_LOG2 bytes (up to 23)
     parameter bit          ROM_EXT      = 1'b0,     // the ROM on mem_*, not in block RAM
     parameter int          CRAM_LOG2    = 15,       // room for its RAM, in block RAM
@@ -95,14 +106,16 @@ module gb_sys #(
     logic [31:0] stop_cycle;  // 04: T-cycles
     logic [31:0] stop_frame;  // 10
     logic [7:0]  keys;        // 24: 1 pressed, gameboy's `keys`
-    logic [20:0] cart_cfg;    // 50: gb_cart's mbc (bits 2-0), rtc (3), rumble (4), rom_log2 (12-8), ram_log2 (20-16)
+    logic [20:0] cart_cfg;    // 50: gb_cart's mbc (bits 2-0), rtc (3), rumble (4), the Color (5),
+                              //     rom_log2 (12-8), ram_log2 (20-16)
 
     wire rst = por_rst || ctrl[1];
 
     logic [31:0] cycles, frames, frame_crc, crc_frame, ser_count;
     logic        scanning, pace_wait;
     wire at_limit = (stop_cycle != 0 && cycles >= stop_cycle) || (stop_frame != 0 && frames >= stop_frame);
-    wire running  = ctrl[0] && !rst && !scanning && !at_limit && !pace_wait;
+    logic ram_clearing;  // the console zeroing its RAM after a reset
+    wire running  = ctrl[0] && !rst && !ram_clearing && !scanning && !at_limit && !pace_wait;
 
     // ---- T-cycles ----
     logic ce, ce_held;
@@ -115,18 +128,20 @@ module gb_sys #(
     logic [7:0]  cart_wdata, cart_rdata, ser_tx, lcdc;
     logic        ser_tx_valid;
     logic        boot_we;
-    logic [7:0]  boot_addr, boot_wdata;
-    logic        pix_we, frame_end;
+    logic [11:0] boot_addr;
+    logic [7:0]  boot_wdata, boot_sh;
+    logic        pix_we, frame_end, frame_cut;
     logic [7:0]  pix_x, pix_y;
-    logic [1:0]  pix_shade;
+    logic [14:0] pix_color;
     logic signed [9:0] aud_l, aud_r;
-    gameboy u_gb (
-        .clk, .rst, .ce,
+    localparam int FB_W = CGB ? 15 : 2;  // the frame buffer's bits a pixel
+    gameboy #(.CGB(CGB)) u_gb (
+        .clk, .rst, .ce, .cgb_hw_in(cart_cfg[5]), .clearing(ram_clearing), .dbl_speed,
         .cart_addr, .cart_rd, .cart_wr, .cart_wdata, .cart_rdata,
-        .boot_we, .boot_addr, .boot_wdata,
+        .boot_we, .boot_addr, .boot_wdata, .boot_q(boot_sh),
         .keys, .ser_tx, .ser_tx_valid,
         .m_end, .m_last, .cpu_sync, .cpu_pc, .boot_on, .lcdc,
-        .pix_we, .pix_x, .pix_y, .pix_shade, .frame_end, .aud_l, .aud_r);
+        .pix_we, .pix_x, .pix_y, .pix_color, .frame_end, .frame_cut, .aud_l, .aud_r);
 
     // ---- The sound's CRC ----
     logic [31:0] snd_crc;
@@ -235,20 +250,12 @@ module gb_sys #(
         if (rst) waits <= '0;
         else if (ce_held) waits <= waits + 32'd1;
 
-    // ---- The boot ROM: written into the system, and kept here for the host to read back ----
-    logic [7:0] boot [0:255];
-    logic [7:0] boot_sh;
-    wire        sh_boot = s_req && s_addr[31:24] == 8'h03 && s_addr[23:8] == '0;
-    assign boot_we    = sh_boot && s_we && !s_ack;
-    assign boot_addr  = s_addr[7:0];
+    // ---- The boot ROM: written into the system while it's held in reset, and read back from it
+    // then (gameboy reads it at boot_addr in reset) ----
+    wire        sh_boot = s_req && s_addr[31:24] == 8'h03 && s_addr[23:12] == '0;
+    assign boot_we    = rst && sh_boot && s_we && !s_ack;
+    assign boot_addr  = s_addr[11:0];
     assign boot_wdata = s_wdata;
-    // Read before write, as a plain single-port memory: in write-first form (as the frame buffer's
-    // port is), Yosys's Xilinx distributed RAM took each write's first clock at the address before
-    // it on the PYNQ-Z2, so a block's every byte landed an address low too.
-    always_ff @(posedge clk) begin
-        if (boot_we) boot[s_addr[7:0]] <= s_wdata;
-        boot_sh <= boot[s_addr[7:0]];
-    end
 
     // ---- The serial port's bytes ----
     logic [7:0] ser_buf [0:2047];
@@ -260,17 +267,32 @@ module gb_sys #(
     end
 
     // ---- Counts and frames ----
-    logic [16:0] t_in_frame;
-    wire         frame_done = ce && (frame_end || t_in_frame == 17'(T_PER_FRAME - 1));
+    // t_off: dots since the LCD went off or the last blank frame, counting this one (the LCD is
+    // off from reset, as MesenCE's count starts at power-on); it holds while the LCD is on. MesenCE
+    // sends a blank frame once its count is more than a frame's dots past the last frame, its count
+    // stepping 2 dots at a time at normal speed and 1 at double speed: 70,226 dots, or 70,225.
+    logic [16:0] t_off;
+    logic        lcd_was, white_next, dbl_speed;
+    wire         lcd_on     = lcdc[7];
+    wire         blank      = ce && !lcd_on && !lcd_was && t_off == 17'(T_PER_FRAME + (dbl_speed ? 1 : 2));
+    wire         frame_done = ce && (frame_end || frame_cut || blank);
+    wire         white      = frame_done && (blank || white_next);  // the frame buffer turns white
     always_ff @(posedge clk)
         if (rst) begin
             cycles     <= '0;
             frames     <= '0;
-            t_in_frame <= '0;
+            t_off      <= 17'd1;
+            lcd_was    <= 1'b0;
+            white_next <= 1'b0;
             ser_count  <= '0;
         end else begin
-            if (ce) cycles <= cycles + 32'd1;
-            if (ce) t_in_frame <= frame_done ? '0 : t_in_frame + 17'd1;
+            if (ce) begin
+                cycles  <= cycles + 32'd1;
+                lcd_was <= lcd_on;
+                if (!lcd_on) t_off <= lcd_was || blank ? 17'd1 : t_off + 17'd1;
+                if (frame_done) white_next <= 1'b0;
+                if (lcd_on && !lcd_was) white_next <= !(CGB && cart_cfg[5]) || t_off > 17'd5000;
+            end
             if (frame_done) frames <= frames + 32'd1;
             if (ser_tx_valid) ser_count <= ser_count + 32'd1;
         end
@@ -279,25 +301,45 @@ module gb_sys #(
     // One port on clk: the PPU writes it, the shell reads it between the PPU's writes, and the
     // CRC's scan reads it while the system is stopped at a limit (a shell read waits until the scan
     // is done). With VIDEO, the display reads it through the other, on pclk (gb_video).
-    logic [1:0]  fb [0:W * H - 1];
-    logic [1:0]  fb_q;
+    logic [FB_W-1:0] fb [0:W * H - 1];
+    logic [14:0] fb_q;
     logic [14:0] scan_addr;
-    logic        scan_take, crc_done, fb_w_d;
+    logic        scan_take, crc_done, fb_w_d, sh_hi;
     wire  [14:0] pix_addr = 15'({pix_y, 7'd0}) + 15'({pix_y, 5'd0}) + 15'(pix_x);
-    wire         fb_w     = ce && pix_we && pix_x < 8'(W) && pix_y < 8'(H);
-    wire         sh_fb    = s_req && !s_we && s_addr[31:24] == 8'h05 && s_addr[23:15] == '0;
-    wire  [14:0] fb_a     = fb_w ? pix_addr : scanning ? scan_addr : s_addr[14:0];
+    wire         fb_w     = pix_we && pix_x < 8'(W) && pix_y < 8'(H);
+    wire         sh_fb    = s_req && !s_we && s_addr[31:24] == 8'h05 && s_addr[23:16] == '0;
+    // Turning white: a write a clock, from the first pixel, when neither the PPU nor a shell read
+    // has the port. It's done in 23,040 clocks or so, about 2,600 dots: well ahead of the PPU,
+    // which starts again no sooner than the next line 0 and writes a pixel a dot at most; the CRC's
+    // scan waits for it.
+    logic        clearing;
+    logic [14:0] clr_addr;
+    wire         clr_w    = clearing && !fb_w && !(s_req && !s_ack && sh_fb);
+    wire  [14:0] fb_a     = fb_w ? pix_addr : clr_w ? clr_addr : scanning ? scan_addr : s_addr[15:1];
+    wire  [FB_W-1:0] white_c = CGB && cart_cfg[5] ? '1 : '0;  // the Color's white (7FFF), or shade 0
+    always_ff @(posedge clk)
+        if (rst) begin
+            clearing <= 1'b0;
+            clr_addr <= '0;
+        end else if (white) begin
+            clearing <= 1'b1;
+            clr_addr <= '0;
+        end else if (clr_w) begin
+            clr_addr <= clr_addr + 15'd1;
+            if (clr_addr == 15'(W * H - 1)) clearing <= 1'b0;
+        end
     always_ff @(posedge clk) begin
         fb_w_d <= fb_w;
-        if (fb_w) begin
-            fb[fb_a] <= pix_shade;
-            fb_q     <= pix_shade;
+        sh_hi  <= s_addr[0];
+        if (fb_w || clr_w) begin
+            fb[fb_a] <= fb_w ? pix_color[FB_W-1:0] : white_c;
+            fb_q     <= 15'(fb_w ? pix_color[FB_W-1:0] : white_c);
         end else
-            fb_q <= fb[fb_a];
+            fb_q <= 15'(fb[fb_a]);
     end
 
     logic [31:0] scan_crc;
-    crc32 #(.W(16)) u_fcrc (.clk, .rst(rst || !scanning), .en(scan_take), .data({14'd0, fb_q}),
+    crc32 #(.W(16)) u_fcrc (.clk, .rst(rst || !scanning), .en(scan_take), .data({1'b0, fb_q}),
                             .crc(scan_crc), .st_we(1'b0), .st_wdata(32'd0));
     always_ff @(posedge clk)
         if (rst) begin
@@ -310,7 +352,7 @@ module gb_sys #(
         end else begin
             scan_take <= scanning && scan_addr < 15'(W * H);
             if (ce) crc_done <= 1'b0;
-            if (!scanning && at_limit && ctrl[0] && !crc_done) begin
+            if (!scanning && !clearing && at_limit && ctrl[0] && !crc_done) begin
                 scanning  <= 1'b1;
                 scan_addr <= '0;
             end else if (scanning) begin
@@ -381,9 +423,9 @@ module gb_sys #(
 
     if (VIDEO) begin : g_video
         logic [14:0] v_ra;
-        logic [1:0]  v_q;
+        logic [14:0] v_q;
         always_ff @(posedge pclk)
-            v_q <= fb[v_ra];
+            v_q <= 15'(fb[v_ra]);
         // The mixes, -480 to 480, to 48 kHz: unsigned for the resampler, which centres them.
         logic        a_vl;
         logic [15:0] a_l, a_r;
@@ -399,8 +441,8 @@ module gb_sys #(
             .st_addr(2'd0), .st_rdata(a_str), .st_we(1'b0), .st_wdata(32'd0));
         assign pcm_v  = a_vl;
         assign pcm_lr = {a_r, a_l};
-        gb_video u_video (
-            .clk, .rst, .ce, .frame_done, .fb_ra(v_ra), .fb_q(v_q),
+        gb_video #(.CGB(CGB)) u_video (
+            .clk, .rst, .ce, .frame_done, .fb_ra(v_ra), .fb_q(v_q), .cgb_hw(cart_cfg[5]),
             .a_valid(a_vl), .a_l, .a_r,
             .waiting(v_waiting), .req(v_req),
             .cap_t(v_cap_t), .crc(v_crc), .crc_ok(v_crc_ok), .crc_t(v_crc_t),
@@ -449,7 +491,7 @@ module gb_sys #(
             5'h08: reg_q = byte_of(ser_count, r[1:0]);
             5'h09: reg_q = byte_of({24'd0, keys}, r[1:0]);
             5'h0A: reg_q = byte_of({cpu_pc, 7'd0, boot_on, lcdc}, r[1:0]);
-            5'h0B: reg_q = byte_of({16'd0, 8'(CRAM_LOG2), 8'(ROM_LOG2)}, r[1:0]);
+            5'h0B: reg_q = byte_of({15'd0, CGB, 8'(CRAM_LOG2), 8'(ROM_LOG2)}, r[1:0]);
             5'h0C: reg_q = byte_of(snd_crc, r[1:0]);
             5'h0D: reg_q = byte_of({15'd0, vcap_ok, 14'd0, vcap_armed, vid_pace}, r[1:0]);
             5'h0E: reg_q = byte_of(vcap_frame, r[1:0]);
@@ -490,7 +532,7 @@ module gb_sys #(
                 if (sh_wait && !(sh_fb && fb_w_d)) begin
                     s_ack   <= 1'b1;
                     s_rdata <= sh_rom ? rom_sh : sh_cram || sh_rtc ? cart_sh : sh_boot ? boot_sh : sh_ser ? ser_sh :
-                               {6'd0, fb_q};
+                               sh_hi ? {1'b0, fb_q[14:8]} : fb_q[7:0];
                 end
             end else begin
                 s_ack   <= 1'b1;
@@ -527,5 +569,5 @@ module gb_sys #(
         end
     assign led = ~{beat[24], at_limit, running, 1'b0, stalled, bad_frame};
 
-    wire unused = &{1'b0, cpu_sync, rom_full};
+    wire unused = &{1'b0, cpu_sync, rom_full, pix_color};
 endmodule
