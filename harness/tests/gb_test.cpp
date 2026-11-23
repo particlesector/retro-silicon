@@ -225,6 +225,24 @@ std::vector<uint8_t> hdma_vblank_rom() {
     return rom;
 }
 
+// A 32 KB ROM of our own for the Game Boy: the LCD off at VBlank, then a loop.
+std::vector<uint8_t> lcd_off_rom() {
+    std::vector<uint8_t> rom(0x8000, 0x00);
+    const uint8_t entry[] = {0x00, 0xC3, 0x50, 0x01};  // NOP; JP $0150
+    std::copy(std::begin(entry), std::end(entry), rom.begin() + 0x100);
+    uint8_t x = 0;
+    for (int i = 0x134; i <= 0x14C; i++) x = static_cast<uint8_t>(x - rom[i] - 1);
+    rom[0x14D] = x;
+    const uint8_t code[] = {
+        0x31, 0xFE, 0xFF,                    // LD SP,$FFFE
+        0xF0, 0x44, 0xFE, 0x90, 0x20, 0xFA,  // .v: LDH A,($44); CP 144; JR NZ,.v
+        0xAF, 0xE0, 0x40,                    // XOR A; LDH ($40),A: the LCD off
+        0x18, 0xFE,                          // JR @
+    };
+    std::copy(std::begin(code), std::end(code), rom.begin() + 0x150);
+    return rom;
+}
+
 // A 32 KB ROM of our own for the Color: the background white (tile 0, colour 0) and the window
 // black (tile 1, colour 3), from WY = 0 with WX = 166, the window's left edge at x = 159.
 std::vector<uint8_t> wx166_rom() {
@@ -549,4 +567,27 @@ TEST_CASE("Game Boy Color through the shell: an HBlank DMA moves no block as lin
     const auto cgb = read_file(roms + "/" + rig::gb::boot_for("cgb"));
     if (cgb.empty()) SKIP("the boot ROMs aren't fetched");
     CHECK(serial_byte(hdma_vblank_rom(), cgb) == 3);
+}
+
+TEST_CASE("Game Boy through the shell: with the LCD off, the frame is the screen's blank white (31), not shade 0, as MesenCE has it") {
+    // MesenCE draws a frame with the LCD off in pure white, outside the four shades (its blue channel,
+    // which the CRC takes on the Game Boy, at 31); a real Game Boy's blank screen is lighter than shade
+    // 0 too. Q*bert, Primal Rage, Pocahontas and others turn the LCD off at their frame 600.
+    const char* env = std::getenv("RS_TESTROMS");
+    const std::string roms = env ? env : RS_TESTROMS;
+    const auto boot = read_file(roms + "/" + rig::gb::boot_for("dmg"));
+    if (boot.empty()) SKIP("the boot ROMs aren't fetched");
+    auto link = rig::make_gb_sim();
+    rig::shell::Client client(*link);
+    rig::gb::Console gb(client);
+    gb.hold_reset();
+    REQUIRE_FALSE(gb.load(lcd_off_rom(), boot));
+    gb.stop_frame(300);
+    gb.run();
+    gb.wait_stopped();
+    const auto f = gb.frame();
+    CHECK(std::count(f.begin(), f.end(), uint16_t{31}) == 160 * 144);
+    const auto crc = gb.frame_crc();
+    REQUIRE(crc);
+    CHECK(crc->first == 0xf31b3bd0u);  // MesenCE's, 23,040 pixels of 31
 }

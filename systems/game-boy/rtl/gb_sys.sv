@@ -347,9 +347,17 @@ module gb_sys #(
         end else
             fb_q <= 15'(fb[fb_a]);
     end
+    // On the Game Boy, a white frame is the screen's blank white, lighter than shade 0, as MesenCE
+    // draws it (its blue channel, 31): read so from the frame buffer (its CRC and the shell) until
+    // the PPU draws again. The HDMI picture shows shade 0.
+    logic fb_blank;
+    always_ff @(posedge clk)
+        if (rst || fb_w) fb_blank <= 1'b0;
+        else if (white)  fb_blank <= !(CGB && cart_cfg[5]);
+    wire [14:0] fb_out = fb_blank ? 15'd31 : fb_q;
 
     logic [31:0] scan_crc;
-    crc32 #(.W(16)) u_fcrc (.clk, .rst(rst || !scanning), .en(scan_take), .data({1'b0, fb_q}),
+    crc32 #(.W(16)) u_fcrc (.clk, .rst(rst || !scanning), .en(scan_take), .data({1'b0, fb_out}),
                             .crc(scan_crc), .st_we(1'b0), .st_wdata(32'd0));
     always_ff @(posedge clk)
         if (rst) begin
@@ -543,7 +551,7 @@ module gb_sys #(
                 if (sh_wait && !(sh_fb && fb_w_d)) begin
                     s_ack   <= 1'b1;
                     s_rdata <= sh_rom ? rom_sh : sh_cram || sh_rtc ? cart_sh : sh_boot ? boot_sh : sh_ser ? ser_sh :
-                               sh_hi ? {1'b0, fb_q[14:8]} : fb_q[7:0];
+                               sh_hi ? {1'b0, fb_out[14:8]} : fb_out[7:0];
                 end
             end else begin
                 s_ack   <= 1'b1;
