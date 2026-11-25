@@ -19,7 +19,7 @@ mem_timing-01 140 0x1774de28
 mem_timing-02 139 0x58f3482b
 mem_timing-03 142 0x901ea5c6
 halt_bug 600 0x9ae3c072
-interrupt_time 600 0x78f52206
+interrupt_time 600 0x475a059c
 dmg_sound-01 164 0xbf0947f2
 dmg_sound-02 679 0x40b76fe8
 dmg_sound-03 1123 0x6f10dfa3

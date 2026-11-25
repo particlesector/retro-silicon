@@ -290,6 +290,13 @@ module gb_ppu (
     `define WY_CHECK \
         if (n_lcdc[7] && n_lcdc[5] && n_wy == (n_cmp_none ? n_line : n_ly_cmp)) n_wy_trig = 1'b1;
 
+    // The first line's start, a dot after the LCD turns on (in the dot it does, on the Color).
+    `define FIRST_LINE \
+        n_win_y = 8'hFF; n_wy_trig = 1'b0; n_pos = 8'd240; \
+        n_cmp_none = 1'b0; n_ly_cmp = 8'd0; n_smode = 2'd0; n_mode_int = MI_NONE; \
+        n_vrb = 1'b0; n_vwb = 1'b0; n_orb = 1'b0; n_owb = 1'b0; \
+        `STAT_UPDATE
+
     always_comb begin
         n_lcdc = lcdc; n_scy = scy; n_scx = scx; n_lyc = lyc; n_bgp = bgp; n_obp0 = obp0; n_obp1 = obp1;
         n_wy = wy; n_wx = wx; n_ly = ly; n_stat_en = stat_en;
@@ -329,10 +336,7 @@ module gb_ppu (
                 if (first) begin
                     // The first line after the LCD is turned on: no mode 2.
                     if (lx == 9'd1) begin
-                        n_win_y = 8'hFF; n_wy_trig = 1'b0; n_pos = 8'd240;
-                        n_cmp_none = 1'b0; n_ly_cmp = 8'd0; n_smode = 2'd0; n_mode_int = MI_NONE;
-                        n_vrb = 1'b0; n_vwb = 1'b0; n_orb = 1'b0; n_owb = 1'b0;
-                        `STAT_UPDATE
+                        `FIRST_LINE
                     end
                     if (lx == 9'd77) begin
                         n_owb = 1'b1;
@@ -687,9 +691,16 @@ module gb_ppu (
                             n_lcdc = wdata;
                             n_wy_sched = 1'b1;
                             if (wdata[7] && !lcdc[7]) begin
-                                // the LCD turns on: the first line starts
+                                // the LCD turns on: the first line starts, at the same dot against
+                                // the CPU on both (the Game Boy's PPU waits a dot more, SameBoy's
+                                // timing): the Color's write lands a dot later, so its line starts
+                                // a dot on, in this dot
                                 n_lx = 9'd1; n_first = 1'b1; n_line = 8'd0;
                                 n_m3 = 1'b0; n_hb1 = 1'b0;
+                                if (cgb_hw) begin
+                                    n_lx = 9'd2;
+                                    `FIRST_LINE
+                                end
                             end else if (!wdata[7] && lcdc[7]) begin
                                 // off: LY and the mode read 0
                                 n_frame_cut = smode != 2'd1;
@@ -745,6 +756,7 @@ module gb_ppu (
     end
     `undef STAT_UPDATE
     `undef WY_CHECK
+    `undef FIRST_LINE
 
     // The object's row address: its tile and flags from OAM, its Y from the scan.
     logic [3:0] orow;

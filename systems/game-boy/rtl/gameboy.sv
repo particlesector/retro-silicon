@@ -439,14 +439,21 @@ module gameboy #(
     // an M-cycle later than one made at its first or last (SameBoy's DMG
     // looks two dots into each halted M-cycle), and the M-cycle that sees
     // one is its dispatch's first, or the fetch (`cpu/sm83`).
+    // The Color looks two dots sooner (SameBoy's, at each halted M-cycle's start): a request made
+    // at the M-cycle's first three dots, or the last dot before it, comes an M-cycle later. In
+    // double speed the Game Boy's rule stands.
     logic [4:0] new_mid;  // set at this M-cycle's second or third dot
+    logic [4:0] new_m;    // set at the last M-cycle's last dot or this one's first three
     always_ff @(posedge clk)
-        if (rst) new_mid <= '0;
-        else if (ce) begin
+        if (rst) begin
+            new_mid <= '0;
+            new_m   <= '0;
+        end else if (ce) begin
             if (phase == 2'd3) new_mid <= '0;
             else if (phase != 2'd0) new_mid <= new_mid | (irq_now & ~if_r);
+            new_m <= (phase == 2'd3 ? 5'd0 : new_m) | (irq_now & ~if_r);
         end
-    assign int_seen = cpu_halted ? if_r & ~new_mid : if_r;
+    assign int_seen = cpu_halted ? if_r & ~(cgb_hw && !dbl ? new_m : new_mid) : if_r;
 
     // ---- interrupts, the boot ROM's switch, DMA ----
     always_ff @(posedge clk) begin

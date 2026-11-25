@@ -243,6 +243,45 @@ std::vector<uint8_t> lcd_off_rom() {
     return rom;
 }
 
+// A 32 KB ROM of our own for the Game Boy: ten times over it turns the LCD off at VBlank and on
+// again, waits `skip` NOPs and 0 to 4 more, and reads STAT 16 times, one every 5 M-cycles, into work
+// RAM: STAT at every M-cycle of two stretches from the LCD's start, `kLcdOnSamples` bytes, which it
+// then sends over the serial port. The first stretch is line 0's (its mode 3), the second the end of
+// line 0 and line 1's mode 2 and mode 3.
+constexpr int kLcdOnSamples = 2 * 5 * 16;
+std::vector<uint8_t> lcd_on_stat_rom() {
+    std::vector<uint8_t> rom(0x8000, 0x00);
+    const uint8_t entry[] = {0x00, 0xC3, 0x50, 0x01};  // NOP; JP $0150
+    std::copy(std::begin(entry), std::end(entry), rom.begin() + 0x100);
+    uint8_t x = 0;
+    for (int i = 0x134; i <= 0x14C; i++) x = static_cast<uint8_t>(x - rom[i] - 1);
+    rom[0x14D] = x;
+    std::vector<uint8_t> c = {
+        0x31, 0xFE, 0xFF,  // LD SP,$FFFE
+        0xF3,              // DI
+        0x21, 0x00, 0xC0,  // LD HL,$C000
+    };
+    for (int skip : {0, 100})
+        for (int p = 0; p < 5; p++) {
+            c.insert(c.end(), {0xF0, 0x44, 0xFE, 0x90, 0x20, 0xFA});  // .v: LDH A,($44); CP 144; JR NZ,.v
+            c.insert(c.end(), {0xAF, 0xE0, 0x40});                    // XOR A; LDH ($40),A: the LCD off
+            c.insert(c.end(), {0x3E, 0x91, 0xE0, 0x40});              // LD A,$91; LDH ($40),A: on
+            c.insert(c.end(), static_cast<size_t>(skip + p), 0x00);    // NOPs
+            for (int i = 0; i < 16; i++) c.insert(c.end(), {0xF0, 0x41, 0x22});  // LDH A,($41); LD (HL+),A
+        }
+    c.insert(c.end(), {
+        0x21, 0x00, 0xC0,  // LD HL,$C000
+        0x06, static_cast<uint8_t>(kLcdOnSamples),  // LD B,n
+        0x2A, 0xE0, 0x01,  // .s: LD A,(HL+); LDH ($01),A
+        0x3E, 0x81, 0xE0, 0x02,  // LD A,$81; LDH ($02),A: send it
+        0xF0, 0x02, 0xCB, 0x7F, 0x20, 0xFA,  // .w: LDH A,($02); BIT 7,A; JR NZ,.w
+        0x05, 0x20, 0xF0,  // DEC B; JR NZ,.s
+        0x18, 0xFE,        // JR @
+    });
+    std::copy(c.begin(), c.end(), rom.begin() + 0x150);
+    return rom;
+}
+
 // A 32 KB ROM of our own for the Color: the background white (tile 0, colour 0) and the window
 // black (tile 1, colour 3), from WY = 0 with WX = 166, the window's left edge at x = 159.
 std::vector<uint8_t> wx166_rom() {
@@ -590,4 +629,37 @@ TEST_CASE("Game Boy through the shell: with the LCD off, the frame is the screen
     const auto crc = gb.frame_crc();
     REQUIRE(crc);
     CHECK(crc->first == 0xf31b3bd0u);  // MesenCE's, 23,040 pixels of 31
+}
+
+namespace {
+std::vector<uint8_t> serial_bytes(const std::vector<uint8_t>& rom, const std::vector<uint8_t>& boot, uint32_t n) {
+    auto link = rig::make_gb_sim();
+    rig::shell::Client client(*link);
+    rig::gb::Console gb(client);
+    gb.hold_reset();
+    REQUIRE_FALSE(gb.load(rom, boot));
+    for (uint32_t f = 20; f <= 600 && gb.serial_count() < n; f += 20) {
+        gb.stop_frame(f);
+        gb.run();
+        gb.wait_stopped();
+    }
+    REQUIRE(gb.serial_count() == n);
+    return gb.serial(0);
+}
+}  // namespace
+
+TEST_CASE("Game Boy Color through the shell: the LCD starts at the same dot against the CPU as on the Game Boy") {
+    // The Color's LCDC write lands a dot later than the Game Boy's (as the M-cycle ends), and the
+    // Game Boy's PPU waits a dot more as the LCD turns on (SameBoy's timing): either way the first line
+    // starts at the same dot, so STAT reads alike, M-cycle by M-cycle, on both (MesenCE too). Started
+    // a dot late, the Color's mode 2 interrupt came an M-cycle late, and every mid-line register write
+    // after it (Mealybug Tearoom's m3_ tests) landed 4 dots late.
+    const char* env = std::getenv("RS_TESTROMS");
+    const std::string roms = env ? env : RS_TESTROMS;
+    const auto cgb = read_file(roms + "/" + rig::gb::boot_for("cgb"));
+    const auto dmg = read_file(roms + "/" + rig::gb::boot_for("dmg"));
+    if (cgb.empty() || dmg.empty()) SKIP("the boot ROMs aren't fetched");
+    const auto on_dmg = serial_bytes(lcd_on_stat_rom(), dmg, kLcdOnSamples);
+    const auto on_cgb = serial_bytes(lcd_on_stat_rom(), cgb, kLcdOnSamples);
+    CHECK(on_cgb == on_dmg);
 }
