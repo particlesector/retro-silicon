@@ -243,6 +243,28 @@ std::vector<uint8_t> lcd_off_rom() {
     return rom;
 }
 
+// A 32 KB ROM of our own for the Game Boy: the LCD off at VBlank, about 6.5 frames' wait (16,384
+// turns of a 7 M-cycle loop), the LCD on again, then a loop.
+std::vector<uint8_t> lcd_off_on_rom() {
+    std::vector<uint8_t> rom(0x8000, 0x00);
+    const uint8_t entry[] = {0x00, 0xC3, 0x50, 0x01};  // NOP; JP $0150
+    std::copy(std::begin(entry), std::end(entry), rom.begin() + 0x100);
+    uint8_t x = 0;
+    for (int i = 0x134; i <= 0x14C; i++) x = static_cast<uint8_t>(x - rom[i] - 1);
+    rom[0x14D] = x;
+    const uint8_t code[] = {
+        0x31, 0xFE, 0xFF,                    // LD SP,$FFFE
+        0xF0, 0x44, 0xFE, 0x90, 0x20, 0xFA,  // .v: LDH A,($44); CP 144; JR NZ,.v
+        0xAF, 0xE0, 0x40,                    // XOR A; LDH ($40),A: the LCD off
+        0x01, 0x00, 0x40,                    // LD BC,$4000
+        0x0B, 0x78, 0xB1, 0x20, 0xFB,        // .w: DEC BC; LD A,B; OR C; JR NZ,.w
+        0x3E, 0x91, 0xE0, 0x40,              // LD A,$91; LDH ($40),A: on
+        0x18, 0xFE,                          // JR @
+    };
+    std::copy(std::begin(code), std::end(code), rom.begin() + 0x150);
+    return rom;
+}
+
 // A 32 KB ROM of our own for the Game Boy: ten times over it turns the LCD off at VBlank and on
 // again, waits `skip` NOPs and 0 to 4 more, and reads STAT 16 times, one every 5 M-cycles, into work
 // RAM: STAT at every M-cycle of two stretches from the LCD's start, `kLcdOnSamples` bytes, which it
@@ -629,6 +651,41 @@ TEST_CASE("Game Boy through the shell: with the LCD off, the frame is the screen
     const auto crc = gb.frame_crc();
     REQUIRE(crc);
     CHECK(crc->first == 0xf31b3bd0u);  // MesenCE's, 23,040 pixels of 31
+}
+
+TEST_CASE("Game Boy through the shell: the first frame after the LCD goes back on is shade 0, not the blank white, as MesenCE has it") {
+    // MesenCE's first frame to end after the LCD goes on is an empty screen of shade 0 (0), not the
+    // blank white (31) of the frames with the LCD off. Captain America and the Avengers turns its
+    // LCD on at its frame 600.
+    const char* env = std::getenv("RS_TESTROMS");
+    const std::string roms = env ? env : RS_TESTROMS;
+    const auto boot = read_file(roms + "/" + rig::gb::boot_for("dmg"));
+    if (boot.empty()) SKIP("the boot ROMs aren't fetched");
+    auto link = rig::make_gb_sim();
+    rig::shell::Client client(*link);
+    rig::gb::Console gb(client);
+    gb.hold_reset();
+    REQUIRE_FALSE(gb.load(lcd_off_on_rom(), boot));
+    bool was_on = false, was_off = false;  // the boot ROM's LCD on, then the ROM's off
+    uint32_t f = 1;
+    for (; f <= 600; f++) {
+        gb.stop_frame(f);
+        if (f == 1) gb.run();
+        gb.wait_stopped();
+        const bool on = (gb.lcdc() & 0x80) != 0;
+        if (on && !was_off) was_on = true;
+        if (!on && was_on) {
+            was_off = true;
+            const auto crc = gb.frame_crc();
+            REQUIRE(crc);
+            CHECK(crc->first == 0xf31b3bd0u);  // the blank white
+        }
+        if (on && was_off) break;
+    }
+    REQUIRE(f <= 600);
+    const auto crc = gb.frame_crc();
+    REQUIRE(crc);
+    CHECK(crc->first == 0x4c0b51bau);  // 23,040 pixels of shade 0
 }
 
 namespace {
