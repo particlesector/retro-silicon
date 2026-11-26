@@ -139,5 +139,6 @@ target_compile_definitions(harness_test PRIVATE
     RS_GB_GOLDEN="${CMAKE_CURRENT_SOURCE_DIR}/golden/gb_frames_crc32.txt"
     RS_GB_AUDIO_GOLDEN="${CMAKE_CURRENT_SOURCE_DIR}/golden/gb_audio_crc32.txt"
     RS_GB_HDMI_GOLDEN="${CMAKE_CURRENT_SOURCE_DIR}/golden/gb_hdmi_crc32.txt"
+    RS_GB_CGB_STAT_GOLDEN="${CMAKE_CURRENT_SOURCE_DIR}/golden/gb_cgb_stat_probe.txt"
     RS_TIA_RGB_SV="${PROJECT_SOURCE_DIR}/components/video/tia/rtl/tia_rgb.sv"
     RS_TESTROMS="${RS_TESTROMS}")

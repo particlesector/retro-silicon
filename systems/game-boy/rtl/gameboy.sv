@@ -357,7 +357,7 @@ module gameboy #(
         .clk, .rst, .ce, .phase,
         .wr(ppu_wr_q), .reg_sel(ppu_sel_q), .wdata(ppu_wd_q),
         .rdata(lcd_q), .dma_on, .halted(cpu_halted),
-        .cgb_hw, .cgb_en, .obj_x_pri(opri),
+        .cgb_hw, .cgb_en, .dbl, .obj_x_pri(opri),
         .pwr(ppu_pwr_q),
         .pal_sel(ppu_sel_q[1:0]), .pal_q, .pal_clr(clr_on), .pal_clr_a(clr[5:0]),
         .vaddr(ppu_vaddr), .vq({ppu_vq1, ppu_vq0}), .oaddr(ppu_oaddr), .oq(ppu_oq),

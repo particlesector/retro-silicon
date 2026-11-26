@@ -50,6 +50,7 @@ module gb_ppu (
     input  logic        halted,      // the CPU is halted
     input  logic        cgb_hw,      // the Game Boy Color
     input  logic        cgb_en,      // ...in its own mode (KEY0)
+    input  logic        dbl,         // ...in double speed (KEY1)
     input  logic        obj_x_pri,   // OPRI bit 0: objects overlap by X, as the Game Boy's (else by OAM order)
     input  logic        pwr,         // the CPU writes FF68 + pal_sel this M-cycle (lands at its end)
     input  logic [1:0]  pal_sel,
@@ -141,11 +142,12 @@ module gb_ppu (
     logic [7:0] late_d;
 
     // ---- STAT's interrupt line (SameBoy's GB_STAT_update) ----
-    // {irq, stat_line, lyc_line, scoinc, smode}
+    // {irq, stat_line, lyc_line, scoinc, smode}. While LY isn't compared (`none`), the Game Boy's
+    // LY=LYC bit reads 0; the Color's (`keep`) keeps its value, as SameBoy's CGB-E does.
     function automatic logic [5:0] stat_upd(input logic on, input logic dma, input logic [1:0] sm,
                                             input logic sc, input logic none, input logic [7:0] cmp,
                                             input logic [7:0] lyc_v, input logic lycl, input logic [3:0] en,
-                                            input logic [1:0] mi, input logic sl);
+                                            input logic [1:0] mi, input logic sl, input logic keep);
         logic [1:0] m_;
         logic       c_, l_, s_;
         m_ = sm; c_ = sc; l_ = lycl; s_ = sl;
@@ -155,7 +157,7 @@ module gb_ppu (
                 l_ = 1'b1; c_ = 1'b1;
             end else begin
                 if (!none) l_ = 1'b0;
-                c_ = 1'b0;
+                if (!none || !keep) c_ = 1'b0;
             end
             case (mi)
                 2'd0: s_ = en[0];
@@ -284,7 +286,7 @@ module gb_ppu (
     // One STAT update on the working values.
     `define STAT_UPDATE \
         su = stat_upd(n_lcdc[7], dma_on, n_smode, n_scoinc, n_cmp_none, n_ly_cmp, n_lyc, n_lyc_line, \
-                      n_stat_en, n_mode_int, n_stat_line); \
+                      n_stat_en, n_mode_int, n_stat_line, cgb_hw); \
         n_ist = n_ist | su[5]; n_stat_line = su[4]; n_lyc_line = su[3]; n_scoinc = su[2]; n_smode = su[1:0];
 
     `define WY_CHECK \
@@ -363,7 +365,9 @@ module gb_ppu (
                         n_ly = line; n_orb = 1'b1;
                         n_cmp_none = line != 8'd0; n_ly_cmp = 8'd0;
                         if (line != 8'd0) n_mode_int = 2'd2;
-                        n_smode = 2'd0;
+                        // Line 0, after VBlank: the Game Boy's mode reads 0 for a dot, the Color's
+                        // stays 1 (SameBoy's; single speed only, see the README's double speed)
+                        if (line != 8'd0 || !cgb_hw || dbl) n_smode = 2'd0;
                         `STAT_UPDATE
                     end
                     if (lx == 9'd4) begin
@@ -433,13 +437,23 @@ module gb_ppu (
                         `STAT_UPDATE
                     end
                     if (lx == 9'd2) n_ly = 8'd153;
-                    if (lx == 9'd6) begin
-                        n_ly = 8'd0; n_cmp_none = 1'b0; n_ly_cmp = 8'd153;
-                        `STAT_UPDATE
-                    end
-                    if (lx == 9'd8) begin
-                        n_ly = 8'd0; n_cmp_none = 1'b1;
-                        `STAT_UPDATE
+                    if (cgb_hw && !dbl) begin
+                        // The Color (SameBoy's, its CGB-E) compares LY with 153 two dots sooner and
+                        // keeps 153 as LY turns 0, two dots later (single speed only, as above)
+                        if (lx == 9'd4) begin
+                            n_cmp_none = 1'b0; n_ly_cmp = 8'd153;
+                            `STAT_UPDATE
+                        end
+                        if (lx == 9'd8) n_ly = 8'd0;
+                    end else begin
+                        if (lx == 9'd6) begin
+                            n_ly = 8'd0; n_cmp_none = 1'b0; n_ly_cmp = 8'd153;
+                            `STAT_UPDATE
+                        end
+                        if (lx == 9'd8) begin
+                            n_ly = 8'd0; n_cmp_none = 1'b1;
+                            `STAT_UPDATE
+                        end
                     end
                     if (lx == 9'd12) begin
                         n_cmp_none = 1'b0; n_ly_cmp = 8'd0;
@@ -697,7 +711,9 @@ module gb_ppu (
                                 // a dot on, in this dot
                                 n_lx = 9'd1; n_first = 1'b1; n_line = 8'd0;
                                 n_m3 = 1'b0; n_hb1 = 1'b0;
-                                if (cgb_hw) begin
+                                // single speed only: in double speed the line starts at the
+                                // write's dot as the Game Boy's does (SameBoy's readings)
+                                if (cgb_hw && !dbl) begin
                                     n_lx = 9'd2;
                                     `FIRST_LINE
                                 end

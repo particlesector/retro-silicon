@@ -10,12 +10,15 @@
 #include <catch2/catch_test_macros.hpp>
 
 #include <algorithm>
+#include <cstdio>
 #include <cstdlib>
 #include <fstream>
 #include <functional>
 #include <memory>
 #include <iterator>
+#include <sstream>
 #include <string>
+#include <utility>
 #include <vector>
 
 #include "rig/gb.hpp"
@@ -301,6 +304,109 @@ std::vector<uint8_t> lcd_on_stat_rom() {
         0x18, 0xFE,        // JR @
     });
     std::copy(c.begin(), c.end(), rom.begin() + 0x150);
+    return rom;
+}
+
+// A 32 KB ROM of our own for the Color (MBC5 with 8 KB of RAM), at single speed: STAT and LY read
+// around the PPU's edges, 16 reads a case, one every 5 M-cycles, into cartridge RAM from $A000, a case
+// again with 0 to 4 NOPs more so every M-cycle is read. A: at VBlank the LCD off and on, LYC 0, 1, 2,
+// then 100 or 214 NOPs (the end of line 0, of line 1). B: STAT's mode 0, mode 2 and LYC (1, 5)
+// interrupts, enabled with the LCD turned on, seen from HALT (IME 0) and by dispatch (EI, NOPs; the
+// handler at $48 drops its return address and returns to the case's next step). C: from HALT until
+// LY=LYC 153, 0 to 80 NOPs, STAT then LY: the end of VBlank. D: from LY=LYC 152, 95 to 105 NOPs: line
+// 153. Then it sends the `kCgbStatSamples` bytes over the serial port. The golden reading is SameBoy's
+// (harness/golden/gb_cgb_stat_probe.txt).
+constexpr int kCgbStatSamples = 2400;
+std::vector<uint8_t> cgb_stat_probe_rom() {
+    std::vector<uint8_t> rom(0x8000, 0x00);
+    const uint8_t entry[] = {0x00, 0xC3, 0x50, 0x01};  // NOP; JP $0150
+    std::copy(std::begin(entry), std::end(entry), rom.begin() + 0x100);
+    const char title[] = "STATPROB";
+    std::copy(title, title + 8, rom.begin() + 0x134);
+    rom[0x143] = 0x80;  // the Color's
+    rom[0x147] = 0x1B;  // MBC5, RAM, battery
+    rom[0x149] = 0x02;  // 8 KB of RAM
+    const uint8_t isr[] = {0xE8, 0x02, 0xC9};  // $48: ADD SP,2; RET
+    std::copy(std::begin(isr), std::end(isr), rom.begin() + 0x48);
+    uint8_t x = 0;
+    for (int i = 0x134; i <= 0x14C; i++) x = static_cast<uint8_t>(x - rom[i] - 1);
+    rom[0x14D] = x;
+    constexpr int kBase = 0x150;
+    std::vector<uint8_t> c = {
+        0x31, 0xFE, 0xFF,        // LD SP,$FFFE
+        0xF3,                    // DI
+        0x3E, 0x0A, 0xEA, 0x00, 0x00,  // LD A,$0A; LD ($0000),A: cartridge RAM on
+        0x21, 0x00, 0xA0,        // LD HL,$A000
+    };
+    int n = 0;
+    auto reads = [&](uint8_t reg) {
+        for (int i = 0; i < 16; i++) c.insert(c.end(), {0xF0, reg, 0x22});  // LDH A,(reg); LD (HL+),A
+        n += 16;
+    };
+    auto nops = [&](int k) { c.insert(c.end(), static_cast<size_t>(k), 0x00); };
+    // .v: LDH A,($44); CP 144; JR NZ,.v; XOR A; LDH ($40),A: at VBlank, the LCD off
+    const std::vector<uint8_t> off = {0xF0, 0x44, 0xFE, 0x90, 0x20, 0xFA, 0xAF, 0xE0, 0x40};
+    const std::vector<uint8_t> on = {0x3E, 0x91, 0xE0, 0x40};  // LD A,$91; LDH ($40),A
+    for (int lyc : {0, 1, 2})  // A
+        for (int skip : {100, 214})
+            for (int p = 0; p < 5; p++) {
+                c.insert(c.end(), {0x3E, static_cast<uint8_t>(lyc), 0xE0, 0x45});  // LYC
+                c.insert(c.end(), off.begin(), off.end());
+                c.insert(c.end(), on.begin(), on.end());
+                nops(skip + p);
+                reads(0x41);
+            }
+    for (bool halt : {true, false})  // B
+        for (auto [en, lyc] : {std::pair<int, int>{0x08, 0x50}, {0x20, 0x50}, {0x40, 1}, {0x40, 5}})
+            for (int p = 0; p < 5; p++) {
+                c.insert(c.end(), off.begin(), off.end());
+                c.insert(c.end(), {0x3E, static_cast<uint8_t>(en), 0xE0, 0x41,   // STAT's enables
+                                   0x3E, static_cast<uint8_t>(lyc), 0xE0, 0x45,  // LYC
+                                   0xAF, 0xE0, 0x0F,                             // IF 0
+                                   0x3E, 0x02, 0xE0, 0xFF});                     // IE: STAT
+                if (halt) {
+                    c.insert(c.end(), on.begin(), on.end());
+                    c.insert(c.end(), {0x76, 0x00});  // HALT; NOP
+                } else {
+                    const size_t at = c.size();
+                    c.insert(c.end(), {0x01, 0x00, 0x00, 0xC5});  // LD BC,.next; PUSH BC
+                    c.insert(c.end(), on.begin(), on.end());
+                    c.push_back(0xFB);  // EI
+                    nops(300);
+                    c.insert(c.end(), {0x18, 0xFE});  // JR @
+                    const int next = kBase + static_cast<int>(c.size());
+                    c[at + 1] = static_cast<uint8_t>(next);
+                    c[at + 2] = static_cast<uint8_t>(next >> 8);
+                }
+                nops(p);
+                reads(0x41);
+                c.insert(c.end(), {0xF3, 0xAF, 0xE0, 0x0F, 0xE0, 0xFF});  // DI; IF 0; IE 0
+            }
+    for (auto [lyc, skips] : {std::pair<int, std::vector<int>>{153, {0, 20, 40, 60, 80}},  // C
+                              {152, {95, 100, 105}}}) {                                     // D
+        c.insert(c.end(), {0x3E, 0x40, 0xE0, 0x41,                            // STAT: the LYC interrupt
+                           0x3E, static_cast<uint8_t>(lyc), 0xE0, 0x45,       // LYC
+                           0x3E, 0x02, 0xE0, 0xFF});                          // IE: STAT
+        for (uint8_t reg : {0x41, 0x44})
+            for (int skip : skips)
+                for (int p = 0; p < 5; p++) {
+                    c.insert(c.end(), {0xAF, 0xE0, 0x0F, 0x76, 0x00});  // IF 0; HALT; NOP
+                    nops(skip + p);
+                    reads(reg);
+                    c.insert(c.end(), {0xF0, 0x44, 0xFE, 0x10, 0x20, 0xFA});  // .l: LDH A,($44); CP 16; JR NZ,.l
+                }
+    }
+    c.insert(c.end(), {0xAF, 0xE0, 0xFF});  // IE 0
+    c.insert(c.end(), {0x21, 0x00, 0xA0,    // LD HL,$A000
+                       0x01, static_cast<uint8_t>(n), static_cast<uint8_t>(n >> 8),  // LD BC,n
+                       0x2A, 0xE0, 0x01,                    // .s: LD A,(HL+); LDH ($01),A
+                       0x3E, 0x81, 0xE0, 0x02,              // LD A,$81; LDH ($02),A: send it
+                       0xF0, 0x02, 0xCB, 0x7F, 0x20, 0xFA,  // .w: LDH A,($02); BIT 7,A; JR NZ,.w
+                       0x0B, 0x78, 0xB1, 0x20, 0xEE,        // DEC BC; LD A,B; OR C; JR NZ,.s
+                       0x18, 0xFE});                        // JR @
+    REQUIRE(n == kCgbStatSamples);
+    REQUIRE(kBase + c.size() <= rom.size());
+    std::copy(c.begin(), c.end(), rom.begin() + kBase);
     return rom;
 }
 
@@ -689,19 +795,23 @@ TEST_CASE("Game Boy through the shell: the first frame after the LCD goes back o
 }
 
 namespace {
-std::vector<uint8_t> serial_bytes(const std::vector<uint8_t>& rom, const std::vector<uint8_t>& boot, uint32_t n) {
+std::vector<uint8_t> serial_bytes(const std::vector<uint8_t>& rom, const std::vector<uint8_t>& boot, uint32_t n,
+                                  uint32_t frames = 600) {
     auto link = rig::make_gb_sim();
     rig::shell::Client client(*link);
     rig::gb::Console gb(client);
     gb.hold_reset();
     REQUIRE_FALSE(gb.load(rom, boot));
-    for (uint32_t f = 20; f <= 600 && gb.serial_count() < n; f += 20) {
+    std::vector<uint8_t> bytes;  // taken as they come: the console keeps the last kSerialSize
+    for (uint32_t f = 20; f <= frames && bytes.size() < n; f += 20) {
         gb.stop_frame(f);
         gb.run();
         gb.wait_stopped();
+        const auto more = gb.serial(static_cast<uint32_t>(bytes.size()));
+        bytes.insert(bytes.end(), more.begin(), more.end());
     }
-    REQUIRE(gb.serial_count() == n);
-    return gb.serial(0);
+    REQUIRE(bytes.size() == n);
+    return bytes;
 }
 }  // namespace
 
@@ -718,5 +828,61 @@ TEST_CASE("Game Boy Color through the shell: the LCD starts at the same dot agai
     if (cgb.empty() || dmg.empty()) SKIP("the boot ROMs aren't fetched");
     const auto on_dmg = serial_bytes(lcd_on_stat_rom(), dmg, kLcdOnSamples);
     const auto on_cgb = serial_bytes(lcd_on_stat_rom(), cgb, kLcdOnSamples);
-    CHECK(on_cgb == on_dmg);
+    // Bit 2 (LY=LYC) may differ: while LY isn't compared, as line 0 turns into line 1, the Color keeps
+    // it where the Game Boy clears it (SameBoy's CGB-E); the SameBoy reading test below checks that.
+    int rows = 0;
+    for (size_t i = 0; i < on_cgb.size(); i++)
+        if ((on_cgb[i] ^ on_dmg[i]) & ~0x04) {
+            rows++;
+            char line[64];
+            std::snprintf(line, sizeof line, "byte %zu: Color %02x, Game Boy %02x", i, on_cgb[i], on_dmg[i]);
+            UNSCOPED_INFO(line);
+        }
+    CHECK(rows == 0);
+}
+
+TEST_CASE("Game Boy Color through the shell: STAT and LY read at SameBoy's dots around the LCD's start, "
+          "STAT's interrupts, the end of VBlank and line 153") {
+    // At single speed. Found by Dragon Warrior Monsters 2, Conker's Pocket Tales, Cubix Robots,
+    // Magical Drop and Tarzan, which the Color's LCD start (a dot sooner) moved off MesenCE's frames:
+    // the Color keeps LY=LYC's bit while LY isn't compared, reads mode 1 into line 0's mode 2 (no
+    // mode 0 between), and holds 153 for the comparison through line 153's start. RS_GB_STAT_ROM_OUT
+    // writes the ROM, to read SameBoy's again.
+    const auto rom = cgb_stat_probe_rom();
+    if (const char* out = std::getenv("RS_GB_STAT_ROM_OUT")) {
+        std::ofstream f(out, std::ios::binary);
+        f.write(reinterpret_cast<const char*>(rom.data()), static_cast<std::streamsize>(rom.size()));
+    }
+    std::vector<uint8_t> want;
+    {
+        std::ifstream f(RS_GB_CGB_STAT_GOLDEN);
+        REQUIRE(f);
+        std::string line;
+        while (std::getline(f, line)) {
+            if (line.empty() || line[0] == '#') continue;
+            std::istringstream ls(line);
+            std::string b;
+            while (ls >> b) want.push_back(static_cast<uint8_t>(std::stoul(b, nullptr, 16)));
+        }
+    }
+    REQUIRE(want.size() == kCgbStatSamples);
+    const char* env = std::getenv("RS_TESTROMS");
+    const std::string roms = env ? env : RS_TESTROMS;
+    const auto cgb = read_file(roms + "/" + rig::gb::boot_for("cgb"));
+    const auto got = serial_bytes(rom, cgb, kCgbStatSamples, 1200);
+    int rows = 0;
+    for (int r = 0; r < kCgbStatSamples / 16; r++)
+        if (!std::equal(got.begin() + r * 16, got.begin() + r * 16 + 16, want.begin() + r * 16)) {
+            std::string g, w;
+            char h[4];
+            for (int i = 0; i < 16; i++) {
+                std::snprintf(h, sizeof h, " %02X", got[r * 16 + i]);
+                g += h;
+                std::snprintf(h, sizeof h, " %02X", want[r * 16 + i]);
+                w += h;
+            }
+            UNSCOPED_INFO("row " << r + 1 << ":" << g << "  SameBoy's:" << w);
+            rows++;
+        }
+    CHECK(rows == 0);
 }
