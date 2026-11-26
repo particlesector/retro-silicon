@@ -49,7 +49,9 @@ get_property(a2600_id GLOBAL PROPERTY RS_A2600_BUILD_ID)
 rs_board_bitstream(a2600 BUILD ${build} COMPONENT a2600_top CST nes.cst PARAMS BUILD_ID=${a2600_id}
                    CLOCKS sclk=46.40625 pclk=74.25 fclk=371.25 SEED 1)
 # The Game Boy under the test shell, with HDMI (rtl/gb_top.sv): the NES's clocks, T-cycles at 7/76
-# of the system's (1.9% fast of the console's, to keep pace with the display).
+# of the system's (1.9% fast of the console's, to keep pace with the display). Seed 2: at 4839551
+# seeds 1 and 4 placed it so that Mooneye's MBC1 ROM tests read wrong banks on the board (nextpnr
+# checks no hold on Gowin parts), while 2, 3 and 5 passed.
 get_property(gb_id GLOBAL PROPERTY RS_GB_BUILD_ID)
 rs_board_bitstream(gb BUILD ${build} COMPONENT gb_top CST nes.cst PARAMS BUILD_ID=${gb_id}
-                   CLOCKS sclk=46.40625 pclk=74.25 fclk=371.25 SEED 1)
+                   CLOCKS sclk=46.40625 pclk=74.25 fclk=371.25 SEED 2)
