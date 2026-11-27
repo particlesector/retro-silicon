@@ -48,6 +48,14 @@ url = "https://github.com/mattcurrie/dmg-acid2/releases/download/v1.0/"
 # Matt Currie's cgb-acid2 (MIT).
 url = "https://github.com/mattcurrie/cgb-acid2/releases/download/v1.1/"
 
+[sources.mealybug]
+# Matt Currie's Mealybug Tearoom tests (MIT): the PPU's registers written during mode 3, each with
+# the hardware's frame (photos of a DMG-blob, a CPU CGB C and a CPU CGB D, as images of the
+# screen's values) in its repository's `expected` folder; tools/gb/mealybug.py turns them into
+# frame CRCs. The ROMs are its zip, at this commit.
+archive = "https://raw.githubusercontent.com/mattcurrie/mealybug-tearoom-tests/70e88fb90b59d19dfbb9c3ac36c64105202bb1f4/mealybug-tearoom-tests.zip"
+sha256 = "e2fa6ca96ad48bd64d7297fda042db04c15117a730da3bbd590f139e89b150bd"
+
 [sources.rtc3test]
 # aaaaaa123456789's rtc3test (the Unlicense): MBC3's real-time clock, in three suites picked from a
 # menu (tests.md in its repository describes them).
@@ -1820,3 +1828,414 @@ covers = "MBC3's clock: which writes restart the second, and halting partway thr
 check = "frame"
 input = "300:8, 310:0, 320:8, 330:0, 340:16, 350:0"
 frames = 2400
+
+# Mealybug Tearoom: the frame each test leaves (it stops at frame 10 of its own, 450 is well on),
+# checked against the hardware's (an override where MesenCE's differs). Only the tests the core
+# draws as the hardware does are here; systems/game-boy's README has the rest.
+[[rom]]
+id = "mbt-m2-win-en-toggle-cgb"
+source = "mealybug"
+path = "m2_win_en_toggle.gb"
+sha256 = "5ab52823dc9e25184e884d73a19bfe0b048a9d2526ca779a0925ca891a9ba7f5"
+model = "cgb"
+needs = "cpu, interrupts, ppu, cgb"
+covers = "Mealybug Tearoom: Toggles bit 5 (WIN_EN) of LCDC register on each row of the screen during STAT mode 2"
+check = "frame"
+frames = 450
+mesen = "The hardware's frame: Mealybug Tearoom's CPU CGB D image"
+
+[[rom]]
+id = "mbt-m2-win-en-toggle-dmg"
+source = "mealybug"
+path = "m2_win_en_toggle.gb"
+sha256 = "5ab52823dc9e25184e884d73a19bfe0b048a9d2526ca779a0925ca891a9ba7f5"
+model = "dmg"
+needs = "cpu, interrupts, ppu"
+covers = "Mealybug Tearoom: Toggles bit 5 (WIN_EN) of LCDC register on each row of the screen during STAT mode 2"
+check = "frame"
+frames = 450
+mesen = "The hardware's frame: Mealybug Tearoom's DMG-blob image"
+
+[[rom]]
+id = "mbt-m3-bgp-change-cgb"
+source = "mealybug"
+path = "m3_bgp_change.gb"
+sha256 = "52151476d16b04654123e64bd2c22702571c529761d9c9bc2f485ca2538fc035"
+model = "cgb"
+needs = "cpu, interrupts, ppu, cgb"
+covers = "Mealybug Tearoom: Tests changing the background palette in BGP during mode 3"
+check = "frame"
+frames = 450
+mesen = "The hardware's frame: Mealybug Tearoom's CPU CGB D image"
+
+[[rom]]
+id = "mbt-m3-bgp-change-dmg"
+source = "mealybug"
+path = "m3_bgp_change.gb"
+sha256 = "52151476d16b04654123e64bd2c22702571c529761d9c9bc2f485ca2538fc035"
+model = "dmg"
+needs = "cpu, interrupts, ppu"
+covers = "Mealybug Tearoom: Tests changing the background palette in BGP during mode 3"
+check = "frame"
+frames = 450
+mesen = "The hardware's frame: Mealybug Tearoom's DMG-blob image"
+
+[[rom]]
+id = "mbt-m3-bgp-change-sprites-cgb"
+source = "mealybug"
+path = "m3_bgp_change_sprites.gb"
+sha256 = "41de816a11690c86c6d1b03c1fb9f2ec367dcd288f1cf8f2b52560a3e2b9a917"
+model = "cgb"
+needs = "cpu, interrupts, ppu, cgb"
+covers = "Mealybug Tearoom: Tests changing the background palette in BGP during mode 3 with sprites at different X coordinates"
+check = "frame"
+frames = 450
+override = { mesen = "0x28da8a64", result = "-", crc = "0x8713340b", why = "the hardware's frame: Mealybug Tearoom's CPU CGB D image" }
+
+[[rom]]
+id = "mbt-m3-bgp-change-sprites-dmg"
+source = "mealybug"
+path = "m3_bgp_change_sprites.gb"
+sha256 = "41de816a11690c86c6d1b03c1fb9f2ec367dcd288f1cf8f2b52560a3e2b9a917"
+model = "dmg"
+needs = "cpu, interrupts, ppu"
+covers = "Mealybug Tearoom: Tests changing the background palette in BGP during mode 3 with sprites at different X coordinates"
+check = "frame"
+frames = 450
+override = { mesen = "0x50cd2926", result = "-", crc = "0xd23d951b", why = "the hardware's frame: Mealybug Tearoom's DMG-blob image" }
+
+[[rom]]
+id = "mbt-m3-lcdc-bg-en-change-cgb"
+source = "mealybug"
+path = "m3_lcdc_bg_en_change.gb"
+sha256 = "4bb4ea8076950c1ecaeb8c704ca0568e05bc09d35e114f0cbe77b3b173e3d13b"
+model = "cgb"
+needs = "cpu, interrupts, ppu, cgb"
+covers = "Mealybug Tearoom: Sets bit 0 (BG_EN) of LCDC register during mode 3 with sprites at different X coordinates"
+check = "frame"
+frames = 450
+mesen = "The hardware's frame: Mealybug Tearoom's CPU CGB D image"
+
+[[rom]]
+id = "mbt-m3-lcdc-bg-en-change2-cgb"
+source = "mealybug"
+path = "m3_lcdc_bg_en_change2.gb"
+sha256 = "d995d1124f8350a80c6f2bd534d8f80ecec314f67ca5125ba42a077854b364c4"
+model = "cgb"
+needs = "cpu, interrupts, ppu, cgb"
+covers = "Mealybug Tearoom: Toggles bit 0 (BG_EN) of LCDC register during mode 3"
+check = "frame"
+frames = 450
+mesen = "The hardware's frame: Mealybug Tearoom's CPU CGB C image (it has no CPU CGB D one)"
+
+[[rom]]
+id = "mbt-m3-lcdc-bg-map-change-cgb"
+source = "mealybug"
+path = "m3_lcdc_bg_map_change.gb"
+sha256 = "dcb8d7e2c750453d76f47bae25092c9eb79ace1f8c0c3e8e1959ebb8d177d716"
+model = "cgb"
+needs = "cpu, interrupts, ppu, cgb"
+covers = "Mealybug Tearoom: Sets bit 3 (BG_MAP) of LCDC register during mode 3 with sprites at different X coordinates"
+check = "frame"
+frames = 450
+override = { mesen = "0xb7a03803", result = "-", crc = "0xb854106c", why = "the hardware's frame: Mealybug Tearoom's CPU CGB D image" }
+
+[[rom]]
+id = "mbt-m3-lcdc-bg-map-change2-cgb"
+source = "mealybug"
+path = "m3_lcdc_bg_map_change2.gb"
+sha256 = "186d35a0b6c13ac2261f140fa0d74612d8a0fa2f0c1d1a6802dd01e08a8e1fec"
+model = "cgb"
+needs = "cpu, interrupts, ppu, cgb"
+covers = "Mealybug Tearoom: Toggles bit 3 (BG_MAP) of LCDC register during mode 3"
+check = "frame"
+frames = 450
+override = { mesen = "0x27ccdfdb", result = "-", crc = "0x0592d9a4", why = "the hardware's frame: Mealybug Tearoom's CPU CGB C image (it has no CPU CGB D one)" }
+
+[[rom]]
+id = "mbt-m3-lcdc-obj-en-change-cgb"
+source = "mealybug"
+path = "m3_lcdc_obj_en_change.gb"
+sha256 = "943be0ef4a104bc71139f21de2321ad4510e32dc756739be0d97fc56ff59e18c"
+model = "cgb"
+needs = "cpu, interrupts, ppu, cgb"
+covers = "Mealybug Tearoom: Resets bit 1 of LCDC register (sprite enable) during mode 3 with sprites at different X coordinates"
+check = "frame"
+frames = 450
+override = { mesen = "0xc0a552ba", result = "-", crc = "0xde379812", why = "the hardware's frame: Mealybug Tearoom's CPU CGB D image" }
+
+[[rom]]
+id = "mbt-m3-lcdc-obj-en-change-variant-cgb"
+source = "mealybug"
+path = "m3_lcdc_obj_en_change_variant.gb"
+sha256 = "5beb278323b75201150aadc5abc00d6f12817759f2a4e7206cdd2cd2504a77f3"
+model = "cgb"
+needs = "cpu, interrupts, ppu, cgb"
+covers = "Mealybug Tearoom: Resets bit 1 of LCDC register (sprite enable) during mode 3 with sprites at different X coordinates"
+check = "frame"
+frames = 450
+override = { mesen = "0x79ec7cc8", result = "-", crc = "0x677eb660", why = "the hardware's frame: Mealybug Tearoom's CPU CGB D image" }
+
+[[rom]]
+id = "mbt-m3-lcdc-obj-size-change-cgb"
+source = "mealybug"
+path = "m3_lcdc_obj_size_change.gb"
+sha256 = "1060fbf592ccf28b19c5e8af310f4441c74ca2310faf7f6b024a62a1888d6d2e"
+model = "cgb"
+needs = "cpu, interrupts, ppu, cgb"
+covers = "Mealybug Tearoom: Toggles bit 2 of LCDC register (sprite size) during mode 3 with sprites at different X coordinates"
+check = "frame"
+frames = 450
+override = { mesen = "0x9e036412", result = "-", crc = "0x2e7e5880", why = "the hardware's frame: Mealybug Tearoom's CPU CGB D image" }
+
+[[rom]]
+id = "mbt-m3-lcdc-obj-size-change-scx-cgb"
+source = "mealybug"
+path = "m3_lcdc_obj_size_change_scx.gb"
+sha256 = "f0ae9a6c51d1ae490a3b492e732ba4080ad92def08a806b4e3953277aaa7291a"
+model = "cgb"
+needs = "cpu, interrupts, ppu, cgb"
+covers = "Mealybug Tearoom: Toggles bit 2 of LCDC register (sprite size) during mode 3 while changing SCX based on the row's LY value to affect timing"
+check = "frame"
+frames = 450
+override = { mesen = "0x43279a43", result = "-", crc = "0x8c745748", why = "the hardware's frame: Mealybug Tearoom's CPU CGB D image" }
+
+[[rom]]
+id = "mbt-m3-lcdc-win-en-change-multiple-cgb"
+source = "mealybug"
+path = "m3_lcdc_win_en_change_multiple.gb"
+sha256 = "6d759374790c6a4b98682e438d2f25e0481533828e2c2a50fda88fdde3256870"
+model = "cgb"
+needs = "cpu, interrupts, ppu, cgb"
+covers = "Mealybug Tearoom: Turns bit 5 (WIN_EN) of LCDC register on and off multiple times during mode 3"
+check = "frame"
+frames = 450
+override = { mesen = "0xafa9fb5e", result = "-", crc = "0x6a75fcf9", why = "the hardware's frame: Mealybug Tearoom's CPU CGB D image" }
+
+[[rom]]
+id = "mbt-m3-lcdc-win-en-change-multiple-dmg"
+source = "mealybug"
+path = "m3_lcdc_win_en_change_multiple.gb"
+sha256 = "6d759374790c6a4b98682e438d2f25e0481533828e2c2a50fda88fdde3256870"
+model = "dmg"
+needs = "cpu, interrupts, ppu"
+covers = "Mealybug Tearoom: Turns bit 5 (WIN_EN) of LCDC register on and off multiple times during mode 3"
+check = "frame"
+frames = 450
+override = { mesen = "0x1aaeaad1", result = "-", crc = "0xc0c746a2", why = "the hardware's frame: Mealybug Tearoom's DMG-blob image" }
+
+[[rom]]
+id = "mbt-m3-lcdc-win-map-change-cgb"
+source = "mealybug"
+path = "m3_lcdc_win_map_change.gb"
+sha256 = "a4d4a28cb665b55faa256163110ea3f6729d33112aa0a05dfd876eae8f446c05"
+model = "cgb"
+needs = "cpu, interrupts, ppu, cgb"
+covers = "Mealybug Tearoom: Sets bit 6 (WIN_MAP) of LCDC register during mode 3 with sprites at different X coordinates"
+check = "frame"
+frames = 450
+override = { mesen = "0x2902d918", result = "-", crc = "0xecaff9f6", why = "the hardware's frame: Mealybug Tearoom's CPU CGB D image" }
+
+[[rom]]
+id = "mbt-m3-lcdc-win-map-change2-cgb"
+source = "mealybug"
+path = "m3_lcdc_win_map_change2.gb"
+sha256 = "8a29d3ef9998e41da175b57778e503aa70a34f8290fb6ccb25267a58deb76e00"
+model = "cgb"
+needs = "cpu, interrupts, ppu, cgb"
+covers = "Mealybug Tearoom: Toggles bit 6 (WIN_MAP) of LCDC register during mode 3"
+check = "frame"
+frames = 450
+override = { mesen = "0xd572ef5c", result = "-", crc = "0xaece49f0", why = "the hardware's frame: Mealybug Tearoom's CPU CGB C image (it has no CPU CGB D one)" }
+
+[[rom]]
+id = "mbt-m3-obp0-change-cgb"
+source = "mealybug"
+path = "m3_obp0_change.gb"
+sha256 = "2160b69123091f9b997debef8b314b4277f4a9027eb25a1b8418ea06f87ba6af"
+model = "cgb"
+needs = "cpu, interrupts, ppu, cgb"
+covers = "Mealybug Tearoom: Tests changing the sprite palette in OBP0 during mode 3 with sprites at different X coordinates"
+check = "frame"
+frames = 450
+override = { mesen = "0x90e266d5", result = "-", crc = "0xde6efcbe", why = "the hardware's frame: Mealybug Tearoom's CPU CGB D image" }
+
+[[rom]]
+id = "mbt-m3-obp0-change-dmg"
+source = "mealybug"
+path = "m3_obp0_change.gb"
+sha256 = "2160b69123091f9b997debef8b314b4277f4a9027eb25a1b8418ea06f87ba6af"
+model = "dmg"
+needs = "cpu, interrupts, ppu"
+covers = "Mealybug Tearoom: Tests changing the sprite palette in OBP0 during mode 3 with sprites at different X coordinates"
+check = "frame"
+frames = 450
+override = { mesen = "0x51c9449d", result = "-", crc = "0xa8b3878f", why = "the hardware's frame: Mealybug Tearoom's DMG-blob image" }
+
+[[rom]]
+id = "mbt-m3-scx-high-5-bits-cgb"
+source = "mealybug"
+path = "m3_scx_high_5_bits.gb"
+sha256 = "423db91af0f87547ae46690044ef760481f7005033ffc61bd69875b7df96139b"
+model = "cgb"
+needs = "cpu, interrupts, ppu, cgb"
+covers = "Mealybug Tearoom: Sets SCX to LY on each row during mode 3"
+check = "frame"
+frames = 450
+override = { mesen = "0x7fc3c5e9", result = "-", crc = "0xb588aa22", why = "the hardware's frame: Mealybug Tearoom's CPU CGB D image" }
+
+[[rom]]
+id = "mbt-m3-scx-high-5-bits-dmg"
+source = "mealybug"
+path = "m3_scx_high_5_bits.gb"
+sha256 = "423db91af0f87547ae46690044ef760481f7005033ffc61bd69875b7df96139b"
+model = "dmg"
+needs = "cpu, interrupts, ppu"
+covers = "Mealybug Tearoom: Sets SCX to LY on each row during mode 3"
+check = "frame"
+frames = 450
+override = { mesen = "0xc881e3ad", result = "-", crc = "0x21b3e566", why = "the hardware's frame: Mealybug Tearoom's DMG-blob image" }
+
+[[rom]]
+id = "mbt-m3-scx-high-5-bits-change2-cgb"
+source = "mealybug"
+path = "m3_scx_high_5_bits_change2.gb"
+sha256 = "1296d0d4996f5f40379c78382bb37b22956539b57033948388ba4745caa52da7"
+model = "cgb"
+needs = "cpu, interrupts, ppu, cgb"
+covers = "Mealybug Tearoom: Toggles the value of the SCX register during mode 3"
+check = "frame"
+frames = 450
+override = { mesen = "0xf9c649eb", result = "-", crc = "0x468e52e4", why = "the hardware's frame: Mealybug Tearoom's CPU CGB C image (it has no CPU CGB D one)" }
+
+[[rom]]
+id = "mbt-m3-scx-low-3-bits-cgb"
+source = "mealybug"
+path = "m3_scx_low_3_bits.gb"
+sha256 = "433e59a9eb9a27c962cd613c24c2f8d728ac9e498233667959eb07995f0fef5f"
+model = "cgb"
+needs = "cpu, interrupts, ppu, cgb"
+covers = "Mealybug Tearoom: Tests how late SCX can be written to and have the lowest 3 bits of SCX still affect the rendering"
+check = "frame"
+frames = 450
+mesen = "The hardware's frame: Mealybug Tearoom's CPU CGB D image"
+
+[[rom]]
+id = "mbt-m3-scx-low-3-bits-dmg"
+source = "mealybug"
+path = "m3_scx_low_3_bits.gb"
+sha256 = "433e59a9eb9a27c962cd613c24c2f8d728ac9e498233667959eb07995f0fef5f"
+model = "dmg"
+needs = "cpu, interrupts, ppu"
+covers = "Mealybug Tearoom: Tests how late SCX can be written to and have the lowest 3 bits of SCX still affect the rendering"
+check = "frame"
+frames = 450
+mesen = "The hardware's frame: Mealybug Tearoom's DMG-blob image"
+
+[[rom]]
+id = "mbt-m3-scy-change-cgb"
+source = "mealybug"
+path = "m3_scy_change.gb"
+sha256 = "0fedb0c33fd400d5f88a35704177e437b7d88f18c81bd5b30c3165b633734c8a"
+model = "cgb"
+needs = "cpu, interrupts, ppu, cgb"
+covers = "Mealybug Tearoom: Changes the SCY register during mode 3, with SCX set to LY on each row"
+check = "frame"
+frames = 450
+override = { mesen = "0x31e332bc", result = "-", crc = "0x4cba5a4f", why = "the hardware's frame: Mealybug Tearoom's CPU CGB D image" }
+
+[[rom]]
+id = "mbt-m3-window-timing-cgb"
+source = "mealybug"
+path = "m3_window_timing.gb"
+sha256 = "c8c8b26d5c9659f30e037a1a9f8d8f9d8f57db0a97730bbab536fb95e11da9df"
+model = "cgb"
+needs = "cpu, interrupts, ppu, cgb"
+covers = "Mealybug Tearoom: On each row, WX is set to the value of LY, and then the background palette is changed to black during mode 3"
+check = "frame"
+frames = 450
+override = { mesen = "0x78eba485", result = "-", crc = "0xadf2b8be", why = "the hardware's frame: Mealybug Tearoom's CPU CGB D image" }
+
+[[rom]]
+id = "mbt-m3-window-timing-dmg"
+source = "mealybug"
+path = "m3_window_timing.gb"
+sha256 = "c8c8b26d5c9659f30e037a1a9f8d8f9d8f57db0a97730bbab536fb95e11da9df"
+model = "dmg"
+needs = "cpu, interrupts, ppu"
+covers = "Mealybug Tearoom: On each row, WX is set to the value of LY, and then the background palette is changed to black during mode 3"
+check = "frame"
+frames = 450
+override = { mesen = "0xb4214559", result = "-", crc = "0x3c1ab89a", why = "the hardware's frame: Mealybug Tearoom's DMG-blob image" }
+
+[[rom]]
+id = "mbt-m3-window-timing-wx-0-cgb"
+source = "mealybug"
+path = "m3_window_timing_wx_0.gb"
+sha256 = "984496c486032606aede6428e1087c6038403b27d7bcfed844188742123b91a4"
+model = "cgb"
+needs = "cpu, interrupts, ppu, cgb"
+covers = "Mealybug Tearoom: m3_window_timing with WX set to 0"
+check = "frame"
+frames = 450
+override = { mesen = "0xa5c777b4", result = "-", crc = "0x669aec40", why = "the hardware's frame: Mealybug Tearoom's CPU CGB D image" }
+
+[[rom]]
+id = "mbt-m3-window-timing-wx-0-dmg"
+source = "mealybug"
+path = "m3_window_timing_wx_0.gb"
+sha256 = "984496c486032606aede6428e1087c6038403b27d7bcfed844188742123b91a4"
+model = "dmg"
+needs = "cpu, interrupts, ppu"
+covers = "Mealybug Tearoom: m3_window_timing with WX set to 0"
+check = "frame"
+frames = 450
+override = { mesen = "0x69b1b54c", result = "-", crc = "0xc3713cb2", why = "the hardware's frame: Mealybug Tearoom's DMG-blob image" }
+
+[[rom]]
+id = "mbt-m3-wx-4-change-dmg"
+source = "mealybug"
+path = "m3_wx_4_change.gb"
+sha256 = "eadfe4369b85994b4401e7e5119272626c6339ecec282848013decf0cb5ea81c"
+model = "dmg"
+needs = "cpu, interrupts, ppu"
+covers = "Mealybug Tearoom: Tests changing the value of WX during mode 3"
+check = "frame"
+frames = 450
+override = { mesen = "0x55741273", result = "-", crc = "0x151092ff", why = "the hardware's frame: Mealybug Tearoom's DMG-blob image" }
+
+[[rom]]
+id = "mbt-m3-wx-4-change-sprites-dmg"
+source = "mealybug"
+path = "m3_wx_4_change_sprites.gb"
+sha256 = "da10819cb8af5fb8fb31f6f50729e9afe221161a7b5743351a54ca05e9c94fec"
+model = "dmg"
+needs = "cpu, interrupts, ppu"
+covers = "Mealybug Tearoom: Tests changing the value of WX during mode 3"
+check = "frame"
+frames = 450
+override = { mesen = "0x0e8d9a6e", result = "-", crc = "0x1b67ac64", why = "the hardware's frame: Mealybug Tearoom's DMG-blob image" }
+
+[[rom]]
+id = "mbt-m3-wx-5-change-dmg"
+source = "mealybug"
+path = "m3_wx_5_change.gb"
+sha256 = "53a0c14c896cdef68b92ea90e952fe053dcf1d2155251e2e4ed8b48ef22a6d62"
+model = "dmg"
+needs = "cpu, interrupts, ppu"
+covers = "Mealybug Tearoom: Tests changing the value of WX during mode 3"
+check = "frame"
+frames = 450
+override = { mesen = "0xbb0849c1", result = "-", crc = "0x3774795f", why = "the hardware's frame: Mealybug Tearoom's DMG-blob image" }
+
+[[rom]]
+id = "mbt-m3-wx-6-change-dmg"
+source = "mealybug"
+path = "m3_wx_6_change.gb"
+sha256 = "efa65cf7a570add7cfcb6d25d7c314359f2a0e6eadcde2e44d53f81d6ba44b0d"
+model = "dmg"
+needs = "cpu, interrupts, ppu"
+covers = "Mealybug Tearoom: Tests changing the value of WX during mode 3"
+check = "frame"
+frames = 450
+mesen = "The hardware's frame: Mealybug Tearoom's DMG-blob image"

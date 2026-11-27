@@ -118,6 +118,9 @@ module gb_ppu (
     logic [31:0] ofslot;             // ...their objects' slots (the Color's priority by OAM order), next in 31-28
     logic [7:0] ofpri;               // ...and priority bits, next in bit 7
     logic [7:0] fattr;               // the Color's tile attributes, fetched with the tile
+    logic       ins_px, n_ins_px;    // the next pixel is a blank one, inserted (WX matching again)
+    logic       ftsel, n_ftsel;      // LCDC bit 4 as the bitplane's address took it
+    logic [7:0] vbg;                 // the bitplane byte the fetcher takes (vb, or the TILE_SEL glitch's)
     logic [3:0] bgattr;              // the background FIFO's: priority, palette (one tile's at a time)
     logic       vbank;               // the bank vaddr's byte is read from
     logic [7:0] fy_c;                // the fetcher's Y, as at the tile's fetch (the Color keeps it)
@@ -310,7 +313,7 @@ module gb_ppu (
         n_m3 = m3; n_ost = ost; n_after_obj = after_obj; n_resume = resume;
         n_pos = pos; n_lcd_x = lcd_x; n_fst = fst; n_ftile = ftile; n_fdlo = fdlo;
         n_bgf = bgf; n_bgn = bgn; n_ofp = ofp; n_ofpal = ofpal; n_ofpri = ofpri; n_ofn = ofn;
-        n_ofslot = ofslot; n_fattr = fattr; n_bgattr = bgattr; n_vbank = vbank; n_fy_c = fy_c;
+        n_ofslot = ofslot; n_fattr = fattr; n_ftsel = ftsel; n_ins_px = ins_px; n_bgattr = bgattr; n_vbank = vbank; n_fy_c = fy_c;
         n_wx_trig = wx_trig; n_win_fetching = win_fetching; n_win_tx = win_tx;
         n_obj_done = obj_done; n_nvis = nvis; n_oslot = oslot; n_otile = otile; n_oflags = oflags; n_odlo = odlo;
         n_ivb = 1'b0; n_ist = 1'b0; n_stat_pend = 1'b0;
@@ -323,6 +326,10 @@ module gb_ppu (
         fy = '0; taddr = '0; bp = '0; op = '0; opal = '0; opri = 1'b0; draw_obj = 1'b0; popped = 1'b0;
         bpri = 1'b0;
         vb = vbank ? vq[15:8] : vq[7:0];
+        // The Color clearing TILE_SEL (LCDC bit 4) on the dot a bitplane is read from the tile set it
+        // had takes the tile index for the bitplane instead, if below $80: Mealybug Tearoom's notes
+        // for all but the CPU CGB D, and SameBoy's (its CGB-E) (m3_lcdc_tile_sel_change and _win_).
+        vbg = (cgb_hw && !dbl && wr && reg_sel == 4'h0 && phase == 2'd3 && !wdata[4] && ftsel && !ftile[7]) ? ftile : vb;
         act = 1'b0; ydiff = '0; sy = '0; lo_b = '0; hi_b = '0;
         ob = '0; opx = '0; bgpix = '0; wt = 1'b0; tx = '0; n_pix_x = lcd_x;
 
@@ -354,7 +361,7 @@ module gb_ppu (
                         n_first = 1'b0;
                         n_wx_trig = 1'b0;
                         n_m3 = 1'b1; n_ost = O_NORM; n_after_obj = 1'b0; n_resume = 1'b0;
-                        n_bgf = '0; n_bgn = 4'd8; n_ofn = '0; n_lcd_x = '0; n_fst = '0; n_bgattr = '0;
+                        n_bgf = '0; n_bgn = 4'd8; n_ins_px = 1'b0; n_ofn = '0; n_lcd_x = '0; n_fst = '0; n_bgattr = '0;
                     end
                 end else if (line < 8'd144) begin
                     if (lx == 9'd0) begin
@@ -402,7 +409,7 @@ module gb_ppu (
                     end
                     if (lx == 9'd88) begin
                         n_m3 = 1'b1; n_ost = O_NORM; n_after_obj = 1'b0; n_resume = 1'b0;
-                        n_bgf = '0; n_bgn = 4'd8; n_ofn = '0; n_lcd_x = '0; n_fst = '0; n_bgattr = '0;
+                        n_bgf = '0; n_bgn = 4'd8; n_ins_px = 1'b0; n_ofn = '0; n_lcd_x = '0; n_fst = '0; n_bgattr = '0;
                     end
                     if (hb1) begin
                         n_smode = 2'd0; n_mode_int = 2'd0;
@@ -497,6 +504,12 @@ module gb_ppu (
                                     end
                                 end
                             end
+                            // WX matching again with the window on and its fetch done inserts a blank
+                            // pixel at the FIFO's end (the Game Boy's; the Color's only at WX 0, as
+                            // SameBoy has it): Mealybug Tearoom's m3_wx_4_change and m3_wx_5_change
+                            if (!after_obj && !resume && wx == pos + 8'd7 && (!cgb_hw || wx == 8'd0) &&
+                                n_wx_trig && wx_trig && !win_fetching && fst == 3'd0 && bgn == 4'd8)
+                                n_ins_px = 1'b1;
                             // objects left of the match point are dropped
                             if (!after_obj && (!n_resume || resume))
                                 for (int k = 0; k < 10; k++)
@@ -534,7 +547,12 @@ module gb_ppu (
                             n_vaddr = obj_addr | 13'd1;
                             n_ost = O_D2;
                         end
-                        O_D2: n_ost = O_E;
+                        O_D2: begin
+                            // the high bitplane's address again, with LCDC's object size as it is now
+                            // (SameBoy's, two dots after the low one's: m3_lcdc_obj_size_change)
+                            n_vaddr = obj_addr | 13'd1;
+                            n_ost = O_E;
+                        end
                         default: begin  // O_E: the object's row goes into the object FIFO
                             lo_b = odlo; hi_b = vb;
                             // On the Color, an object fetched with objects off goes nowhere.
@@ -570,9 +588,14 @@ module gb_ppu (
 
                     // ---- render a pixel, if it can ----
                     if (do_render && !(nhave && lcdc[1] && nx == 8'd0) && n_bgn != 4'd0) begin
-                        bp = n_bgf[15:14];
-                        n_bgf = {n_bgf[13:0], 2'b00};
-                        n_bgn = n_bgn - 4'd1;
+                        if (n_ins_px) begin
+                            bp = 2'd0;  // the inserted pixel: colour 0, the FIFO stays
+                            n_ins_px = 1'b0;
+                        end else begin
+                            bp = n_bgf[15:14];
+                            n_bgf = {n_bgf[13:0], 2'b00};
+                            n_bgn = n_bgn - 4'd1;
+                        end
                         if (ofn != 4'd0) begin
                             op = ofp[15:14]; opal = ofpal[23:21]; opri = ofpri[7];
                             n_ofp = {ofp[13:0], 2'b00}; n_ofpal = {ofpal[20:0], 3'b0}; n_ofpri = {ofpri[6:0], 1'b0};
@@ -628,7 +651,9 @@ module gb_ppu (
                                 fy = wt ? n_win_y : line + scy;
                                 if (wt) tx = n_win_tx;
                                 else if (n_pos >= 8'd240 && n_pos <= 8'd247) tx = scx[7:3];
-                                else tx = 5'((scx + n_pos + 8'd8) >> 3);
+                                // the Color's column is a position sooner, but during an object's fetch
+                                // (SameBoy's: m3_scx_high_5_bits_change2)
+                                else tx = 5'((scx + n_pos + 8'd8 - {7'd0, cgb_hw && ost == O_NORM && n_ost == O_NORM}) >> 3);
                                 n_vaddr = {2'b11, (wt ? lcdc[6] : lcdc[3]), fy[7:3], tx};
                                 n_vbank = 1'b0;
                                 n_fy_c = fy;
@@ -643,9 +668,10 @@ module gb_ppu (
                                 taddr = lcdc[4] ? {1'b0, ftile, 4'd0} : 13'h1000 + {{1{ftile[7]}}, ftile, 4'd0};
                                 n_vaddr = taddr + {9'd0, fy[2:0] ^ {3{fattr[6]}}, (n_fst == 3'd4)};
                                 n_vbank = fattr[3];
+                                n_ftsel = lcdc[4];
                                 n_fst = n_fst + 3'd1;
                             end
-                            3'd3: begin n_fdlo = vb; n_fst = 3'd4; end
+                            3'd3: begin n_fdlo = vbg; n_fst = 3'd4; end
                             default: begin
                                 if (n_fst == 3'd5) begin
                                     if (n_wx_trig) n_win_tx = n_win_tx + 5'd1;
@@ -653,7 +679,7 @@ module gb_ppu (
                                 n_fst = 3'd6;
                                 if (n_bgn == 4'd0) begin
                                     // push the tile's row
-                                    lo_b = n_fdlo; hi_b = (fst == 3'd5) ? vb : fdhi_r;
+                                    lo_b = n_fdlo; hi_b = (fst == 3'd5) ? vbg : fdhi_r;
                                     for (int i = 0; i < 8; i++)
                                         n_bgf[15 - 2 * i -: 2] = fattr[5] ? {hi_b[i], lo_b[i]} : {hi_b[7 - i], lo_b[7 - i]};
                                     n_bgattr = {fattr[7], fattr[2:0]};
@@ -700,7 +726,11 @@ module gb_ppu (
             if (wr) begin
                 case (reg_sel)
                     4'h0: begin
-                        if (phase == 2'd1 && !cgb_hw) n_lcdc = lcdc | (wdata & 8'h01);
+                        // What the PPU draws with lands a dot before the LCD's switch (bit 7): the
+                        // Game Boy's bit 0 a dot sooner still (SameBoy's; Mealybug Tearoom's m3_lcdc_
+                        // tests). In double speed the Color's all lands at phase 3.
+                        if (phase == 2'd0 && !cgb_hw) n_lcdc = lcdc | (wdata & 8'h01);
+                        if (phase == (cgb_hw ? 2'd2 : 2'd1)) n_lcdc = {lcdc[7], wdata[6:0]};
                         if (phase == (cgb_hw ? 2'd3 : 2'd2)) begin
                             n_lcdc = wdata;
                             n_wy_sched = 1'b1;
@@ -739,29 +769,32 @@ module gb_ppu (
                         end
                         if (phase == 2'd3) n_stat_pend = 1'b1;
                     end
-                    4'h2: if (phase == (cgb_hw ? 2'd3 : 2'd2)) n_scy = wdata;
-                    4'h3: if (phase == (cgb_hw ? 2'd3 : 2'd1)) n_scx = wdata;
+                    4'h2: if (phase == (cgb_hw ? (dbl ? 2'd3 : 2'd2) : 2'd1)) n_scy = wdata;
+                    4'h3: if (phase == (cgb_hw ? (dbl ? 2'd3 : 2'd2) : 2'd0)) n_scx = wdata;
                     4'h5: if (phase == 2'd3 && !cgb_hw) begin
                         n_lyc = wdata;
                         `STAT_UPDATE
                     end
+                    // The palettes: the Game Boy's ORed with the old value for a dot, then the new
+                    // (SameBoy's); the Color's (its CGB D and on) at the M-cycle's first dot, at
+                    // single speed (Mealybug Tearoom's m3_bgp_change, m3_obp0_change)
                     4'h7: begin
-                        if (phase == 2'd1 && !cgb_hw) n_bgp = bgp | wdata;
-                        if (phase == (cgb_hw ? 2'd1 : 2'd2)) n_bgp = wdata;
+                        if (phase == 2'd0 && !cgb_hw) n_bgp = bgp | wdata;
+                        if (phase == (cgb_hw ? (dbl ? 2'd1 : 2'd0) : 2'd1)) n_bgp = wdata;
                     end
                     4'h8: begin
-                        if (phase == 2'd1 && !cgb_hw) n_obp0 = obp0 | wdata;
-                        if (phase == (cgb_hw ? 2'd1 : 2'd2)) n_obp0 = wdata;
+                        if (phase == 2'd0 && !cgb_hw) n_obp0 = obp0 | wdata;
+                        if (phase == (cgb_hw ? (dbl ? 2'd1 : 2'd0) : 2'd1)) n_obp0 = wdata;
                     end
                     4'h9: begin
-                        if (phase == 2'd1 && !cgb_hw) n_obp1 = obp1 | wdata;
-                        if (phase == (cgb_hw ? 2'd1 : 2'd2)) n_obp1 = wdata;
+                        if (phase == 2'd0 && !cgb_hw) n_obp1 = obp1 | wdata;
+                        if (phase == (cgb_hw ? (dbl ? 2'd1 : 2'd0) : 2'd1)) n_obp1 = wdata;
                     end
                     4'hA: if (phase == 2'd3) begin
                         n_wy = wdata;
                         n_wy_sched = 1'b1;
                     end
-                    4'hB: if (phase == 2'd3 && !cgb_hw) begin
+                    4'hB: if (phase == 2'd2 && !cgb_hw) begin
                         n_wx = wdata;
                         n_wx_new = 1'b1;
                     end
@@ -866,7 +899,7 @@ module gb_ppu (
             m3 <= 1'b0; ost <= O_NORM; after_obj <= 1'b0; resume <= 1'b0;
             pos <= 8'd240; lcd_x <= '0; fst <= '0; ftile <= '0; fdlo <= '0; fdhi_r <= '0;
             bgf <= '0; bgn <= '0; ofp <= '0; ofpal <= '0; ofpri <= '0; ofn <= '0;
-            ofslot <= '0; fattr <= '0; bgattr <= '0; vbank <= 1'b0; fy_c <= '0;
+            ofslot <= '0; fattr <= '0; ftsel <= 1'b0; ins_px <= 1'b0; bgattr <= '0; vbank <= 1'b0; fy_c <= '0;
             wx_trig <= 1'b0; win_fetching <= 1'b0; win_tx <= '0;
             obj_done <= '0; nvis <= '0; oslot <= '0; otile <= '0; oflags <= '0; odlo <= '0;
             vaddr <= '0; oaddr <= '0;
@@ -890,9 +923,9 @@ module gb_ppu (
             vram_rd_blk <= n_vrb; vram_wr_blk <= n_vwb; oam_rd_blk <= n_orb; oam_wr_blk <= n_owb;
             m3 <= n_m3; ost <= n_ost; after_obj <= n_after_obj; resume <= n_resume;
             pos <= n_pos; lcd_x <= n_lcd_x; fst <= n_fst; ftile <= n_ftile; fdlo <= n_fdlo;
-            if (ce && do_fetch && fst == 3'd5) fdhi_r <= vb;
+            if (ce && do_fetch && fst == 3'd5) fdhi_r <= vbg;
             bgf <= n_bgf; bgn <= n_bgn; ofp <= n_ofp; ofpal <= n_ofpal; ofpri <= n_ofpri; ofn <= n_ofn;
-            ofslot <= n_ofslot; fattr <= n_fattr; bgattr <= n_bgattr; vbank <= n_vbank; fy_c <= n_fy_c;
+            ofslot <= n_ofslot; fattr <= n_fattr; ftsel <= n_ftsel; ins_px <= n_ins_px; bgattr <= n_bgattr; vbank <= n_vbank; fy_c <= n_fy_c;
             wx_trig <= n_wx_trig; win_fetching <= n_win_fetching; win_tx <= n_win_tx;
             obj_done <= n_obj_done; nvis <= n_nvis; oslot <= n_oslot;
             otile <= n_otile; oflags <= n_oflags; odlo <= n_odlo;
