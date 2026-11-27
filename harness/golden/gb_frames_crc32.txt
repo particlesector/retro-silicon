@@ -191,3 +191,5 @@ mbt-m3-wx-4-change-dmg dmg 450 0x151092ff frame - mealybug/m3_wx_4_change.gb
 mbt-m3-wx-4-change-sprites-dmg dmg 450 0x1b67ac64 frame - mealybug/m3_wx_4_change_sprites.gb
 mbt-m3-wx-5-change-dmg dmg 450 0x3774795f frame - mealybug/m3_wx_5_change.gb
 mbt-m3-wx-6-change-dmg dmg 450 0x914bad96 frame - mealybug/m3_wx_6_change.gb
+rs-win-off-pixel-dmg dmg 300 0xe8d1dffa frame - gb-roms/win_off_pixel.gb
+rs-win-off-pixel-cgb cgb 300 0x719597a0 frame - gb-roms/win_off_pixel.gb

@@ -185,3 +185,5 @@ mbt-m3-wx-4-change-dmg 450 0xccde1874
 mbt-m3-wx-4-change-sprites-dmg 450 0xf658eeb6
 mbt-m3-wx-5-change-dmg 450 0x9cd4060d
 mbt-m3-wx-6-change-dmg 450 0x9cd4060d
+rs-win-off-pixel-dmg 300 0x39c2deb3
+rs-win-off-pixel-cgb 300 0x2e9a0344

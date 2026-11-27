@@ -121,6 +121,7 @@ module gb_ppu (
     logic       ins_px, n_ins_px;    // the next pixel is a blank one, inserted (WX matching again)
     logic       ftsel, n_ftsel;      // LCDC bit 4 as the bitplane's address took it
     logic [7:0] vbg;                 // the bitplane byte the fetcher takes (vb, or the TILE_SEL glitch's)
+    logic [7:0] wlp;                 // the position + 7 the window-off blank pixel compares WX with
     logic [3:0] bgattr;              // the background FIFO's: priority, palette (one tile's at a time)
     logic       vbank;               // the bank vaddr's byte is read from
     logic [7:0] fy_c;                // the fetcher's Y, as at the tile's fetch (the Color keeps it)
@@ -330,6 +331,7 @@ module gb_ppu (
         // had takes the tile index for the bitplane instead, if below $80: Mealybug Tearoom's notes
         // for all but the CPU CGB D, and SameBoy's (its CGB-E) (m3_lcdc_tile_sel_change and _win_).
         vbg = (cgb_hw && !dbl && wr && reg_sel == 4'h0 && phase == 2'd3 && !wdata[4] && ftsel && !ftile[7]) ? ftile : vb;
+        wlp = 8'd0;
         act = 1'b0; ydiff = '0; sy = '0; lo_b = '0; hi_b = '0;
         ob = '0; opx = '0; bgpix = '0; wt = 1'b0; tx = '0; n_pix_x = lcd_x;
 
@@ -677,7 +679,17 @@ module gb_ppu (
                                     if (n_wx_trig) n_win_tx = n_win_tx + 5'd1;
                                 end
                                 n_fst = 3'd6;
-                                if (n_bgn == 4'd0) begin
+                                // The Game Boy's blank pixel with the window off: once WY has
+                                // matched, with LCDC bit 5 clear, WX matching the position + 7 (8
+                                // bits, 0 past 167) as the push waits on an empty FIFO puts one
+                                // colour-0 pixel there, and the push waits for it (SameBoy's, its
+                                // issue 278: testroms/gb's win_off_pixel, Star Trek: 25th
+                                // Anniversary's credits).
+                                wlp = 8'(n_pos + 8'd7);
+                                if (n_bgn == 4'd0 && !cgb_hw && wy_trig && !lcdc[5] &&
+                                    wx == ((wlp > 8'd167) ? 8'd0 : wlp)) begin
+                                    n_bgf = '0; n_bgn = 4'd1; n_bgattr = '0;
+                                end else if (n_bgn == 4'd0) begin
                                     // push the tile's row
                                     lo_b = n_fdlo; hi_b = (fst == 3'd5) ? vbg : fdhi_r;
                                     for (int i = 0; i < 8; i++)

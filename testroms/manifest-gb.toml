@@ -48,6 +48,14 @@ url = "https://github.com/mattcurrie/dmg-acid2/releases/download/v1.0/"
 # Matt Currie's cgb-acid2 (MIT).
 url = "https://github.com/mattcurrie/cgb-acid2/releases/download/v1.1/"
 
+[sources.gb-roms]
+# retro-silicon's own test ROMs (testroms/gb, Apache-2.0), for behaviour no public test covers,
+# each from a game that showed it; built with rgbds 1.0.4 (testroms/gb's README).
+dir = "gb"
+license = "Apache-2.0"
+credit = "retro-silicon"
+build = ["make"]
+
 [sources.mealybug]
 # Matt Currie's Mealybug Tearoom tests (MIT): the PPU's registers written during mode 3, each with
 # the hardware's frame (photos of a DMG-blob, a CPU CGB C and a CPU CGB D, as images of the
@@ -2239,3 +2247,25 @@ covers = "Mealybug Tearoom: Tests changing the value of WX during mode 3"
 check = "frame"
 frames = 450
 mesen = "The hardware's frame: Mealybug Tearoom's DMG-blob image"
+
+[[rom]]
+id = "rs-win-off-pixel-dmg"
+source = "gb-roms"
+path = "win_off_pixel.gb"
+sha256 = "9d14d7ee67f15fc89769cd8ffcf862abe88c5da8565bb3aea0d901cdf4c573a2"
+model = "dmg"
+needs = "cpu, interrupts, ppu"
+covers = "The Game Boy's blank pixel with the window triggered by WY but off in LCDC, at WX 7 (the line's start) and WX 87 (mid-line); Star Trek: 25th Anniversary's credits"
+check = "frame"
+frames = 300
+
+[[rom]]
+id = "rs-win-off-pixel-cgb"
+source = "gb-roms"
+path = "win_off_pixel.gb"
+sha256 = "9d14d7ee67f15fc89769cd8ffcf862abe88c5da8565bb3aea0d901cdf4c573a2"
+model = "cgb"
+needs = "cpu, interrupts, ppu, cgb"
+covers = "As rs-win-off-pixel-dmg on the Color, which has no blank pixel there"
+check = "frame"
+frames = 300
