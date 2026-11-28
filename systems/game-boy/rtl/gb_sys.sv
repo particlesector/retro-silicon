@@ -35,7 +35,8 @@
 // Shell address map (README.md has the registers):
 //   0x00000000-...         the cartridge's ROM, 2^ROM_LOG2 bytes, written and read while held in reset
 //   0x01000000-0x0100007F  control and status registers
-//   0x02000000-...         the cartridge's RAM, 2^CRAM_LOG2 bytes, written and read while held in reset
+//   0x02000000-...         the cartridge's RAM, 2^CRAM_LOG2 bytes, written and read while held in reset;
+//                          read too while stopped at a limit (a battery game's save, as it plays)
 //   0x03000000-0x03000FFF  the boot ROM (256 bytes, or the Color's 2,304), written and read while held in reset
 //   0x04000000-0x040007FF  the serial port's bytes: byte n at n mod 2048
 //   0x05000000-0x0500B3FF  the frame buffer: 2 bytes a pixel at 2 (y x 160 + x), the shade (0 white to 3)
@@ -158,14 +159,16 @@ module gb_sys #(
     logic        rom_sh_ack;  // with ROM_EXT, the shell's ROM access is done
 
     // The shell writes the RAM and clock only while the system is held in reset, through gb_cart's
-    // port; it reads them through the same port then.
+    // port; it reads them through the same port then, and the RAM while the system is stopped at a
+    // limit too (a battery game's save as it plays: `ce` is low until a shell write lets it run on,
+    // long after, by when the RAM's output is the CPU's byte again).
     gb_cart #(.ROM_AW(23), .RAM_AW(CRAM_LOG2)) u_cart (
         .clk, .rst, .ce,
         .mbc(cart_cfg[2:0]), .rtc(cart_cfg[3]), .rumble(cart_cfg[4]),
         .rom_log2(cart_cfg[12:8]), .ram_log2(cart_cfg[20:16]),
         .addr(cart_addr), .wr(cart_wr), .wdata(cart_wdata), .rdata(cart_rdata),
         .rom_addr(rom_full), .rom_q,
-        .sh_we(rst && (sh_cram || sh_rtc) && s_we && !s_ack), .sh_rtc(sh_rtc),
+        .sh_rd(at_limit && sh_cram && !s_we), .sh_we(rst && (sh_cram || sh_rtc) && s_we && !s_ack), .sh_rtc(sh_rtc),
         .sh_addr(17'(s_addr[CRAM_LOG2 > 4 ? CRAM_LOG2 - 1 : 3:0])), .sh_wdata(s_wdata), .sh_q(cart_sh));
     wire [ROM_LOG2-1:0] rom_a = rom_full[ROM_LOG2-1:0];
     wire                rom_rd = cart_rd && !cart_addr[15];  // this M-cycle reads the ROM
@@ -243,6 +246,13 @@ module gb_sys #(
         if (rst) cram_head <= '1;
         else if (cart_wr && cart_addr[15:13] == 3'b101 && cart_addr[12:2] == '0)
             cram_head[8 * cart_addr[1:0] +: 8] <= cart_wdata;
+
+    // The T-cycles in which the system has written cartridge RAM since reset (register 58): the
+    // host sees a battery game save when it changes. Counted with `ce`, so not while stopped.
+    logic [31:0] cram_writes;
+    always_ff @(posedge clk)
+        if (rst) cram_writes <= '0;
+        else if (ce && cart_wr && cart_addr[15:13] == 3'b101) cram_writes <= cram_writes + 32'd1;
 
     // The clocks the M-cycles' last T-cycles have waited on the ROM since reset (register 54).
     logic [31:0] waits;
@@ -337,9 +347,18 @@ module gb_sys #(
         end else
             fb_q <= 15'(fb[fb_a]);
     end
+    // On the Game Boy, a blank frame (the LCD off) is the screen's blank white, lighter than shade
+    // 0, as MesenCE draws it (its blue channel, 31): read so from the frame buffer (its CRC and the
+    // shell) until the PPU draws again. The first frame after the LCD goes on is shade 0, as
+    // MesenCE's is. The HDMI picture shows shade 0.
+    logic fb_blank;
+    always_ff @(posedge clk)
+        if (rst || fb_w) fb_blank <= 1'b0;
+        else if (white)  fb_blank <= blank && !(CGB && cart_cfg[5]);
+    wire [14:0] fb_out = fb_blank ? 15'd31 : fb_q;
 
     logic [31:0] scan_crc;
-    crc32 #(.W(16)) u_fcrc (.clk, .rst(rst || !scanning), .en(scan_take), .data({1'b0, fb_q}),
+    crc32 #(.W(16)) u_fcrc (.clk, .rst(rst || !scanning), .en(scan_take), .data({1'b0, fb_out}),
                             .crc(scan_crc), .st_we(1'b0), .st_wdata(32'd0));
     always_ff @(posedge clk)
         if (rst) begin
@@ -502,6 +521,7 @@ module gb_sys #(
             5'h13: reg_q = byte_of(pcm_n, r[1:0]);
             5'h14: reg_q = byte_of({11'd0, cart_cfg}, r[1:0]);
             5'h15: reg_q = byte_of(waits, r[1:0]);
+            5'h16: reg_q = byte_of(cram_writes, r[1:0]);
             default: ;
         endcase
     end
@@ -532,7 +552,7 @@ module gb_sys #(
                 if (sh_wait && !(sh_fb && fb_w_d)) begin
                     s_ack   <= 1'b1;
                     s_rdata <= sh_rom ? rom_sh : sh_cram || sh_rtc ? cart_sh : sh_boot ? boot_sh : sh_ser ? ser_sh :
-                               sh_hi ? {1'b0, fb_q[14:8]} : fb_q[7:0];
+                               sh_hi ? {1'b0, fb_out[14:8]} : fb_out[7:0];
                 end
             end else begin
                 s_ack   <= 1'b1;

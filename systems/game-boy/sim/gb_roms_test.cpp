@@ -20,7 +20,7 @@
 //
 // The ROMs run on up to 6 threads (RS_GB_JOBS=<n> sets how many);
 // RS_GB_ONLY=<id>[,<id>...] runs just those, RS_GB_TRACE=1 prints each
-// opcode fetch's PC and the serial bytes as they come, RS_GB_DUMP=<dir>
+// opcode fetch's PC, each frame's end and the serial bytes as they come, RS_GB_DUMP=<dir>
 // writes each ROM's checked frame there as <id>.pgm, and RS_GB_AUDIO_DUMP=<dir>
 // the APU's two mixes at each M-cycle's end, to the checked frame, as <id>.mix
 // (two signed 16-bit little-endian words a cycle, left then right).
@@ -408,6 +408,7 @@ Outcome run(const Rom& rom, const std::vector<uint8_t>& image, const std::vector
         if (!frame_ended) continue;
         frame_ended = false;
         out.frames++;
+        if (trace) std::printf("%s frame %ld\n", rom.id.c_str(), out.frames);
         m.keys = keys_at(rom.input, out.frames);
         if (want < 0) {
             if (rom.check == "serial") {

@@ -339,7 +339,7 @@ module gameboy #(
         .p1, .irq(irq_joy), .low(joy_low)
     );
     logic [7:0] pal_q;
-    logic [1:0] ppu_mode;
+    logic       ppu_hblank;
     // The CPU's access to the PPU's registers, registered as the APU's is (below): the address and
     // data are steady from the clock after an M-cycle starts, and the PPU takes a write no sooner
     // than the M-cycle's second T-cycle, so this is exact and keeps the CPU's address decode off the
@@ -357,13 +357,13 @@ module gameboy #(
         .clk, .rst, .ce, .phase,
         .wr(ppu_wr_q), .reg_sel(ppu_sel_q), .wdata(ppu_wd_q),
         .rdata(lcd_q), .dma_on, .halted(cpu_halted),
-        .cgb_hw, .cgb_en, .obj_x_pri(opri),
+        .cgb_hw, .cgb_en, .dbl, .obj_x_pri(opri),
         .pwr(ppu_pwr_q),
         .pal_sel(ppu_sel_q[1:0]), .pal_q, .pal_clr(clr_on), .pal_clr_a(clr[5:0]),
         .vaddr(ppu_vaddr), .vq({ppu_vq1, ppu_vq0}), .oaddr(ppu_oaddr), .oq(ppu_oq),
         .vram_rd_blk, .vram_wr_blk, .oam_rd_blk, .oam_wr_blk,
         .irq_vblank, .irq_stat,
-        .pix_we, .pix_x, .pix_y, .pix_color, .frame_end, .frame_cut, .mode(ppu_mode), .lcdc
+        .pix_we, .pix_x, .pix_y, .pix_color, .frame_end, .frame_cut, .hblank(ppu_hblank), .lcdc
     );
     // The APU's 2 MHz ticks are the M-cycle's first and third T-cycles, so the
     // CPU's reads (in the last) and writes (at its end) come between them. A
@@ -439,14 +439,21 @@ module gameboy #(
     // an M-cycle later than one made at its first or last (SameBoy's DMG
     // looks two dots into each halted M-cycle), and the M-cycle that sees
     // one is its dispatch's first, or the fetch (`cpu/sm83`).
+    // The Color looks two dots sooner (SameBoy's, at each halted M-cycle's start): a request made
+    // at the M-cycle's first three dots, or the last dot before it, comes an M-cycle later. In
+    // double speed the Game Boy's rule stands.
     logic [4:0] new_mid;  // set at this M-cycle's second or third dot
+    logic [4:0] new_m;    // set at the last M-cycle's last dot or this one's first three
     always_ff @(posedge clk)
-        if (rst) new_mid <= '0;
-        else if (ce) begin
+        if (rst) begin
+            new_mid <= '0;
+            new_m   <= '0;
+        end else if (ce) begin
             if (phase == 2'd3) new_mid <= '0;
             else if (phase != 2'd0) new_mid <= new_mid | (irq_now & ~if_r);
+            new_m <= (phase == 2'd3 ? 5'd0 : new_m) | (irq_now & ~if_r);
         end
-    assign int_seen = cpu_halted ? if_r & ~new_mid : if_r;
+    assign int_seen = cpu_halted ? if_r & ~(cgb_hw && !dbl ? new_m : new_mid) : if_r;
 
     // ---- interrupts, the boot ROM's switch, DMA ----
     always_ff @(posedge clk) begin
@@ -486,7 +493,7 @@ module gameboy #(
     end
 
     // ---- the Color's registers' writes, and its DMA to video RAM ----
-    wire hd_hbl = hd_run && ppu_mode == 2'd0;  // HBlank (or the LCD off) with an HBlank DMA on
+    wire hd_hbl = hd_run && ppu_hblank;  // HBlank (or the LCD off) with an HBlank DMA on
     always_ff @(posedge clk) begin
         if (rst) begin
             cgb_en   <= cgb_hw;

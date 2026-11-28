@@ -157,3 +157,39 @@ cgb-acid2 cgb 300 0x36574fc1 frame - cgb-acid2/cgb-acid2.gbc
 rtc3test-basic dmg 1200 0x451f807d frame - rtc3test/rtc3test.gb input=300:16,310:0
 rtc3test-range dmg 1500 0xb53bcb9b frame - rtc3test/rtc3test.gb input=300:8,310:0,320:16,330:0
 rtc3test-subsecond dmg 2400 0x7dec7525 frame - rtc3test/rtc3test.gb input=300:8,310:0,320:8,330:0,340:16,350:0
+mbt-m2-win-en-toggle-cgb cgb 450 0xd225528c frame - mealybug/m2_win_en_toggle.gb
+mbt-m2-win-en-toggle-dmg dmg 450 0xa9909589 frame - mealybug/m2_win_en_toggle.gb
+mbt-m3-bgp-change-cgb cgb 450 0x12724fd6 frame - mealybug/m3_bgp_change.gb
+mbt-m3-bgp-change-dmg dmg 450 0xc05e5236 frame - mealybug/m3_bgp_change.gb
+mbt-m3-bgp-change-sprites-cgb cgb 450 0x8713340b frame - mealybug/m3_bgp_change_sprites.gb
+mbt-m3-bgp-change-sprites-dmg dmg 450 0xd23d951b frame - mealybug/m3_bgp_change_sprites.gb
+mbt-m3-lcdc-bg-en-change-cgb cgb 450 0x95534261 frame - mealybug/m3_lcdc_bg_en_change.gb
+mbt-m3-lcdc-bg-en-change2-cgb cgb 450 0x8cc2e302 frame - mealybug/m3_lcdc_bg_en_change2.gb
+mbt-m3-lcdc-bg-map-change-cgb cgb 450 0xb854106c frame - mealybug/m3_lcdc_bg_map_change.gb
+mbt-m3-lcdc-bg-map-change2-cgb cgb 450 0x0592d9a4 frame - mealybug/m3_lcdc_bg_map_change2.gb
+mbt-m3-lcdc-obj-en-change-cgb cgb 450 0xde379812 frame - mealybug/m3_lcdc_obj_en_change.gb
+mbt-m3-lcdc-obj-en-change-variant-cgb cgb 450 0x677eb660 frame - mealybug/m3_lcdc_obj_en_change_variant.gb
+mbt-m3-lcdc-obj-size-change-cgb cgb 450 0x2e7e5880 frame - mealybug/m3_lcdc_obj_size_change.gb
+mbt-m3-lcdc-obj-size-change-scx-cgb cgb 450 0x8c745748 frame - mealybug/m3_lcdc_obj_size_change_scx.gb
+mbt-m3-lcdc-win-en-change-multiple-cgb cgb 450 0x6a75fcf9 frame - mealybug/m3_lcdc_win_en_change_multiple.gb
+mbt-m3-lcdc-win-en-change-multiple-dmg dmg 450 0xc0c746a2 frame - mealybug/m3_lcdc_win_en_change_multiple.gb
+mbt-m3-lcdc-win-map-change-cgb cgb 450 0xecaff9f6 frame - mealybug/m3_lcdc_win_map_change.gb
+mbt-m3-lcdc-win-map-change2-cgb cgb 450 0xaece49f0 frame - mealybug/m3_lcdc_win_map_change2.gb
+mbt-m3-obp0-change-cgb cgb 450 0xde6efcbe frame - mealybug/m3_obp0_change.gb
+mbt-m3-obp0-change-dmg dmg 450 0xa8b3878f frame - mealybug/m3_obp0_change.gb
+mbt-m3-scx-high-5-bits-cgb cgb 450 0xb588aa22 frame - mealybug/m3_scx_high_5_bits.gb
+mbt-m3-scx-high-5-bits-dmg dmg 450 0x21b3e566 frame - mealybug/m3_scx_high_5_bits.gb
+mbt-m3-scx-high-5-bits-change2-cgb cgb 450 0x468e52e4 frame - mealybug/m3_scx_high_5_bits_change2.gb
+mbt-m3-scx-low-3-bits-cgb cgb 450 0x74cb3aa4 frame - mealybug/m3_scx_low_3_bits.gb
+mbt-m3-scx-low-3-bits-dmg dmg 450 0x337ff9c6 frame - mealybug/m3_scx_low_3_bits.gb
+mbt-m3-scy-change-cgb cgb 450 0x4cba5a4f frame - mealybug/m3_scy_change.gb
+mbt-m3-window-timing-cgb cgb 450 0xadf2b8be frame - mealybug/m3_window_timing.gb
+mbt-m3-window-timing-dmg dmg 450 0x3c1ab89a frame - mealybug/m3_window_timing.gb
+mbt-m3-window-timing-wx-0-cgb cgb 450 0x669aec40 frame - mealybug/m3_window_timing_wx_0.gb
+mbt-m3-window-timing-wx-0-dmg dmg 450 0xc3713cb2 frame - mealybug/m3_window_timing_wx_0.gb
+mbt-m3-wx-4-change-dmg dmg 450 0x151092ff frame - mealybug/m3_wx_4_change.gb
+mbt-m3-wx-4-change-sprites-dmg dmg 450 0x1b67ac64 frame - mealybug/m3_wx_4_change_sprites.gb
+mbt-m3-wx-5-change-dmg dmg 450 0x3774795f frame - mealybug/m3_wx_5_change.gb
+mbt-m3-wx-6-change-dmg dmg 450 0x914bad96 frame - mealybug/m3_wx_6_change.gb
+rs-win-off-pixel-dmg dmg 300 0xe8d1dffa frame - gb-roms/win_off_pixel.gb
+rs-win-off-pixel-cgb cgb 300 0x719597a0 frame - gb-roms/win_off_pixel.gb

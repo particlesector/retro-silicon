@@ -49,7 +49,11 @@ get_property(a2600_id GLOBAL PROPERTY RS_A2600_BUILD_ID)
 rs_board_bitstream(a2600 BUILD ${build} COMPONENT a2600_top CST nes.cst PARAMS BUILD_ID=${a2600_id}
                    CLOCKS sclk=46.40625 pclk=74.25 fclk=371.25 SEED 1)
 # The Game Boy under the test shell, with HDMI (rtl/gb_top.sv): the NES's clocks, T-cycles at 7/76
-# of the system's (1.9% fast of the console's, to keep pace with the display).
+# of the system's (1.9% fast of the console's, to keep pace with the display). Seed 3: nextpnr
+# checks no hold on Gowin parts, so some placements fail on the board though they pass in the sim.
+# At 4839551 seeds 1 and 4 read Mooneye's MBC1 ROM tests' banks wrong, now and then; at 900d47b
+# seed 2 ran 24 games' play checks wrong (the same wrong frames each time), while 1 and 3 to 7
+# passed both.
 get_property(gb_id GLOBAL PROPERTY RS_GB_BUILD_ID)
 rs_board_bitstream(gb BUILD ${build} COMPONENT gb_top CST nes.cst PARAMS BUILD_ID=${gb_id}
-                   CLOCKS sclk=46.40625 pclk=74.25 fclk=371.25 SEED 1)
+                   CLOCKS sclk=46.40625 pclk=74.25 fclk=371.25 SEED 3)

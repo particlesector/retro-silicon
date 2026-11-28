@@ -57,6 +57,7 @@ enum Reg : uint32_t {
     kPcmCount = 0x4C,   // 4 bytes, read-only: how many
     kCartCfg = 0x50,    // 3 bytes: gb_cart's mbc (bits 2-0), rtc (3), rumble (4), rom_log2 (12-8), ram_log2 (20-16)
     kWaits = 0x54,      // 4 bytes, read-only: clocks the system waited on the ROM since reset
+    kCartWrites = 0x58,  // 4 bytes, read-only: T-cycles the system has written cartridge RAM since reset
 };
 
 // A cartridge's controller and sizes from its header, as MesenCE takes them (systems/game-boy's
@@ -113,6 +114,12 @@ public:
     // The cartridge's RAM as `rom`'s header sizes it, read with the system held in reset (which this
     // does).
     std::vector<uint8_t> cart_ram(const std::vector<uint8_t>& rom);
+    // The same while the system is stopped at a limit (stop_frame(), wait_stopped()), leaving it
+    // to run on from there: a battery game's save, taken as it plays.
+    std::vector<uint8_t> cart_ram_stopped(const std::vector<uint8_t>& rom);
+    // Changes whenever the game writes its cartridge RAM (T-cycles of writes since reset), for a
+    // host keeping a game's saves to see when it saved.
+    uint32_t cart_writes();
     void set_keys(uint8_t keys);
     void stop_frame(uint32_t n);
     void run();  // out of reset, running
@@ -129,6 +136,7 @@ public:
     std::vector<uint16_t> frame();  // the frame buffer: 160 x 144 shades, or the Color's 15-bit colours
     uint32_t sound_crc();
     uint32_t cart_head();  // cartridge RAM's first 4 bytes, $A000 in the low byte
+    uint8_t lcdc();
 
     // With a display:
     void pace(bool on);
